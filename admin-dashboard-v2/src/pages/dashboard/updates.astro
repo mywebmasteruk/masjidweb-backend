@@ -1,0 +1,404 @@
+---
+import Layout from "../../layouts/Layout.astro";
+---
+
+<Layout title="Platform Updates — MasjidWeb Admin">
+  <div class="shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">MW</div>
+        <span>MasjidWeb</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          Tenants
+        </a>
+        <a href="/dashboard/logs" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Logs
+        </a>
+        <a href="/dashboard/updates" class="sidebar-link active">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Updates
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="logoutBtn" class="sidebar-link" style="width:100%;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          Log out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <div style="margin-bottom:1.5rem;">
+        <h1>Platform Updates</h1>
+        <p class="page-desc" style="margin-bottom:0;">Check for YCode core updates, sync upstream changes, and roll back deploys</p>
+      </div>
+
+      <!-- Section A: Upstream updates -->
+      <div class="card">
+        <div class="card-header">
+          <h2>YCode Core Updates</h2>
+          <button id="checkUpdatesBtn" class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Check for updates
+          </button>
+        </div>
+
+        <div id="statusArea" style="margin-bottom:1rem;">
+          <div class="status-placeholder">
+            <p class="text-sm text-muted">Click "Check for updates" to see if new YCode versions are available.</p>
+          </div>
+        </div>
+
+        <div id="syncArea" class="hidden" style="margin-bottom:1rem;padding:1rem;background:var(--bg-surface);border-radius:var(--radius);border:1px solid var(--border);">
+          <div class="flex" style="justify-content:space-between;flex-wrap:wrap;gap:.75rem;">
+            <div>
+              <span id="behindBadge" class="badge badge-yellow">0 commits behind</span>
+              <span id="aheadBadge" class="badge badge-gray" style="margin-left:.35rem;">0 ahead</span>
+              <span id="upstreamLabel" class="text-xs text-muted" style="margin-left:.5rem;"></span>
+            </div>
+            <button id="syncBtn" class="btn btn-primary btn-sm">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+              Sync from upstream
+            </button>
+          </div>
+        </div>
+
+        <div id="semverWarning" class="hidden" style="margin-bottom:1rem;padding:1rem;background:rgba(234,179,8,.08);border-radius:var(--radius);border:1px solid rgba(234,179,8,.35);">
+          <div class="flex" style="align-items:flex-start;gap:.5rem;">
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--warning)" stroke-width="2.5" style="flex-shrink:0;margin-top:2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <div>
+              <span class="text-sm" style="color:var(--warning);font-weight:600;">New upstream release vs fork package version</span>
+              <p class="text-xs text-muted" style="margin:.35rem 0 0;">
+                Latest <span class="mono">ycode/ycode</span> release is <strong id="semverLatestLabel">—</strong> but your fork’s <span class="mono">package.json</span> on the default branch is <strong id="semverForkLabel">—</strong>.
+                Tenant builder <strong>Settings → Updates</strong> compares this release to the <em>deployed</em> app version — it can show an update even when Git reports no extra commits behind upstream.
+              </p>
+              <p class="text-xs text-muted" style="margin:.5rem 0 0;">Merge or sync so <span class="mono">package.json</span> matches the release, then deploy. If versions already match in Git but tenants still show an older number, trigger a new production deploy.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="upToDate" class="hidden" style="padding:1rem;background:var(--success-bg);border-radius:var(--radius);border:1px solid rgba(34,197,94,.2);">
+          <div class="flex">
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--success)" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            <span class="text-sm" style="color:var(--success);font-weight:600;">Your fork is up to date with upstream</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section B: Open sync PRs -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Sync Pull Requests</h2>
+          <button id="refreshPRsBtn" class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div id="prsArea">
+          <div class="empty-state">
+            <p class="text-muted text-sm">No open sync PRs. Check for updates first.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section C: Netlify deploys / rollback (YCode builder site when NETLIFY_UPDATES_DEPLOY_SITE_ID is set) -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Deploys &amp; Rollback</h2>
+          <button id="refreshDeploysBtn" class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Refresh
+          </button>
+        </div>
+        <p class="text-xs text-muted" style="margin:-0.5rem 0 1rem;">Shows deploys for the Netlify site that hosts the YCode Next app (tenant subdomains). Rollback targets that deploy only.</p>
+        <div id="deploysArea">
+          <div class="empty-state">
+            <p class="text-muted text-sm">Loading deploys...</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<style>
+  .status-placeholder { padding: .75rem 0; }
+  .ci-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: .35rem; vertical-align: middle; }
+  .ci-success { background: var(--success); }
+  .ci-failure { background: var(--danger); }
+  .ci-pending { background: var(--warning); }
+  .ci-unknown { background: var(--text-muted); }
+  .deploy-row { display: flex; align-items: center; justify-content: space-between; padding: .65rem .85rem; border-bottom: 1px solid var(--border); gap: .75rem; flex-wrap: wrap; }
+  .deploy-row:last-child { border-bottom: none; }
+  .deploy-row:hover { background: var(--bg-card-hover); }
+  .deploy-state { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; font-weight: 600; }
+  .deploy-state.ready { color: var(--success); }
+  .deploy-state.error { color: var(--danger); }
+  .deploy-state.building { color: var(--warning); }
+  .current-tag { display: inline-block; padding: .1rem .45rem; background: var(--accent-subtle); color: var(--accent-hover); border-radius: 999px; font-size: .65rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; margin-left: .4rem; }
+</style>
+
+<script>
+  function toast(msg, ok) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = ok ? "toast-ok" : "toast-err";
+    el.style.display = "block";
+    setTimeout(() => (el.style.display = "none"), 5000);
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { ok: false, error: text || "Bad response (" + res.status + ")" };
+    }
+  }
+
+  // ── Logout ───────────────────────────────────────────────────────
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  });
+
+  // ── Check for updates ────────────────────────────────────────────
+  async function runUpdateCheck() {
+    const btn = document.getElementById("checkUpdatesBtn");
+    btn.disabled = true;
+    btn.innerHTML = '<span style="opacity:.6">Checking...</span>';
+
+    const data = await api("/api/updates/status");
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Check for updates';
+
+    const statusArea = document.getElementById("statusArea");
+
+    if (data.ok !== true) {
+      const sw = document.getElementById("semverWarning");
+      if (sw) sw.classList.add("hidden");
+      const errMsg =
+        typeof data.error === "string"
+          ? data.error
+          : data.error
+            ? JSON.stringify(data.error)
+            : "Could not load update status";
+      statusArea.innerHTML =
+        '<div class="text-sm" style="padding:.75rem;background:rgba(239,68,68,.12);border-radius:var(--radius);border:1px solid rgba(239,68,68,.25);">' +
+        '<strong style="color:var(--danger);">Updates unavailable</strong><p class="text-muted" style="margin:.35rem 0 0;">' +
+        errMsg +
+        "</p>" +
+        "<p class=\"text-xs text-muted\" style=\"margin:.5rem 0 0;\">Set <span class=\"mono\">GITHUB_TOKEN</span> and <span class=\"mono\">GITHUB_REPO</span> in Netlify (see <span class=\"mono\">.env.example</span>), redeploy, then try again.</p>" +
+        "</div>";
+      toast(errMsg, false);
+      return;
+    }
+
+    statusArea.innerHTML =
+      '<p class="text-sm text-muted">Compared your fork’s default branch to <span class="mono">' +
+      (data.upstreamRepo || "upstream") +
+      "</span>. Also compares <span class=\"mono\">ycode/ycode</span> latest GitHub Release to your fork’s <span class=\"mono\">package.json</span> (same signal as tenant Settings → Updates).</p>";
+
+    const semverWarn = document.getElementById("semverWarning");
+    const semverLatestLabel = document.getElementById("semverLatestLabel");
+    const semverForkLabel = document.getElementById("semverForkLabel");
+    if (data.releaseAheadOfForkPackage && semverWarn && semverLatestLabel && semverForkLabel) {
+      semverLatestLabel.textContent = data.latestReleaseVersion || "—";
+      semverForkLabel.textContent = data.forkPackageVersion || "—";
+      semverWarn.classList.remove("hidden");
+    } else if (semverWarn) {
+      semverWarn.classList.add("hidden");
+    }
+
+    if (data.behindBy > 0) {
+      document.getElementById("syncArea").classList.remove("hidden");
+      document.getElementById("upToDate").classList.add("hidden");
+      document.getElementById("behindBadge").textContent = data.behindBy + " commits behind upstream";
+      document.getElementById("aheadBadge").textContent = data.aheadBy + " ahead (your changes)";
+      document.getElementById("upstreamLabel").textContent = "upstream: " + data.upstreamRepo;
+    } else {
+      document.getElementById("syncArea").classList.add("hidden");
+      if (data.releaseAheadOfForkPackage) {
+        document.getElementById("upToDate").classList.add("hidden");
+      } else {
+        document.getElementById("upToDate").classList.remove("hidden");
+      }
+    }
+
+    loadPRs();
+  }
+
+  document.getElementById("checkUpdatesBtn").addEventListener("click", runUpdateCheck);
+
+  runUpdateCheck();
+
+  // ── Sync from upstream ───────────────────────────────────────────
+  document.getElementById("syncBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("syncBtn");
+    btn.disabled = true;
+    btn.innerHTML = '<span style="opacity:.6">Syncing...</span>';
+
+    const data = await api("/api/updates/sync", { method: "POST" });
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg> Sync from upstream';
+
+    if (data.merged) {
+      toast(data.message, true);
+      document.getElementById("syncArea").classList.add("hidden");
+      document.getElementById("upToDate").classList.remove("hidden");
+      setTimeout(() => loadPRs(), 3000);
+    } else {
+      let msg = data.message || data.error || "Sync failed";
+      if (data.httpStatus === 409 && data.branch) {
+        msg +=
+          " Branch: " +
+          data.branch +
+          ". Resolve conflicts (merge upstream in git, fix files, push), then use Sync again.";
+      }
+      if (data.compareUrl) {
+        msg += " " + data.compareUrl;
+      }
+      toast(msg, false);
+    }
+  });
+
+  // ── Load PRs ─────────────────────────────────────────────────────
+  async function loadPRs() {
+    const area = document.getElementById("prsArea");
+    area.innerHTML = '<p class="text-sm text-muted" style="padding:.5rem 0;">Loading PRs...</p>';
+
+    const data = await api("/api/updates/prs");
+    if (!data.ok || !data.prs || data.prs.length === 0) {
+      area.innerHTML = '<div class="empty-state"><p class="text-muted text-sm">No open sync PRs</p></div>';
+      return;
+    }
+
+    let html = '<table><thead><tr><th>PR</th><th>Target</th><th>Merge</th><th>Checks</th><th>Created</th><th></th></tr></thead><tbody>';
+    for (const pr of data.prs) {
+      const ciClass = "ci-" + pr.ciStatus;
+      const ciLabel = pr.ciStatus.charAt(0).toUpperCase() + pr.ciStatus.slice(1);
+      const date = new Date(pr.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+      let mergeLine = "Checking…";
+      let mergeClass = "ci-unknown";
+      if (pr.mergeable === false) {
+        mergeLine = "Conflicts";
+        mergeClass = "ci-failure";
+      } else if (pr.mergeable === true) {
+        mergeLine = pr.mergeableState === "clean" ? "Mergeable" : pr.mergeableState === "unstable" ? "Mergeable (checks)" : "Mergeable";
+        mergeClass = "ci-success";
+      }
+      const canMerge = pr.mergeable === true && pr.ciStatus === "success";
+      let mergeTitle = "";
+      if (pr.mergeable === false) mergeTitle = "Resolve conflicts on GitHub (merge main into this branch and fix).";
+      else if (pr.mergeable !== true) mergeTitle = "Wait for GitHub to finish mergeability check.";
+      else if (pr.ciStatus !== "success") mergeTitle = "All checks must succeed before merge (e.g. Netlify).";
+      html += '<tr>';
+      html += '<td class="text-sm"><a href="' + pr.htmlUrl + '" target="_blank">#' + pr.number + '</a> <span class="text-muted">' + pr.title.substring(0, 50) + '</span></td>';
+      html += '<td><span class="badge badge-gray">' + pr.base + '</span></td>';
+      html += '<td><span class="ci-dot ' + mergeClass + '"></span><span class="text-xs">' + mergeLine + "</span></td>";
+      html += '<td><span class="ci-dot ' + ciClass + '"></span><span class="text-xs">' + ciLabel + "</span></td>";
+      html += '<td class="text-xs text-muted">' + date + '</td>';
+      html += '<td><button class="btn btn-primary btn-sm merge-btn" data-pr="' + pr.number + '"' + (canMerge ? '' : ' disabled title="' + mergeTitle.replace(/"/g, "&quot;") + '"') + '>Merge</button></td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    area.innerHTML = html;
+
+    area.querySelectorAll(".merge-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const prNum = parseInt(btn.dataset.pr);
+        if (!confirm("Merge PR #" + prNum + "? This will deploy changes to production.")) return;
+        btn.disabled = true;
+        btn.textContent = "Merging...";
+        const res = await api("/api/updates/merge-pr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prNumber: prNum }),
+        });
+        if (res.merged) {
+          toast("PR #" + prNum + " merged. Netlify will redeploy.", true);
+          setTimeout(() => { loadPRs(); loadDeploys(); }, 3000);
+        } else {
+          toast(res.message || "Merge failed", false);
+          btn.disabled = false;
+          btn.textContent = "Merge";
+        }
+      });
+    });
+  }
+
+  document.getElementById("refreshPRsBtn").addEventListener("click", loadPRs);
+
+  // ── Load deploys ─────────────────────────────────────────────────
+  async function loadDeploys() {
+    const area = document.getElementById("deploysArea");
+    area.innerHTML = '<p class="text-sm text-muted" style="padding:.5rem 0;">Loading deploys...</p>';
+
+    const data = await api("/api/updates/deploys");
+    if (!data.ok || !data.deploys || data.deploys.length === 0) {
+      area.innerHTML = '<div class="empty-state"><p class="text-muted text-sm">No deploys found</p></div>';
+      return;
+    }
+
+    let html = '';
+    for (const d of data.deploys) {
+      const stateClass = d.state === "ready" ? "ready" : d.state === "error" ? "error" : "building";
+      const stateIcon = d.state === "ready" ? "&#10003;" : d.state === "error" ? "&#10007;" : "&#8987;";
+      const date = new Date(d.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+      const title = d.title || d.commitRef?.substring(0, 7) || "Deploy";
+      const currentTag = d.isCurrent ? '<span class="current-tag">Live</span>' : '';
+
+      html += '<div class="deploy-row">';
+      html += '  <div style="flex:1;min-width:0;">';
+      html += '    <span class="deploy-state ' + stateClass + '">' + stateIcon + ' ' + d.state + '</span>' + currentTag;
+      html += '    <div class="text-xs text-muted" style="margin-top:.2rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + title + '</div>';
+      html += '  </div>';
+      html += '  <div class="text-xs text-muted" style="white-space:nowrap;">' + date + '</div>';
+      if (!d.isCurrent && d.state === "ready") {
+        html += '  <button class="btn btn-ghost btn-sm rollback-btn" data-deploy="' + d.id + '" data-title="' + title.replace(/"/g, "&quot;") + '">Rollback</button>';
+      } else if (d.isCurrent) {
+        html += '  <span class="text-xs text-muted" style="min-width:72px;text-align:center;">Current</span>';
+      } else {
+        html += '  <span style="min-width:72px;"></span>';
+      }
+      html += '</div>';
+    }
+    area.innerHTML = html;
+
+    area.querySelectorAll(".rollback-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const deployId = btn.dataset.deploy;
+        const title = btn.dataset.title;
+        if (!confirm('Roll back to deploy "' + title + '"? This will immediately change the live site.')) return;
+        btn.disabled = true;
+        btn.textContent = "Rolling back...";
+        const res = await api("/api/updates/rollback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deployId }),
+        });
+        if (res.ok) {
+          toast(res.message, true);
+          setTimeout(loadDeploys, 2000);
+        } else {
+          toast(res.message || res.error || "Rollback failed", false);
+          btn.disabled = false;
+          btn.textContent = "Rollback";
+        }
+      });
+    });
+  }
+
+  document.getElementById("refreshDeploysBtn").addEventListener("click", loadDeploys);
+
+  // Load deploys on page load
+  loadDeploys();
+</script>
+</Layout>

@@ -1,0 +1,29 @@
+---
+description: Work autonomously, use all available tools, verify web/UI with the browser
+alwaysApply: true
+---
+
+# Autonomous agent and verification
+
+## Execution
+
+- **Do not ask the user for permission** for routine work: run commands, apply migrations, edit code, call MCP tools (Supabase, Netlify, browser, YCode, etc.), and iterate until the task is done.
+- **Only stop to ask** when something is truly blocking and only the user can supply it (e.g. a secret they have never provided, or an irreversible production action they must explicitly confirm).
+- **Prefer tools over instructions**: if a terminal command, MCP call, or script can establish facts, use it instead of guessing.
+
+## Browser verification (required for web/UI)
+
+- **Do not use `localhost` / `astro dev` / `next dev` as the primary check** for this repo’s admin or tenant-facing UI. After changes, verify on the **real Netlify deployment** (production or the branch deploy URL the team uses).
+- **Admin dashboard** (provision tenants, etc.): Netlify URL for **admin-dashboard-v2** (e.g. **`https://master.masjidweb.com`** — `/login`, `/dashboard`).
+- **YCode builder + live site** (every tenant): **`https://{slug}.<TENANT_DOMAIN_SUFFIX>`** — builder at **`/ycode`**, public site at **`/`** on the **same** subdomain. Verify using an **active tenant slug** from `tenant_registry` (e.g. **`https://{slug}.<suffix>/ycode`**). Do not use or document a separate global `manage.*` app host; that path is deprecated.
+- Use the browser MCP (`browser_navigate` → `browser_snapshot`): confirm URL/title, no error page, and key controls when auth allows.
+- **Order**: implement → build/tests locally → **then** verify on **Netlify**.
+- **Local dev** is only for debugging a specific issue; state explicitly when a check was dev-only vs production.
+
+## Non-UI work
+
+- For **backend-only / SQL-only** tasks, **still run** automated checks: tests, typecheck, or targeted scripts. If the change could affect the live app, spot-check the relevant Netlify route after deploy.
+
+## Concision
+
+- Keep updates to the user factual and short; do not ask whether to proceed on standard steps.

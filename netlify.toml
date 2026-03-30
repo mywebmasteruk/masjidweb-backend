@@ -1,0 +1,10 @@
+# Connect this whole GitHub repo to Netlify once; build settings are read automatically
+# (no need to type base directory in the UI if this file is at the repo root).
+
+[build]
+  base = "admin-dashboard-v2"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"

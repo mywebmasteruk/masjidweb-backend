@@ -1,0 +1,3 @@
+[submodule "ycode-masjidweb"]
+	path = ycode-masjidweb
+	url = https://github.com/mywebmasteruk/ycode-masjidweb.git

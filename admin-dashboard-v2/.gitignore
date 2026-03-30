@@ -1,0 +1,6 @@
+# Local Netlify folder
+.netlify
+
+# One-off CLI env (never commit)
+.env.provision.local
+.env*.local

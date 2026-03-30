@@ -1,0 +1,693 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { getServiceSupabase } from "../../lib/supabase-server";
+
+const domainSuffix = import.meta.env.TENANT_DOMAIN_SUFFIX || "masjidweb.com";
+const supabase = getServiceSupabase();
+
+const { data: tenants } = await supabase
+  .from("tenant_registry")
+  .select(
+    "id, slug, business_name, email, domain, status, netlify_site_url, created_at, tenant_kind, provisioned_from_template_id",
+  )
+  .order("created_at", { ascending: false });
+
+const clientTenants = (tenants ?? []).filter((t) => t.tenant_kind !== "template");
+const demoTenants = (tenants ?? []).filter((t) => t.tenant_kind === "template");
+
+const { data: templateOptions } = await supabase
+  .from("tenant_registry")
+  .select("id, slug, business_name")
+  .eq("tenant_kind", "template")
+  .order("business_name", { ascending: true });
+
+const defaultSourceTemplateId = templateOptions?.[0]?.id ?? "";
+
+const activeCount = clientTenants.filter((t) => t.status === "active").length;
+const provisioningCount = clientTenants.filter((t) => t.status === "provisioning").length;
+const failedCount = clientTenants.filter((t) => t.status === "failed").length;
+const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated").length;
+---
+
+<Layout title="Dashboard — MasjidWeb Admin">
+  <div class="shell">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">MW</div>
+        <span>MasjidWeb</span>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="sidebar-link active">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          Tenants
+        </a>
+        <a href="/dashboard/logs" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Logs
+        </a>
+        <a href="/dashboard/updates" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Updates
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="logoutBtn" class="sidebar-link" style="width:100%;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          Log out
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.5rem;">
+        <div>
+          <h1>Tenant management</h1>
+          <p class="page-desc" style="margin-bottom:0;">Provision, monitor, and manage all tenants on <span class="mono" style="color:var(--accent-hover);">*.{domainSuffix}</span></p>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;">
+        <button type="button" id="cleanupOrphansBtn" class="btn btn-ghost btn-sm" title="Remove CMS rows whose tenant no longer exists">
+          Cleanup orphan rows
+        </button>
+        <button id="toggleFormBtn" class="btn btn-primary">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          New tenant
+        </button>
+        </div>
+      </div>
+
+      <!-- Stats row (client sites only except demo count) -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.85rem;margin-bottom:1.25rem;">
+        <div class="card" style="padding:1rem 1.25rem;">
+          <div class="text-xs text-muted" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Client sites</div>
+          <div style="font-size:1.6rem;font-weight:700;letter-spacing:-.03em;">{clientTenants.length}</div>
+        </div>
+        <div class="card" style="padding:1rem 1.25rem;">
+          <div class="text-xs text-muted" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Demo templates</div>
+          <div style="font-size:1.6rem;font-weight:700;letter-spacing:-.03em;color:var(--warning);">{demoTenants.length}</div>
+        </div>
+        <div class="card" style="padding:1rem 1.25rem;">
+          <div class="text-xs text-muted" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Active</div>
+          <div style="font-size:1.6rem;font-weight:700;letter-spacing:-.03em;color:var(--success);">{activeCount}</div>
+        </div>
+        <div class="card" style="padding:1rem 1.25rem;">
+          <div class="text-xs text-muted" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Provisioning</div>
+          <div style="font-size:1.6rem;font-weight:700;letter-spacing:-.03em;color:var(--warning);">{provisioningCount}</div>
+        </div>
+        <div class="card" style="padding:1rem 1.25rem;">
+          <div class="text-xs text-muted" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Failed</div>
+          <div style="font-size:1.6rem;font-weight:700;letter-spacing:-.03em;color:var(--danger);">{failedCount}</div>
+        </div>
+        <div class="card" style="padding:1rem 1.25rem;">
+          <div class="text-xs text-muted" style="text-transform:uppercase;letter-spacing:.06em;margin-bottom:.25rem;">Deactivated</div>
+          <div style="font-size:1.6rem;font-weight:700;letter-spacing:-.03em;color:var(--text-muted);">{deactivatedCount}</div>
+        </div>
+      </div>
+
+      <!-- Add tenant form -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Tenants</h2>
+          <span class="badge badge-gray" style="font-size:.7rem;">{clientTenants.length} clients · {demoTenants.length} demos</span>
+        </div>
+
+        <div id="addForm" class="form-reveal">
+          <form id="provisionForm">
+            {templateOptions && templateOptions.length > 0 ? (
+              <div class="field">
+                <label>Demo template *</label>
+                <select name="source_template_tenant_id" required>
+                  {templateOptions.map((tp, i) => (
+                    <option value={tp.id} selected={i === 0}>
+                      {tp.business_name} ({tp.slug}.{domainSuffix})
+                    </option>
+                  ))}
+                </select>
+                <p class="text-xs text-muted" style="margin-top:.35rem;">
+                  New client sites copy pages, CMS, and settings from this demo. Add more demos by creating another <span class="mono">template</span> row in the database (or we can add a &quot;New demo&quot; flow later).
+                </p>
+              </div>
+            ) : (
+              <div class="field" style="padding:.75rem;background:var(--warning-bg);border-radius:var(--radius);font-size:.85rem;">
+                No demo templates found. Set <span class="mono">tenant_kind = template</span> on at least one tenant in Supabase, then reload this page.
+              </div>
+            )}
+            <div class="grid-2">
+              <div class="field"><label>Business name *</label><input name="business_name" required placeholder="e.g. Al-Noor Masjid" /></div>
+              <div class="field"><label>Slug</label><input name="slug" placeholder="auto-generated from name" /></div>
+              <div class="field"><label>Admin email *</label><input type="email" name="email" required placeholder={`you@${domainSuffix}`} /><p class="text-xs text-muted" style="margin-top:.35rem;">Use an address at <span class="mono">@{domainSuffix}</span> (e.g. <span class="mono">admin@{domainSuffix}</span>) so the Supabase invite is delivered to your mail.</p></div>
+              <div class="field"><label>Phone</label><input name="phone" placeholder="+44 7700 000000" /></div>
+              <div class="field"><label>Address</label><input name="address" placeholder="123 High Street, London" /></div>
+              <div class="field"><label>Custom domain</label><input name="domain" placeholder="optional — e.g. mynewmasjid.com" /></div>
+            </div>
+            <div class="field"><label>Description</label><textarea name="description" rows="2" placeholder="Short description of the organisation"></textarea></div>
+            <div class="flex" style="gap:.5rem;">
+              <button type="submit" class="btn btn-primary" id="submitBtn" disabled={!defaultSourceTemplateId}>
+                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                Provision tenant
+              </button>
+              <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="tenant-tab-bar" role="tablist" aria-label="Tenant lists">
+          <button
+            type="button"
+            class="tenant-tab active"
+            role="tab"
+            id="tenantTabClients"
+            aria-selected="true"
+            aria-controls="tenantPanelClients"
+            data-tab="clients"
+          >
+            Clients
+            <span class="badge badge-gray">{clientTenants.length}</span>
+          </button>
+          <button
+            type="button"
+            class="tenant-tab"
+            role="tab"
+            id="tenantTabTemplates"
+            aria-selected="false"
+            aria-controls="tenantPanelTemplates"
+            data-tab="templates"
+          >
+            Templates
+            <span class="badge badge-yellow">{demoTenants.length}</span>
+          </button>
+        </div>
+
+        <div id="tenantPanelClients" class="tenant-tab-panel" role="tabpanel" aria-labelledby="tenantTabClients">
+        {clientTenants.length > 0 ? (
+          <div style="overflow-x:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tenant</th>
+                  <th>Subdomain</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th style="width:1%;white-space:nowrap;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientTenants.map((t) => (
+                  <tr>
+                    <td>
+                      <div style="font-weight:600;font-size:.85rem;">{t.business_name}</div>
+                      <div class="text-xs text-muted mono">{t.slug}</div>
+                    </td>
+                    <td>
+                      <a href={`https://${t.slug}.${domainSuffix}`} target="_blank" class="mono text-sm">{t.slug}.{domainSuffix}</a>
+                    </td>
+                    <td class="text-sm text-secondary">{t.email || "—"}</td>
+                    <td>
+                      <span class={`badge ${t.status === "active" ? "badge-green" : t.status === "failed" ? "badge-red" : t.status === "provisioning" ? "badge-yellow" : t.status === "deactivated" ? "badge-muted" : "badge-gray"}`}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td class="text-xs text-muted" style="white-space:nowrap;">{new Date(t.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                    <td>
+                      <div style="display:flex;flex-wrap:wrap;gap:.35rem;justify-content:flex-end;">
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-sm"
+                          data-tenant-auth-id={t.id}
+                          data-tenant-auth-slug={t.slug}
+                          title={`Invite email → https://${t.slug}.${domainSuffix}/ycode/accept-invite. Existing user magic link → https://${t.slug}.${domainSuffix}/ycode`}
+                        >
+                          Login link
+                        </button>
+                        {(t.status === "active" || t.status === "suspended") && (
+                          <button type="button" class="btn btn-ghost btn-sm" data-deactivate-id={t.id} data-deactivate-slug={t.slug} title="Keep data; mark tenant deactivated">
+                            Deactivate
+                          </button>
+                        )}
+                        {t.status === "deactivated" && (
+                          <button type="button" class="btn btn-ghost btn-sm" data-activate-id={t.id} data-activate-slug={t.slug} title="Mark tenant active again">
+                            Reactivate
+                          </button>
+                        )}
+                        <button type="button" class="btn btn-danger-ghost btn-sm" data-delete-id={t.id} data-delete-slug={t.slug} title={`Permanently delete ${t.slug} and all site data`}>
+                          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div class="empty-state">
+            <p>No client tenants yet</p>
+            <p class="text-xs text-muted" style="margin-top:.25rem;">Click &quot;New tenant&quot; to provision a client site</p>
+          </div>
+        )}
+        </div>
+
+        <div id="tenantPanelTemplates" class="tenant-tab-panel" role="tabpanel" aria-labelledby="tenantTabTemplates" hidden>
+        {demoTenants.length > 0 ? (
+          <div style="overflow-x:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Demo</th>
+                  <th>Subdomain</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th style="width:1%;white-space:nowrap;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {demoTenants.map((t) => (
+                  <tr>
+                    <td>
+                      <div style="font-weight:600;font-size:.85rem;">{t.business_name}</div>
+                      <div class="text-xs text-muted mono">{t.slug}</div>
+                    </td>
+                    <td>
+                      <a href={`https://${t.slug}.${domainSuffix}`} target="_blank" class="mono text-sm">{t.slug}.{domainSuffix}</a>
+                    </td>
+                    <td class="text-sm text-secondary">{t.email || "—"}</td>
+                    <td>
+                      <span class={`badge ${t.status === "active" ? "badge-green" : t.status === "failed" ? "badge-red" : t.status === "provisioning" ? "badge-yellow" : t.status === "deactivated" ? "badge-muted" : "badge-gray"}`}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td class="text-xs text-muted" style="white-space:nowrap;">{new Date(t.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                    <td>
+                      <div style="display:flex;flex-wrap:wrap;gap:.35rem;justify-content:flex-end;">
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-sm"
+                          data-tenant-auth-id={t.id}
+                          data-tenant-auth-slug={t.slug}
+                          title={`Invite email → https://${t.slug}.${domainSuffix}/ycode/accept-invite. Existing user magic link → https://${t.slug}.${domainSuffix}/ycode`}
+                        >
+                          Login link
+                        </button>
+                        {(t.status === "active" || t.status === "suspended") && (
+                          <button type="button" class="btn btn-ghost btn-sm" data-deactivate-id={t.id} data-deactivate-slug={t.slug} title="Keep data; mark tenant deactivated">
+                            Deactivate
+                          </button>
+                        )}
+                        {t.status === "deactivated" && (
+                          <button type="button" class="btn btn-ghost btn-sm" data-activate-id={t.id} data-activate-slug={t.slug} title="Mark tenant active again">
+                            Reactivate
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div class="empty-state">
+            <p class="text-muted">No demo templates</p>
+            <p class="text-xs text-muted" style="margin-top:.25rem;">Set <span class="mono">tenant_kind = template</span> on a tenant in Supabase</p>
+          </div>
+        )}
+        </div>
+      </div>
+    </main>
+  </div>
+
+<style>
+  .provision-overlay {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,.6); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .provision-overlay.hidden { display: none; }
+  .provision-modal {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 2rem; width: 90%; max-width: 440px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4); text-align: center;
+  }
+  .spinner {
+    width: 36px; height: 36px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin .7s linear infinite; margin: 0 auto 1rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result-icon { width: 48px; height: 48px; margin: 0 auto .75rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .result-icon.success { background: var(--success-bg); color: var(--success); }
+  .result-icon.error { background: var(--danger-bg); color: var(--danger); }
+  .result-url { display: inline-block; margin-top: .5rem; padding: .4rem .8rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); font-family: 'SF Mono', monospace; font-size: .8rem; color: var(--accent-hover); word-break: break-all; }
+  .result-warnings { margin-top: .75rem; padding: .6rem .8rem; background: var(--warning-bg); border: 1px solid rgba(234,179,8,.2); border-radius: var(--radius); font-size: .78rem; color: var(--warning); text-align: left; }
+
+  .tenant-tab-bar {
+    display: flex; gap: .35rem; margin-bottom: 1rem;
+    padding: .25rem; background: var(--bg-surface); border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  .tenant-tab {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+    padding: .5rem .75rem; border: none; border-radius: calc(var(--radius) - 2px);
+    font-size: .82rem; font-weight: 600; font-family: inherit; cursor: pointer;
+    color: var(--text-secondary); background: transparent; transition: background var(--transition), color var(--transition);
+  }
+  .tenant-tab:hover { color: var(--text); background: var(--bg-card-hover); }
+  .tenant-tab.active {
+    color: var(--accent-hover); background: var(--accent-subtle);
+    box-shadow: 0 0 0 1px rgba(99,102,241,.25);
+  }
+  .tenant-tab .badge { font-size: .62rem; }
+  .tenant-tab-panel[hidden] { display: none !important; }
+</style>
+
+<div id="provisionOverlay" class="provision-overlay hidden">
+  <div class="provision-modal">
+    <div id="provisionSpinner" class="spinner"></div>
+    <div id="provisionResult" class="hidden"></div>
+    <p id="provisionStatus" style="font-size:.9rem;font-weight:500;">Provisioning tenant…</p>
+    <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">Setting up database, domain, and CMS content</p>
+  </div>
+</div>
+
+<script define:vars={{ domainSuffix }}>
+  function toast(msg, ok) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = ok ? "toast-ok" : "toast-err";
+    el.style.display = "block";
+    setTimeout(() => (el.style.display = "none"), 5000);
+  }
+
+  function showOverlay() {
+    const ov = document.getElementById("provisionOverlay");
+    const sp = document.getElementById("provisionSpinner");
+    const rs = document.getElementById("provisionResult");
+    const st = document.getElementById("provisionStatus");
+    const dt = document.getElementById("provisionDetail");
+    ov.classList.remove("hidden");
+    sp.style.display = "block";
+    rs.classList.add("hidden");
+    st.textContent = "Provisioning tenant…";
+    dt.textContent = "Setting up database, domain, and CMS content";
+    dt.style.display = "block";
+  }
+
+  function showResult(success, title, detail, url, warnings) {
+    const sp = document.getElementById("provisionSpinner");
+    const rs = document.getElementById("provisionResult");
+    const st = document.getElementById("provisionStatus");
+    const dt = document.getElementById("provisionDetail");
+    sp.style.display = "none";
+
+    let html = '<div class="result-icon ' + (success ? 'success' : 'error') + '">';
+    if (success) {
+      html += '<svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+    } else {
+      html += '<svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
+    }
+    html += '</div>';
+    rs.innerHTML = html;
+    rs.classList.remove("hidden");
+    st.textContent = title;
+
+    if (detail) {
+      dt.textContent = detail;
+      dt.style.display = "block";
+    } else {
+      dt.style.display = "none";
+    }
+
+    if (url) {
+      st.innerHTML = title + '<br><a href="' + url + '" target="_blank" class="result-url">' + url + '</a>';
+    }
+
+    if (warnings && warnings.length > 0) {
+      st.innerHTML += '<div class="result-warnings"><strong>Warnings:</strong><br>' + warnings.join('<br>') + '</div>';
+    }
+
+    st.innerHTML += '<br><button class="btn btn-ghost btn-sm" style="margin-top:1rem;" onclick="location.reload()">Back to dashboard</button>';
+  }
+
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  });
+
+  const addForm = document.getElementById("addForm");
+  document.getElementById("toggleFormBtn").addEventListener("click", () => {
+    addForm.classList.toggle("open");
+    if (addForm.classList.contains("open")) {
+      addForm.querySelector("input")?.focus();
+    }
+  });
+  document.getElementById("cancelBtn").addEventListener("click", () => {
+    addForm.classList.remove("open");
+  });
+
+  (function initTenantTabs() {
+    const tabs = document.querySelectorAll(".tenant-tab");
+    const clientsPanel = document.getElementById("tenantPanelClients");
+    const templatesPanel = document.getElementById("tenantPanelTemplates");
+    if (!tabs.length || !clientsPanel || !templatesPanel) return;
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const isClients = tab.getAttribute("data-tab") === "clients";
+        tabs.forEach((t) => {
+          const on = t === tab;
+          t.classList.toggle("active", on);
+          t.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        clientsPanel.hidden = !isClients;
+        templatesPanel.hidden = isClients;
+      });
+    });
+  })();
+
+  document.getElementById("provisionForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("submitBtn");
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    showOverlay();
+
+    const fd = new FormData(e.target);
+    const body = Object.fromEntries(fd.entries());
+    const allWarnings = [];
+    try {
+      // Phase 1: fast — insert + domain alias + clone template
+      const res = await fetch("/api/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error("Server returned non-JSON response (status " + res.status + ")");
+      }
+
+      if (!data.ok) {
+        const errMsg = typeof data.error === "string" ? data.error : JSON.stringify(data.error);
+        showResult(false, "Provisioning failed", errMsg);
+        return;
+      }
+
+      if (data.warnings) allWarnings.push(...data.warnings);
+      const st = document.getElementById("provisionStatus");
+      const dt = document.getElementById("provisionDetail");
+      st.textContent = "Finalizing…";
+      dt.textContent = "Publishing site and seeding CMS content";
+
+      // Phase 2: slow — publish, CMS seed, invite, activate
+      if (data.needsCompletion && data.tenantId) {
+        try {
+          const res2 = await fetch("/api/provision-complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tenantId: data.tenantId }),
+          });
+          let data2;
+          try { data2 = await res2.json(); } catch { data2 = null; }
+          if (data2?.ok) {
+            if (data2.warnings) allWarnings.push(...data2.warnings);
+          } else {
+            const msg = data2?.error || "Phase 2 timed out or failed — tenant may need manual activation.";
+            allWarnings.push("Completion: " + msg);
+          }
+        } catch (err2) {
+          allWarnings.push("Completion: " + (err2.message || "request failed — tenant may need manual activation."));
+        }
+      }
+
+      const siteHttps = "https://" + data.slug + "." + domainSuffix;
+      const inviteExplain =
+        "The welcome email’s sign-up link should use: " +
+        siteHttps +
+        "/ycode/accept-invite — the same subdomain as the site above. " +
+        "If you only see masjidweb.com in that link, check Warnings (invite may have failed), " +
+        "or open the new site and use Settings → Users to resend the invite.";
+      showResult(true, 'Tenant "' + data.slug + '" provisioned!', inviteExplain, siteHttps, allWarnings);
+    } catch (err) {
+      showResult(false, "Provisioning failed", err.message || "Unknown error");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origHTML;
+    }
+  });
+
+  document.querySelectorAll("[data-tenant-auth-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tenantId = btn.getAttribute("data-tenant-auth-id");
+      const slug = btn.getAttribute("data-tenant-auth-slug") || "tenant";
+      if (!tenantId) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/tenant-auth-link", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tenantId }),
+        });
+        let data;
+        try {
+          data = await res.json();
+        } catch {
+          toast("Server returned non-JSON (status " + res.status + ")", false);
+          return;
+        }
+        if (!data.ok) {
+          toast(typeof data.error === "string" ? data.error : JSON.stringify(data.error), false);
+          return;
+        }
+        if (data.method === "invite") {
+          toast(data.message || "Invite email sent", true);
+        } else if (data.method === "magiclink" && data.actionLink) {
+          try {
+            await navigator.clipboard.writeText(data.actionLink);
+            toast(
+              "Magic link copied for " + slug + " — opens https://" + slug + "." + domainSuffix + "/ycode (not accept-invite)",
+              true,
+            );
+          } catch {
+            window.prompt("Copy magic link (tenant subdomain in redirect_to):", data.actionLink);
+          }
+        }
+      } catch (err) {
+        toast(err.message || "Request failed", false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-deactivate-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.deactivateId;
+      const slug = btn.dataset.deactivateSlug;
+      if (!confirm('Deactivate "' + slug + '"? Data stays in the database; the site can be reactivated later.')) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/tenants", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, status: "deactivated" }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          toast("Tenant deactivated", true);
+          setTimeout(() => location.reload(), 800);
+        } else {
+          toast(data.error || "Update failed", false);
+          btn.disabled = false;
+        }
+      } catch (err) {
+        toast(err.message || "Update failed", false);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-activate-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.activateId;
+      const slug = btn.dataset.activateSlug;
+      if (!confirm('Reactivate "' + slug + '"?')) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/tenants", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, status: "active" }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          toast("Tenant active", true);
+          setTimeout(() => location.reload(), 800);
+        } else {
+          toast(data.error || "Update failed", false);
+          btn.disabled = false;
+        }
+      } catch (err) {
+        toast(err.message || "Update failed", false);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  const cleanupOrphansBtn = document.getElementById("cleanupOrphansBtn");
+  cleanupOrphansBtn?.addEventListener("click", async () => {
+    if (!confirm("Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry?")) return;
+    cleanupOrphansBtn.disabled = true;
+    try {
+      const res = await fetch("/api/cleanup-orphans", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        const rows = (data.removed && data.removed.length)
+          ? data.removed.map((r) => r.table_name + ": " + r.removed).join(", ")
+          : "none";
+        toast("Cleanup done: " + rows, true);
+      } else {
+        toast(data.error || "Cleanup failed", false);
+      }
+    } catch (err) {
+      toast(err.message || "Cleanup failed", false);
+    } finally {
+      cleanupOrphansBtn.disabled = false;
+    }
+  });
+
+  document.querySelectorAll("[data-delete-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.deleteId;
+      const slug = btn.dataset.deleteSlug;
+      if (!confirm('Permanently delete tenant "' + slug + '", all site data, and remove its subdomain?')) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/tenants", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          toast("Tenant deleted", true);
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          toast(data.error || "Delete failed", false);
+          btn.disabled = false;
+        }
+      } catch (err) {
+        toast(err.message || "Delete failed", false);
+        btn.disabled = false;
+      }
+    });
+  });
+
+</script>
+</Layout>

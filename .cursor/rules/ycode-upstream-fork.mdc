@@ -1,0 +1,15 @@
+---
+description: Avoid losing work when syncing upstream YCode — prefer fork-local layers over core edits
+alwaysApply: true
+---
+
+# YCode upstream vs fork (masjidweb)
+
+- **Do not treat shared / upstream YCode application code as the place for long-lived fork-only behavior** (multi-tenant masjid tweaks, demo content logic, etc.). When YCode is updated or re-merged from upstream, those edits are easy to drop or conflict.
+- **Prefer** in order:
+  1. **Configuration and data**: env vars, Supabase rows, Netlify settings (no code drift).
+  2. **Clearly fork-owned modules**: e.g. new files under a dedicated namespace (`lib/masjidweb/`, `lib/tenant/`-only if fork-owned) that **import** core APIs instead of forking large core files.
+  3. **Minimal surgical patches** in core files only when unavoidable — and call them out in PR/commit messages so they can be re-applied after an upstream merge.
+- **If a fix must touch “core” paths** (e.g. `lib/page-fetcher.ts`, `lib/supabase-server.ts`): flag it for the maintainer as a **merge hotspot**; consider opening equivalent changes upstream or isolating behind a small hook/extension point if the project adds one later.
+
+This does not block urgent production fixes; it requires **conscious** placement so upgrades do not silently erase behavior.

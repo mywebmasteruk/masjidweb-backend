@@ -1,0 +1,28 @@
+{
+  "name": "admin-dashboard-v2",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "reseed:cms": "tsx scripts/reseed-cms-cli.ts",
+    "provision:cli": "node --import tsx scripts/provision-cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@astrojs/netlify": "^6.0.0",
+    "@supabase/supabase-js": "^2.49.1",
+    "astro": "^5.4.0",
+    "jose": "^5.10.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,44 @@
+# Fully programmatic deploy: push to GitHub → CI builds → Netlify receives production deploy.
+# One-time setup: add repository secrets NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID (dashboard site).
+
+name: Deploy admin dashboard to Netlify
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "admin-dashboard-v2/**"
+      - ".github/workflows/deploy-admin-dashboard.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-admin-dashboard
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-dashboard-v2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: admin-dashboard-v2/package-lock.json
+
+      - name: Install and build
+        run: npm ci && npm run build
+
+      # SSR bundle lives under .netlify/ + static in dist/ — do not use --dir=dist alone.
+      - name: Deploy to Netlify (production)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx --yes netlify-cli deploy --prod --site="$NETLIFY_SITE_ID"

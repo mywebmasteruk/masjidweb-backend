@@ -1,0 +1,35 @@
+# Local Node.js toolchain (optional; not required for GitHub/Netlify)
+.tools/
+
+# Cursor IDE workspace artifacts (debug logs, temp payloads, SQL seeds)
+.cursor/*.json
+.cursor/*.sql
+.cursor/*.log
+.cursor/*.txt
+.cursor/payloads/
+.cursor/payloads_split/
+
+# Temp MCP payload files at root
+_mcp_*.json
+
+# Dashboard app (never commit install/build output — CI builds on GitHub/Netlify)
+admin-dashboard-v2/node_modules/
+admin-dashboard-v2/dist/
+admin-dashboard-v2/.netlify/
+admin-dashboard-v2/.astro/
+
+# YCode app
+ycode-masjidweb/node_modules/
+ycode-masjidweb/.next/
+ycode-masjidweb/.netlify/
+
+# Netlify local state
+.netlify/
+
+# Local secrets for scripts (never commit)
+.env.netlify
+.env.local
+admin-dashboard-v2/.env
+ycode-masjidweb/.env
+ycode-masjidweb/.env.local
+scripts/.cloudflare_api_token
