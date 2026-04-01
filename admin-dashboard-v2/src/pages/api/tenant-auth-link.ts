@@ -35,7 +35,7 @@ export const POST: APIRoute = async (context) => {
 
   try {
     const result = await sendTenantAuthLink(parsed.data.tenantId);
-    return new Response(JSON.stringify({ ok: true, ...result }), {
+    return new Response(JSON.stringify(result), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

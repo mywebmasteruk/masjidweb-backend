@@ -12,6 +12,9 @@
 # Temp MCP payload files at root
 _mcp_*.json
 
+# Agent/browser verification screenshots (local only)
+browser-verify-screenshots/
+
 # Dashboard app (never commit install/build output — CI builds on GitHub/Netlify)
 admin-dashboard-v2/node_modules/
 admin-dashboard-v2/dist/
