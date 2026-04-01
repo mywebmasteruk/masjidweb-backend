@@ -11,11 +11,14 @@ alwaysApply: true
 - **Only stop to ask** when something is truly blocking and only the user can supply it (e.g. a secret they have never provided, or an irreversible production action they must explicitly confirm).
 - **Prefer tools over instructions**: if a terminal command, MCP call, or script can establish facts, use it instead of guessing.
 
-## Deploy after code changes
+## Ship changes: Git → auto deploy (no manual uploads)
 
-- After editing code in **admin-dashboard-v2**, deploy via the Netlify MCP (`netlify-deploy-services-updater`, site ID `11db9c91-9c73-48d4-a93b-88d37e62e1d8` / `masjidweb-admin-v2`). Poll `get-deploy` until `state: "ready"` before verifying.
-- After editing code in **ycode-masjidweb**, deploy via Netlify MCP (look up the builder site ID first if not cached). Poll until `ready`.
-- **Never consider a task complete until the deploy succeeds and browser verification passes.**
+- **Never** use Netlify drag-and-drop, zip upload, **`netlify deploy` from the agent’s shell**, or Netlify MCP **`deploy-site`** for routine work. Those are **only** for emergencies or when the user explicitly asks for a one-off CLI upload.
+- After edits: **`git add` → `git commit` → `git push`** to GitHub on the branch Netlify (or CI) is configured to build. That is the default way to ship.
+- **Admin dashboard** (`admin.masjidweb.com`): repo **`mywebmasteruk/masjidweb`**, Netlify site **`masjidweb-admin-v2`** (`11db9c91-9c73-48d4-a93b-88d37e62e1d8`), base **`admin-dashboard-v2/`**. Netlify is linked to Git — **push triggers the build** (production branch is **`multitanant`** unless changed in Netlify). Optionally, **GitHub Actions** (`.github/workflows/deploy-admin-dashboard.yml`) also deploys when `NETLIFY_AUTH_TOKEN` / `NETLIFY_SITE_ID` secrets exist; either way there is **no manual upload**.
+- **Builder (`ycode-masjidweb`):** Prefer **commit + push** on whatever repo/branch that Netlify site has linked. Use MCP **`deploy-site`** only if that site still has no Git link and the user has not migrated it yet.
+- After push: **wait** until the new production deploy is **`ready`** (Netlify dashboard or `netlify api listSiteDeploys` for the site), then run **browser verification** below.
+- **Never consider a task complete until the push landed, auto deploy succeeded, and browser verification passes.**
 
 ## Browser verification (required — every change)
 
