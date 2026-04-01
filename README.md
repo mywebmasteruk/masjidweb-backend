@@ -3,6 +3,8 @@
 **Source of truth: GitHub. Runtime: Netlify.**
 Nothing needs to live on a Mac except a temporary copy while you push code to GitHub (or use GitHub's web UI).
 
+**Branches:** Production admin deploys from **`multitanant`** (set this as the GitHub default branch if you want new PRs and the landing clone target to match Netlify). The builder submodule **`ycode-masjidweb`** ships from **`tenant-multi`**. **`main`** stays useful for upstream-aligned history and CI; merge into **`multitanant`** when you want those changes live on admin/builder.
+
 ## What this repo contains
 
 - **`admin-dashboard-v2/`** — Tenant provisioning dashboard (login, provision form, Netlify domain aliases, Supabase automation). Subdomain multi-tenant on one Netlify site.
