@@ -383,7 +383,22 @@ async function cloneItemForTenant(
     sourceValues = fb.data;
   }
 
-  const clonedRows = (sourceValues ?? []).map((v) => ({
+  // Template rows may already include tenant_id / tenant_slug; we stamp those below.
+  // Keeping both copies violates idx_collection_item_values_unique (item_id, field_id, is_published).
+  const stampedFieldIds = new Set<string>([tenantIdFieldId]);
+  if (tenantSlugFieldId) stampedFieldIds.add(tenantSlugFieldId);
+
+  const dedupedByMappedField = new Map<
+    string,
+    { field_id: string; value: string }
+  >();
+  for (const v of sourceValues ?? []) {
+    const mappedFieldId = mapId(v.field_id, idMap);
+    if (stampedFieldIds.has(mappedFieldId)) continue;
+    dedupedByMappedField.set(mappedFieldId, v);
+  }
+
+  const clonedRows = [...dedupedByMappedField.values()].map((v) => ({
     id: crypto.randomUUID(),
     item_id: newItemId,
     field_id: mapId(v.field_id, idMap),
@@ -425,7 +440,7 @@ async function cloneItemForTenant(
 
     if (valErr) {
       throw new Error(
-        `Failed to clone values for item (${collectionId}): ${valErr.message}`,
+        `Failed to clone values for item ${sourceItemId} (collection ${collectionId}): ${valErr.message}`,
       );
     }
   }
