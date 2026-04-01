@@ -1,13 +1,15 @@
-# Fully programmatic deploy: push to GitHub → CI builds → Netlify receives production deploy.
-# One-time setup: add repository secrets NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID (dashboard site).
+# Push to GitHub → this workflow builds in CI → Netlify production deploy (no manual drag-and-drop).
+# One-time: GitHub repo → Settings → Secrets → NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID (e.g. masjidweb-admin-v2 site UUID).
+# Netlify MCP cannot link Git; this workflow is the supported automation path.
 
 name: Deploy admin dashboard to Netlify
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, multitanant]
     paths:
       - "admin-dashboard-v2/**"
+      - "netlify.toml"
       - ".github/workflows/deploy-admin-dashboard.yml"
   workflow_dispatch:
 
