@@ -542,6 +542,30 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     }
   });
 
+  /** Clipboard after `await fetch` often fails (user activation consumed); fall back to execCommand / prompt. */
+  async function copyTextBestEffort(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return ok;
+      } catch {
+        return false;
+      }
+    }
+  }
+
   document.querySelectorAll("[data-tenant-auth-id]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const tenantId = btn.getAttribute("data-tenant-auth-id");
@@ -565,17 +589,47 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           toast(typeof data.error === "string" ? data.error : JSON.stringify(data.error), false);
           return;
         }
-        if (data.method === "invite") {
-          toast(data.message || "Invite email sent", true);
-        } else if (data.method === "magiclink" && data.actionLink) {
-          try {
-            await navigator.clipboard.writeText(data.actionLink);
+
+        const link = data.actionLink;
+        if (data.method === "magiclink" && link) {
+          const copied = await copyTextBestEffort(link);
+          if (copied) {
             toast(
-              "Magic link copied for " + slug + " — opens https://" + slug + "." + domainSuffix + "/ycode (not accept-invite)",
+              "Magic link copied for " +
+                slug +
+                " — opens https://" +
+                slug +
+                "." +
+                domainSuffix +
+                "/ycode (not accept-invite). " +
+                (data.message || ""),
               true,
             );
-          } catch {
-            window.prompt("Copy magic link (tenant subdomain in redirect_to):", data.actionLink);
+          } else {
+            window.prompt(
+              "Copy magic link (opens tenant builder; not accept-invite):",
+              link,
+            );
+            toast(data.message || "Magic link shown in dialog.", true);
+          }
+          return;
+        }
+
+        if (data.method === "invite") {
+          if (link) {
+            const copied = await copyTextBestEffort(link);
+            if (copied) {
+              toast(
+                (data.message || "Invite sent.") +
+                  " Sign-up link copied (same as in the email; redirect is …/ycode/accept-invite).",
+                true,
+              );
+            } else {
+              window.prompt("Copy invite / sign-up link (same as in the email):", link);
+              toast(data.message || "Invite email sent.", true);
+            }
+          } else {
+            toast(data.message || "Invite email sent", true);
           }
         }
       } catch (err) {

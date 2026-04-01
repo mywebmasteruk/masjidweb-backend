@@ -23,6 +23,8 @@ export type SendTenantAuthLinkResult =
       email: string;
       coerced: boolean;
       message: string;
+      /** Same URL as in the invite email; for admin copy/paste when clipboard works after async. */
+      actionLink?: string;
     }
   | {
       ok: true;
@@ -82,14 +84,32 @@ export async function sendTenantAuthLink(
     },
   );
   if (!inviteErr) {
+    let actionLink: string | undefined;
+    const { data: inviteGen, error: inviteGenErr } =
+      await supabase.auth.admin.generateLink({
+        type: "invite",
+        email: inviteEmail,
+        options: {
+          redirectTo: redirectInviteTo,
+          data: userMeta,
+        },
+      });
+    if (!inviteGenErr && inviteGen?.properties?.action_link) {
+      actionLink = inviteGen.properties.action_link;
+    }
+
+    const baseMsg = coerced
+      ? `Invite sent to ${inviteEmail} (coerced to @${domainSuffix}).`
+      : `Invite sent to ${inviteEmail}.`;
     return {
       ok: true,
       method: "invite",
       email: inviteEmail,
       coerced,
-      message: coerced
-        ? `Invite sent to ${inviteEmail} (coerced to @${domainSuffix}).`
-        : `Invite sent to ${inviteEmail}.`,
+      message: actionLink
+        ? `${baseMsg} You can also copy the sign-up link below.`
+        : baseMsg,
+      ...(actionLink ? { actionLink } : {}),
     };
   }
   if (!isUserAlreadyRegistered(inviteErr)) {
