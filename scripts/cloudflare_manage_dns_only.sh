@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Set manage.<zone> CNAME to DNS-only (grey cloud) in Cloudflare.
-# Fixes HTTPS redirect loops when a YCode (or other SaaS) CNAME is orange-cloud proxied.
+# DEPRECATED: master.* and manage.* subdomains have been retired.
+# All tenant traffic (including the demo template masjidemo1) uses the wildcard *.masjidweb.com CNAME.
+# This script is kept for reference only; run cloudflare_masjidweb_dns.sh instead.
+#
+# Original purpose: set a specific CNAME to DNS-only (grey cloud) in Cloudflare.
 #
 # Requires: curl, jq
 # Usage:
-#   export CLOUDFLARE_API_TOKEN='...'   # Zone DNS Edit (or broader) for the zone
-#   ./scripts/cloudflare_manage_dns_only.sh
-#
-# Optional:
-#   ZONE_NAME=masjidweb.com
-#   RECORD_NAME=master.masjidweb.com   # full record name in the zone (or legacy manage.*)
+#   export CLOUDFLARE_API_TOKEN='...'
+#   RECORD_NAME=some-record.masjidweb.com ./scripts/cloudflare_manage_dns_only.sh
 
 set -euo pipefail
 
@@ -22,7 +21,7 @@ fi
 : "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN or create ${TOKEN_FILE} (Cloudflare API token with DNS edit for the zone)}"
 
 ZONE_NAME="${ZONE_NAME:-masjidweb.com}"
-RECORD_NAME="${RECORD_NAME:-master.${ZONE_NAME}}"
+RECORD_NAME="${RECORD_NAME:?Set RECORD_NAME (e.g. admin.masjidweb.com)}"
 
 API="https://api.cloudflare.com/client/v4"
 HDR=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json")

@@ -99,7 +99,6 @@ export const POST: APIRoute = async (context) => {
         description: t.description ?? undefined,
       });
       await triggerPostProvisionPublish(slug, domainSuffix, warnings);
-      await triggerPostProvisionPublish(slug, domainSuffix, warnings);
       await patchNullTenantIds(supabase, tenantId);
       results.push({ slug, ok: true });
     } catch (e) {

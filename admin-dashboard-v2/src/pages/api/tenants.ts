@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { getServiceSupabase } from "../../lib/supabase-server";
@@ -88,6 +89,58 @@ export const PATCH: APIRoute = async (context) => {
   });
 };
 
+const TENANT_CONTENT_TABLES = [
+  "collection_item_values",
+  "collection_items",
+  "collection_fields",
+  "collections",
+  "page_layers",
+  "pages",
+  "page_folders",
+  "components",
+  "layer_styles",
+  "assets",
+  "asset_folders",
+  "fonts",
+  "locales",
+  "translations",
+  "settings",
+  "color_variables",
+  "versions",
+  "webhooks",
+  "webhook_deliveries",
+  "form_submissions",
+  "api_keys",
+  "mcp_tokens",
+  "tenant_homepage_content",
+] as const;
+
+async function deleteTenantData(
+  supabase: SupabaseClient,
+  tenantId: string,
+  warnings: string[],
+): Promise<void> {
+  for (const table of TENANT_CONTENT_TABLES) {
+    const { error } = await supabase.from(table).delete().eq("tenant_id", tenantId);
+    if (error && !error.message.includes("does not exist")) {
+      warnings.push(`Failed to clean ${table}: ${error.message}`);
+    }
+  }
+
+  try {
+    const { data: users } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    const tenantUsers = (users?.users ?? []).filter(
+      (u) => u.user_metadata?.tenant_id === tenantId,
+    );
+    for (const u of tenantUsers) {
+      const { error } = await supabase.auth.admin.deleteUser(u.id);
+      if (error) warnings.push(`Failed to delete auth user ${u.email}: ${error.message}`);
+    }
+  } catch (e) {
+    warnings.push(`Auth user cleanup: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export const DELETE: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -146,6 +199,8 @@ export const DELETE: APIRoute = async (context) => {
       warnings.push(err instanceof Error ? err.message : String(err));
     }
   }
+
+  await deleteTenantData(supabase, tenantId, warnings);
 
   const { error: deleteErr } = await supabase
     .from("tenant_registry")

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Upsert Cloudflare DNS for masjidweb.com (admin dashboard, template builder master.*, wildcard tenants, optional legacy manage.*).
+# Upsert Cloudflare DNS for masjidweb.com (admin dashboard + wildcard tenants).
 # Requires: curl, jq
 # Usage:
 #   export CLOUDFLARE_API_TOKEN='...'   # User API token: Zone > DNS > Edit, scoped to masjidweb.com
-#   export MANAGE_CNAME_TARGET='cname-from-ycode.ycodeapp.com'   # optional legacy manage.*; skip if unset
 #   ./scripts/cloudflare_masjidweb_dns.sh
 #
 # CF_PROXIED_NETLIFY applies to every CNAME below (Netlify + optional manage/YCode).
@@ -69,14 +68,7 @@ upsert_cname() {
 CF_PROXIED_NETLIFY="${CF_PROXIED_NETLIFY:-false}"
 # Tenant admin dashboard (Astro)
 upsert_cname "admin" "masjidweb-admin-v2.netlify.app" "${CF_PROXIED_NETLIFY}"
-# Template YCode builder (same Netlify site as wildcard tenant hosts)
-upsert_cname "master" "masjidweb-multi.netlify.app" "${CF_PROXIED_NETLIFY}"
+# Wildcard for all tenant subdomains (including demo template masjidemo1)
 upsert_cname "*" "masjidweb-multi.netlify.app" "${CF_PROXIED_NETLIFY}"
-
-if [[ -n "${MANAGE_CNAME_TARGET:-}" ]]; then
-  upsert_cname "manage" "${MANAGE_CNAME_TARGET}" "${CF_PROXIED_NETLIFY}"
-else
-  echo "Skipping manage.masjidweb.com (set MANAGE_CNAME_TARGET to YCode CNAME from Settings > Domains)."
-fi
 
 echo "Done."

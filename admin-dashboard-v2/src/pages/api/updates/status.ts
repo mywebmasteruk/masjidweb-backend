@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
-import { getUpdateStatus } from "../../../lib/github-updates";
+import { getUpdateStatus, getReleaseSemverVsFork } from "../../../lib/github-updates";
 
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -20,8 +20,11 @@ export const GET: APIRoute = async (context) => {
   }
 
   try {
-    const status = await getUpdateStatus(token, repo);
-    return new Response(JSON.stringify({ ok: true, ...status }), {
+    const [status, semver] = await Promise.all([
+      getUpdateStatus(token, repo),
+      getReleaseSemverVsFork(token, repo),
+    ]);
+    return new Response(JSON.stringify({ ok: true, ...status, ...semver }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {

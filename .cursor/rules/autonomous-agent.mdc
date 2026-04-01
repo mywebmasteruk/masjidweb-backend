@@ -1,5 +1,5 @@
 ---
-description: Work autonomously, use all available tools, verify web/UI with the browser
+description: Work autonomously, use all available tools, deploy and verify in browser
 alwaysApply: true
 ---
 
@@ -11,14 +11,32 @@ alwaysApply: true
 - **Only stop to ask** when something is truly blocking and only the user can supply it (e.g. a secret they have never provided, or an irreversible production action they must explicitly confirm).
 - **Prefer tools over instructions**: if a terminal command, MCP call, or script can establish facts, use it instead of guessing.
 
-## Browser verification (required for web/UI)
+## Deploy after code changes
 
-- **Do not use `localhost` / `astro dev` / `next dev` as the primary check** for this repo’s admin or tenant-facing UI. After changes, verify on the **real Netlify deployment** (production or the branch deploy URL the team uses).
-- **Admin dashboard** (provision tenants, etc.): Netlify URL for **admin-dashboard-v2** (e.g. **`https://master.masjidweb.com`** — `/login`, `/dashboard`).
-- **YCode builder + live site** (every tenant): **`https://{slug}.<TENANT_DOMAIN_SUFFIX>`** — builder at **`/ycode`**, public site at **`/`** on the **same** subdomain. Verify using an **active tenant slug** from `tenant_registry` (e.g. **`https://{slug}.<suffix>/ycode`**). Do not use or document a separate global `manage.*` app host; that path is deprecated.
-- Use the browser MCP (`browser_navigate` → `browser_snapshot`): confirm URL/title, no error page, and key controls when auth allows.
-- **Order**: implement → build/tests locally → **then** verify on **Netlify**.
-- **Local dev** is only for debugging a specific issue; state explicitly when a check was dev-only vs production.
+- After editing code in **admin-dashboard-v2**, deploy via the Netlify MCP (`netlify-deploy-services-updater`, site ID `11db9c91-9c73-48d4-a93b-88d37e62e1d8` / `masjidweb-admin-v2`). Poll `get-deploy` until `state: "ready"` before verifying.
+- After editing code in **ycode-masjidweb**, deploy via Netlify MCP (look up the builder site ID first if not cached). Poll until `ready`.
+- **Never consider a task complete until the deploy succeeds and browser verification passes.**
+
+## Browser verification (required — every change)
+
+After every deploy, **always** verify both the admin dashboard and the builder. This is not optional and is part of the standard workflow.
+
+1. **Admin dashboard** — `https://admin.masjidweb.com`
+   - Navigate to the page affected by the change (e.g. `/dashboard/updates`, `/dashboard`).
+   - `browser_navigate` → wait for async content (10–15 s for pages with API calls) → `browser_snapshot`.
+   - Confirm: correct page title, no error state, expected content visible.
+
+2. **Builder** — `https://masjidemo1.masjidweb.com/ycode`
+   - Navigate to the builder or the specific settings page if relevant.
+   - `browser_snapshot` and confirm: builder loads, no error page, relevant UI state is correct.
+
+3. **If a change touches shared logic** (e.g. update checks, auth, Supabase queries), verify **both** sites even if only one codebase was edited.
+
+### Verification details
+
+- **Do not use `localhost` / `astro dev` / `next dev` as the primary check.** Always verify on the **real Netlify deployment**.
+- Use browser MCP: `browser_navigate` → `browser_lock` → sleep for async → `browser_snapshot` → `browser_unlock`.
+- **Local dev** is only for debugging; state explicitly when a check was dev-only vs production.
 
 ## Non-UI work
 

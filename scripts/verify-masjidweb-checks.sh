@@ -14,7 +14,7 @@ cd "$ROOT"
 FAIL=0
 
 echo "========== 1) Public HTTP reachability =========="
-for url in "https://masjidweb.com" "https://master.masjidweb.com"; do
+for url in "https://masjidweb.com" "https://masjidemo1.masjidweb.com"; do
   code=$(curl -sS -o /dev/null -w "%{http_code}" --max-redirs 8 -L "$url" || echo "000")
   if [[ "$code" =~ ^[0-9]+$ ]] && [[ "$code" -ge 200 && "$code" -lt 400 ]]; then
     echo "OK  $url -> HTTP $code"

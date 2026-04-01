@@ -37,9 +37,7 @@ new_allow_list="$(echo "$current_json" | jq -r '
     end;
   (split_csv(.uri_allow_list)) as $ex
   | [
-      "https://*.masjidweb.com/**",
-      "https://master.masjidweb.com/ycode",
-      "https://master.masjidweb.com/ycode/accept-invite"
+      "https://*.masjidweb.com/**"
     ] as $req
   | ($ex + $req | unique | join(","))
 ')"
