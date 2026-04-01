@@ -8,7 +8,11 @@
  *   TENANT_DOMAIN_SUFFIX (optional), PROVISIONING_WEBHOOK_SECRET, YCODE_SITE_INTERNAL_URL (optional).
  */
 
-import { completeProvision, startProvision } from "../src/lib/provision-pipeline";
+import {
+  completeProvision,
+  publishTenantAfterProvision,
+  startProvision,
+} from "../src/lib/provision-pipeline";
 
 const payload = {
   business_name: "Tenant Test 3",
@@ -22,6 +26,8 @@ async function main(): Promise<void> {
   console.log("Phase 1:", JSON.stringify(p1, null, 2));
   const p2 = await completeProvision(p1.tenantId, "provision-cli");
   console.log("Phase 2 warnings:", JSON.stringify(p2.warnings, null, 2));
+  const p2b = await publishTenantAfterProvision(p1.tenantId, "provision-cli");
+  console.log("Publish step warnings:", JSON.stringify(p2b.warnings, null, 2));
 }
 
 main().catch((e) => {

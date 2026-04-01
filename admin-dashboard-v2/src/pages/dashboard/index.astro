@@ -503,9 +503,9 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       const st = document.getElementById("provisionStatus");
       const dt = document.getElementById("provisionDetail");
       st.textContent = "Finalizing…";
-      dt.textContent = "Publishing site and seeding CMS content";
+      dt.textContent = "Seeding CMS, inviting admin, and activating tenant";
 
-      // Phase 2: slow — publish, CMS seed, invite, activate
+      // Phase 2: CMS seed, invite, activate (separate Netlify invocation from publish)
       if (data.needsCompletion && data.tenantId) {
         try {
           const res2 = await fetch("/api/provision-complete", {
@@ -517,6 +517,30 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           try { data2 = await res2.json(); } catch { data2 = null; }
           if (data2?.ok) {
             if (data2.warnings) allWarnings.push(...data2.warnings);
+            st.textContent = "Publishing…";
+            dt.textContent = "Calling YCode publish (may take up to ~2 minutes)";
+            try {
+              const resPub = await fetch("/api/provision-publish-tenant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tenantId: data.tenantId }),
+              });
+              let pubData;
+              try { pubData = await resPub.json(); } catch { pubData = null; }
+              if (pubData?.ok) {
+                if (pubData.warnings) allWarnings.push(...pubData.warnings);
+              } else {
+                const msg =
+                  pubData?.error ||
+                  "Publish step failed or timed out — open the builder and click Publish.";
+                allWarnings.push("Publish: " + msg);
+              }
+            } catch (errPub) {
+              allWarnings.push(
+                "Publish: " +
+                  (errPub.message || "request failed — use Publish in the builder."),
+              );
+            }
           } else {
             const msg = data2?.error || "Phase 2 timed out or failed — tenant may need manual activation.";
             allWarnings.push("Completion: " + msg);

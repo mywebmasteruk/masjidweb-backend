@@ -18,6 +18,31 @@ async function countTenantRows(
   return count ?? 0;
 }
 
+/** After auto-publish, confirm collection items have a published snapshot. */
+export async function appendPublishedCollectionDemoWarning(
+  supabase: SupabaseClient,
+  tenantId: string,
+  warnings: string[],
+): Promise<void> {
+  const ciNew = await countTenantRows(
+    supabase,
+    "collection_items",
+    tenantId,
+    false,
+  );
+  const pubNew = await countTenantRows(
+    supabase,
+    "collection_items",
+    tenantId,
+    true,
+  );
+  if (pubNew === 0 && ciNew > 0) {
+    warnings.push(
+      "Demo check — No published collection items yet; run Publish in the builder or confirm auto-publish succeeded.",
+    );
+  }
+}
+
 /**
  * Compare cloned site + CMS seed against the template tenant.
  * Appends human-readable gaps to `warnings` (non-fatal).
@@ -27,6 +52,7 @@ export async function verifyTenantDemoData(
   tenantId: string,
   warnings: string[],
   templateTenantId?: string,
+  options?: { skipPublishedCollectionCheck?: boolean },
 ): Promise<void> {
   const tpl = templateTenantId ?? getTemplateTenantId();
 
@@ -64,15 +90,7 @@ export async function verifyTenantDemoData(
     );
   }
 
-  const pubNew = await countTenantRows(
-    supabase,
-    "collection_items",
-    tenantId,
-    true,
-  );
-  if (pubNew === 0 && ciNew > 0) {
-    warnings.push(
-      "Demo check — No published collection items yet; run Publish in the builder or confirm auto-publish succeeded.",
-    );
+  if (!options?.skipPublishedCollectionCheck) {
+    await appendPublishedCollectionDemoWarning(supabase, tenantId, warnings);
   }
 }

@@ -6,7 +6,10 @@ import { seedTenantCmsContent } from "./ycode-cms-seed";
 import { cloneTemplateForTenant, rebuildIdMapForTenant } from "./ycode-template-clone";
 import { triggerPostProvisionPublish } from "./provision-publish";
 import { patchNullTenantIds } from "./provision-tenant-patch";
-import { verifyTenantDemoData } from "./provision-demo-verify";
+import {
+  appendPublishedCollectionDemoWarning,
+  verifyTenantDemoData,
+} from "./provision-demo-verify";
 import {
   assertValidSourceTemplate,
   resolveSourceTemplateIdForClientTenant,
@@ -275,16 +278,16 @@ export async function completeProvision(
       warnings.push(`User invite: ${msg}`);
     }
 
-    // 4. Mark active BEFORE publish so the subdomain resolves immediately
+    // 4. Mark active before the separate publish HTTP step (avoids exceeding one function timeout)
     await supabase
       .from("tenant_registry")
       .update({ status: "active", updated_at: new Date().toISOString() })
       .eq("id", tenantId);
 
-    // 5. Publish (non-fatal — single attempt to make content live)
-    await triggerPostProvisionPublish(slug, domainSuffix, warnings);
-
-    await verifyTenantDemoData(supabase, tenantId, warnings, sourceTpl);
+    // 5. Demo checks (draft/structure). Published CMS check runs after POST /ycode/api/publish.
+    await verifyTenantDemoData(supabase, tenantId, warnings, sourceTpl, {
+      skipPublishedCollectionCheck: true,
+    });
 
     await supabase.from("provisioning_audit_log").insert({
       tenant_id: tenantId,
@@ -313,6 +316,45 @@ export async function completeProvision(
 }
 
 /**
+ * Phase 2b — own Netlify invocation so YCode publish (slow) does not blow the phase-2 budget.
+ */
+export async function publishTenantAfterProvision(
+  tenantId: string,
+  actor: string,
+): Promise<{ warnings: string[] }> {
+  const supabase = getServiceSupabase();
+  const domainSuffix = getDomainSuffix();
+  const { data: tenant, error: fetchErr } = await supabase
+    .from("tenant_registry")
+    .select("id, slug, status")
+    .eq("id", tenantId)
+    .single();
+
+  if (fetchErr || !tenant) {
+    throw new Error("Tenant not found: " + (fetchErr?.message ?? tenantId));
+  }
+  if (tenant.status !== "active") {
+    throw new Error(
+      `Publish step requires an active tenant (status: ${tenant.status}).`,
+    );
+  }
+
+  const slug = tenant.slug as string;
+  const warnings: string[] = [];
+  await triggerPostProvisionPublish(slug, domainSuffix, warnings);
+  await appendPublishedCollectionDemoWarning(supabase, tenantId, warnings);
+
+  await supabase.from("provisioning_audit_log").insert({
+    tenant_id: tenantId,
+    action: "provision_publish_step",
+    actor,
+    details: { warnings },
+  });
+
+  return { warnings };
+}
+
+/**
  * Legacy single-call pipeline — runs both phases sequentially.
  * Will timeout on free Netlify plans; use startProvision + completeProvision instead.
  */
@@ -322,9 +364,14 @@ export async function runProvisionPipeline(
 ): Promise<ProvisionResult> {
   const phase1 = await startProvision(raw, actor);
   const phase2 = await completeProvision(phase1.tenantId, actor);
+  const phase2b = await publishTenantAfterProvision(phase1.tenantId, actor);
   return {
     ...phase1,
-    warnings: [...phase1.warnings, ...phase2.warnings],
+    warnings: [
+      ...phase1.warnings,
+      ...phase2.warnings,
+      ...phase2b.warnings,
+    ],
     needsCompletion: false,
   };
 }
