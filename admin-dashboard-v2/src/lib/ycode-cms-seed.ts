@@ -1,6 +1,8 @@
 /**
  * Seed YCode CMS collections with per-tenant data and clone template content.
  *
+ * Tenant-wide clone inventory and exclusions: `tenant-clone-manifest.ts`.
+ *
  * YCode stores content in Supabase with a versioning model:
  *   collections → collection_fields → collection_items → collection_item_values
  *

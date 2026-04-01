@@ -7,6 +7,9 @@
  *
  * collection_items / collection_item_values are handled by ycode-cms-seed.ts.
  *
+ * Full tenant table inventory, exclusions, and post-publish patch list:
+ * `tenant-clone-manifest.ts`.
+ *
  * JSONB blobs have old UUIDs replaced with new ones so cross-references work.
  */
 

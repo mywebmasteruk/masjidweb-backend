@@ -1,30 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { DRAFT_PUBLISHED_PATCH_TABLES } from "./tenant-clone-manifest";
 
 /**
  * After server-side publish, some `is_published = true` snapshots may have
  * `tenant_id` null (JWT default not applied). Copy `tenant_id` from the draft
  * sibling (`is_published = false`) for the same primary `id`.
+ *
+ * Table list: `DRAFT_PUBLISHED_PATCH_TABLES` in `tenant-clone-manifest.ts`.
  */
 export async function patchNullTenantIds(
   supabase: SupabaseClient,
   tenantId: string,
 ): Promise<void> {
-  const tables = [
-    "collection_items",
-    "collection_item_values",
-    "collections",
-    "collection_fields",
-    "pages",
-    "page_layers",
-    "components",
-    "layer_styles",
-    "locales",
-    "fonts",
-    "assets",
-    "asset_folders",
-  ] as const;
-
-  for (const table of tables) {
+  for (const table of DRAFT_PUBLISHED_PATCH_TABLES) {
     await patchTablePublishedFromDraft(supabase, table, tenantId);
   }
 }
