@@ -25,6 +25,8 @@ interface ImportMetaEnv {
   readonly TEMPLATE_TENANT_ID?: string;
   /** Same secret on the YCode Netlify site — enables POST /ycode/api/publish after provision. */
   readonly PROVISIONING_WEBHOOK_SECRET?: string;
+  /** Max wait (ms) for POST /ycode/api/publish during provision; default 115000. */
+  readonly PROVISION_PUBLISH_TIMEOUT_MS?: string;
   readonly PUBLIC_SUPABASE_URL: string;
   readonly PUBLIC_SUPABASE_ANON_KEY: string;
 }

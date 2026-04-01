@@ -43,7 +43,12 @@ export async function triggerPostProvisionPublish(
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    // Publish runs CSS regen + DB writes; cold YCode functions often exceed 5s.
+    const publishTimeoutMs = Math.min(
+      115_000,
+      Number(process.env["PROVISION_PUBLISH_TIMEOUT_MS"] ?? "") || 115_000,
+    );
+    const timer = setTimeout(() => controller.abort(), publishTimeoutMs);
     const res = await fetch(url, {
       method: "POST",
       headers,
