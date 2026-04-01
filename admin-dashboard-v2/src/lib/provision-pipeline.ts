@@ -141,7 +141,7 @@ export async function startProvision(
     tenant_id: tenantId,
     action: "tenant_created",
     actor,
-    details: { slug, stage: "db_insert", architecture: "single-site" },
+    details: { slug, stage: "db_insert", architecture: "subdomain-multi-tenant" },
   });
 
   try {
@@ -290,7 +290,7 @@ export async function completeProvision(
       tenant_id: tenantId,
       action: "provision_complete",
       actor,
-      details: { site_url: siteUrl, architecture: "single-site", warnings },
+      details: { site_url: siteUrl, architecture: "subdomain-multi-tenant", warnings },
     });
 
     return { warnings };

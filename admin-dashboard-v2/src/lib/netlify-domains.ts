@@ -1,5 +1,5 @@
 /**
- * Netlify domain alias helpers for single-site multi-tenant architecture.
+ * Netlify domain alias helpers: one production site, many tenant hostnames (subdomains).
  *
  * Domain aliases are managed via PATCH /api/v1/sites/{site_id} using the
  * `domain_aliases` array field on the site object — there is no separate

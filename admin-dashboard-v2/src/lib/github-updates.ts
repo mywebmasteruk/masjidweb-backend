@@ -280,7 +280,7 @@ export interface SyncPR {
   htmlUrl: string;
 }
 
-/** Default: multi-tenant line only (MasjidWeb v2). Add `single-site` via GITHUB_SYNC_PR_BASES if you still use that deploy. */
+/** Default: MasjidWeb v2 builder line (`tenant-multi`). Override with `GITHUB_SYNC_PR_BASES` if you add more base branches. */
 export const DEFAULT_SYNC_PR_BASE_BRANCHES = ["tenant-multi"] as const;
 
 export async function listSyncPRs(

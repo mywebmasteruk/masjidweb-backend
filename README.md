@@ -5,7 +5,7 @@ Nothing needs to live on a Mac except a temporary copy while you push code to Gi
 
 ## What this repo contains
 
-- **`admin-dashboard-v2/`** — Tenant provisioning dashboard (login, provision form, Netlify domain aliases, Supabase automation). Single-site multi-tenant model.
+- **`admin-dashboard-v2/`** — Tenant provisioning dashboard (login, provision form, Netlify domain aliases, Supabase automation). Subdomain multi-tenant on one Netlify site.
 - **`ycode-masjidweb/`** — The YCode visual builder + public site renderer (Next.js 16). One deployment serves all tenant subdomains.
 - **`supabase/migrations/`** — SQL to run once in your Supabase project (tenant registry, lifecycle, RLS).
 - **`scripts/`** — Automation helpers (env sync, DNS, migration apply, verification).
@@ -20,10 +20,10 @@ The admin dashboard (`admin-dashboard-v2`) provisions new tenants by: inserting 
 ## Setup
 
 1. **Create a GitHub repository** (private is fine) and push this folder as the repo root.
-2. **Netlify** → Add new site → Import from Git → pick the repo. Build settings are in [`netlify.toml`](netlify.toml) (`base = admin-dashboard-v2`).
-3. **Supabase schema:** apply all migrations in `supabase/migrations/` via the SQL editor, or run `scripts/apply-supabase-migration.sh` with `DATABASE_URL`.
-4. **Netlify environment variables:** see [`admin-dashboard-v2/.env.example`](admin-dashboard-v2/.env.example) and [`ycode-masjidweb/.env.example`](ycode-masjidweb/.env.example).
-5. Trigger **Deploy**.
+2. **Admin dashboard deploy (recommended):** In GitHub → **Settings → Secrets and variables → Actions**, add **`NETLIFY_AUTH_TOKEN`** (Netlify user settings → personal access tokens) and **`NETLIFY_SITE_ID`** (site **Site settings → Site details → Site ID**, e.g. `masjidweb-admin-v2`). Pushes to `main`, `master`, or `multitanant` that touch `admin-dashboard-v2/` run [`.github/workflows/deploy-admin-dashboard.yml`](.github/workflows/deploy-admin-dashboard.yml) and deploy to Netlify production—no manual zip uploads.
+3. **Alternative:** Netlify → **Import from Git** on the same repo; build settings are in root [`netlify.toml`](netlify.toml) (`base = admin-dashboard-v2`).
+4. **Supabase schema:** apply all migrations in `supabase/migrations/` via the SQL editor, or run `scripts/apply-supabase-migration.sh` with `DATABASE_URL`.
+5. **Netlify environment variables:** see [`admin-dashboard-v2/.env.example`](admin-dashboard-v2/.env.example) and [`ycode-masjidweb/.env.example`](ycode-masjidweb/.env.example).
 
 ## Local verification
 
