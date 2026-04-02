@@ -6,19 +6,24 @@
  * YCode stores content in Supabase with a versioning model:
  *   collections → collection_fields → collection_items → collection_item_values
  *
- * Every row has an `is_published` flag. To make content visible on the live
- * site, we insert two copies of each item / value row: one draft (false) and
- * one published (true).
+ * Every row has an `is_published` flag. Provisioning inserts draft CMS rows
+ * (`is_published: false`); the builder publish step creates published snapshots.
  *
- * Template content = any collection item with no `tenant_id` value. During
- * provisioning, these items are cloned for each new tenant with their
- * `tenant_id` and `tenant_slug` stamped on each copy.
+ * Template demo rows are identified by `collection_items.tenant_id` matching the
+ * template tenant UUID, or (legacy) `tenant_id` null on collections that belong
+ * to the template. Cloning stamps the new tenant on item rows and on optional
+ * `tenant_id` / `tenant_slug` CMS fields when those fields exist on the target.
  */
 
 import { getServiceSupabase } from "./supabase-server";
 import { getTemplateTenantId } from "./master-tenant-constants";
 import { resolveSourceTemplateIdForClientTenant } from "./provision-template-source";
-import { rebuildIdMapForTenant, type IdMap } from "./ycode-template-clone";
+import {
+  cloneTranslationsForTenant,
+  pickNewerTemplateRow,
+  rebuildIdMapForTenant,
+  type IdMap,
+} from "./ycode-template-clone";
 
 const ORIG_TENANTS_COLLECTION_ID = "7e76e362-3d69-4820-8e9d-7fac282a577a";
 
@@ -36,6 +41,37 @@ const ORIG_TENANT_FIELDS = {
 
 function mapId(origId: string, idMap?: IdMap): string {
   return idMap?.get(origId) ?? origId;
+}
+
+/** Remap reference / multi_reference values after all peer items are in `itemIdMap`. */
+function remapCmsReferenceValue(
+  raw: string,
+  fieldType: string | undefined,
+  itemIdMap: IdMap,
+): string {
+  if (!itemIdMap.size) return raw;
+  if (fieldType === "reference") {
+    const t = raw.trim();
+    if (/^[0-9a-f-]{36}$/i.test(t) && itemIdMap.has(t)) {
+      return itemIdMap.get(t)!;
+    }
+    return raw;
+  }
+  if (fieldType === "multi_reference") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return raw;
+      const next = parsed.map((x: unknown) =>
+        typeof x === "string" && itemIdMap.has(x)
+          ? itemIdMap.get(x)!
+          : x,
+      );
+      return JSON.stringify(next);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
 }
 
 /** Tenants CMS collection id on the source template (draft, else published). */
@@ -101,6 +137,7 @@ export async function reseedTenantCmsDemo(
   );
   const idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
   await seedTenantCmsContent(tenantId, tenantSlug, tenant, idMap, sourceTpl);
+  await cloneTranslationsForTenant(supabase, tenantId, idMap, sourceTpl);
 }
 
 // ── Seed the Tenants collection ─────────────────────────────────────────────
@@ -175,32 +212,81 @@ async function seedTenantsCollection(
 
 // ── Clone template content ──────────────────────────────────────────────────
 
-/** Prefer draft rows; fall back to published if the template has no drafts. */
+/**
+ * One row per collection for this field key. Merge draft + published like
+ * `fetchTemplateVersionRows`: if the template has any draft fields we must still
+ * include collections that only have a published `tenant_id` / `tenant_slug`
+ * field (otherwise demo CMS items for those collections are never cloned).
+ */
 async function selectTemplateFieldsByKey(
   supabase: ReturnType<typeof getServiceSupabase>,
   key: string,
   sourceTemplateId: string,
 ): Promise<{ id: string; collection_id: string }[]> {
-  const draft = await supabase
-    .from("collection_fields")
-    .select("id, collection_id")
-    .eq("key", key)
-    .eq("tenant_id", sourceTemplateId)
-    .eq("is_published", false)
-    .is("deleted_at", null);
+  const [draft, pub] = await Promise.all([
+    supabase
+      .from("collection_fields")
+      .select("id, collection_id, updated_at, is_published")
+      .eq("key", key)
+      .eq("tenant_id", sourceTemplateId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+    supabase
+      .from("collection_fields")
+      .select("id, collection_id, updated_at, is_published")
+      .eq("key", key)
+      .eq("tenant_id", sourceTemplateId)
+      .eq("is_published", true)
+      .is("deleted_at", null),
+  ]);
   if (draft.error) throw new Error(draft.error.message);
-  if (draft.data?.length) {
-    return draft.data as { id: string; collection_id: string }[];
-  }
-  const pub = await supabase
-    .from("collection_fields")
-    .select("id, collection_id")
-    .eq("key", key)
-    .eq("tenant_id", sourceTemplateId)
-    .eq("is_published", true)
-    .is("deleted_at", null);
   if (pub.error) throw new Error(pub.error.message);
-  return (pub.data ?? []) as { id: string; collection_id: string }[];
+
+  const draftByColl = new Map<string, Record<string, unknown>>();
+  for (const row of draft.data ?? []) {
+    draftByColl.set(row.collection_id as string, row as Record<string, unknown>);
+  }
+  const pubByColl = new Map<string, Record<string, unknown>>();
+  for (const row of pub.data ?? []) {
+    pubByColl.set(row.collection_id as string, row as Record<string, unknown>);
+  }
+  const collectionIds = new Set([
+    ...draftByColl.keys(),
+    ...pubByColl.keys(),
+  ]);
+  const out: { id: string; collection_id: string }[] = [];
+  for (const collectionId of collectionIds) {
+    const chosen = pickNewerTemplateRow(
+      draftByColl.get(collectionId),
+      pubByColl.get(collectionId),
+    );
+    if (chosen?.id && chosen.collection_id) {
+      out.push({
+        id: String(chosen.id),
+        collection_id: String(chosen.collection_id),
+      });
+    }
+  }
+  return out;
+}
+
+async function selectTargetFieldIdByKey(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  collectionId: string,
+  tenantUuid: string,
+  key: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("collection_fields")
+    .select("id")
+    .eq("collection_id", collectionId)
+    .eq("tenant_id", tenantUuid)
+    .eq("key", key)
+    .eq("is_published", false)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ? String(data.id) : null;
 }
 
 /**
@@ -225,7 +311,6 @@ async function copyTemplateContentToTenant(
     "tenant_id",
     src,
   );
-  if (!templateTidFields.length) return;
 
   const templateSlugFields = await selectTemplateFieldsByKey(
     supabase,
@@ -239,6 +324,28 @@ async function copyTemplateContentToTenant(
 
   const seenCollections = new Set<string>();
 
+  const { data: tplCollRows, error: tplCollErr } = await supabase
+    .from("collections")
+    .select("id")
+    .eq("tenant_id", src)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (tplCollErr) throw new Error(tplCollErr.message);
+  const templateDraftCollectionIds = new Set(
+    (tplCollRows ?? []).map((c) => c.id as string),
+  );
+
+  type CmsCloneBatch = {
+    newCollectionId: string;
+    templateItemIds: string[];
+    newTidFieldId: string | null;
+    newSlugFieldId?: string;
+    templateItemsPublished: boolean;
+    fieldTypeById: Map<string, string>;
+  };
+
+  const batches: CmsCloneBatch[] = [];
+
   for (const tidField of templateTidFields) {
     const templateCollectionId = tidField.collection_id;
 
@@ -246,16 +353,28 @@ async function copyTemplateContentToTenant(
     if (seenCollections.has(templateCollectionId)) continue;
     seenCollections.add(templateCollectionId);
 
-    const fetchItems = async (published: boolean) =>
-      (
-        await supabase
+    const fetchItems = async (published: boolean) => {
+      const ids = new Set<string>();
+      const { data: owned } = await supabase
+        .from("collection_items")
+        .select("id")
+        .eq("collection_id", templateCollectionId)
+        .eq("tenant_id", src)
+        .eq("is_published", published)
+        .is("deleted_at", null);
+      for (const row of owned ?? []) ids.add(row.id as string);
+      if (templateDraftCollectionIds.has(templateCollectionId)) {
+        const { data: loose } = await supabase
           .from("collection_items")
           .select("id")
           .eq("collection_id", templateCollectionId)
-          .eq("tenant_id", src)
+          .is("tenant_id", null)
           .eq("is_published", published)
-          .is("deleted_at", null)
-      ).data;
+          .is("deleted_at", null);
+        for (const row of loose ?? []) ids.add(row.id as string);
+      }
+      return [...ids].map((id) => ({ id }));
+    };
 
     let templateItemsPublished = false;
     let allItems = await fetchItems(false);
@@ -319,52 +438,204 @@ async function copyTemplateContentToTenant(
       ? mapId(templateSlugFieldId, idMap)
       : undefined;
 
-    for (const sourceItemId of templateItemIds) {
-      await cloneItemForTenant(
+    const { data: collFieldMeta, error: fMetaErr } = await supabase
+      .from("collection_fields")
+      .select("id, type")
+      .eq("collection_id", newCollectionId)
+      .eq("tenant_id", tenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null);
+    if (fMetaErr) throw new Error(fMetaErr.message);
+    const fieldTypeById = new Map(
+      (collFieldMeta ?? []).map((f) => [String(f.id), String(f.type)]),
+    );
+
+    batches.push({
+      newCollectionId,
+      templateItemIds,
+      newTidFieldId,
+      newSlugFieldId,
+      templateItemsPublished,
+      fieldTypeById,
+    });
+  }
+
+  const { data: itemRowsSrc, error: itemRowsErr } = await supabase
+    .from("collection_items")
+    .select("collection_id")
+    .eq("tenant_id", src)
+    .is("deleted_at", null);
+  if (itemRowsErr) throw new Error(itemRowsErr.message);
+
+  const supplementalCollIds = new Set<string>();
+  for (const r of itemRowsSrc ?? []) {
+    supplementalCollIds.add(r.collection_id as string);
+  }
+  if (templateDraftCollectionIds.size > 0) {
+    const collList = [...templateDraftCollectionIds];
+    for (let i = 0; i < collList.length; i += 100) {
+      const chunk = collList.slice(i, i + 100);
+      const { data: nullRows, error: nullErr } = await supabase
+        .from("collection_items")
+        .select("collection_id")
+        .is("tenant_id", null)
+        .is("deleted_at", null)
+        .in("collection_id", chunk);
+      if (nullErr) throw new Error(nullErr.message);
+      for (const r of nullRows ?? []) {
+        supplementalCollIds.add(r.collection_id as string);
+      }
+    }
+  }
+
+  const listDemoItemIdsForSupplemental = async (
+    templateCollectionId: string,
+  ): Promise<{ ids: string[]; templateItemsPublished: boolean }> => {
+    const tryPublished = async (published: boolean) => {
+      const ids = new Set<string>();
+      const { data: owned } = await supabase
+        .from("collection_items")
+        .select("id")
+        .eq("collection_id", templateCollectionId)
+        .eq("tenant_id", src)
+        .eq("is_published", published)
+        .is("deleted_at", null);
+      for (const row of owned ?? []) ids.add(row.id as string);
+      if (templateDraftCollectionIds.has(templateCollectionId)) {
+        const { data: loose } = await supabase
+          .from("collection_items")
+          .select("id")
+          .eq("collection_id", templateCollectionId)
+          .is("tenant_id", null)
+          .eq("is_published", published)
+          .is("deleted_at", null);
+        for (const row of loose ?? []) ids.add(row.id as string);
+      }
+      const arr = [...ids];
+      return arr.length ? { ids: arr, published } : null;
+    };
+    let r = await tryPublished(false);
+    if (r) return { ids: r.ids, templateItemsPublished: r.published };
+    r = await tryPublished(true);
+    if (r) return { ids: r.ids, templateItemsPublished: r.published };
+    return { ids: [], templateItemsPublished: false };
+  };
+
+  for (const templateCollectionId of supplementalCollIds) {
+    if (seenCollections.has(templateCollectionId)) continue;
+    if (templateCollectionId === sourceTenantsCollId) continue;
+    if (!idMap?.has(templateCollectionId)) continue;
+
+    const { ids: templateItemIds, templateItemsPublished } =
+      await listDemoItemIdsForSupplemental(templateCollectionId);
+    if (!templateItemIds.length) continue;
+
+    const newCollectionId = mapId(templateCollectionId, idMap);
+    const newTidFieldId = await selectTargetFieldIdByKey(
+      supabase,
+      newCollectionId,
+      tenantId,
+      "tenant_id",
+    );
+    const slugResolved = await selectTargetFieldIdByKey(
+      supabase,
+      newCollectionId,
+      tenantId,
+      "tenant_slug",
+    );
+    const newSlugFieldId = slugResolved ?? undefined;
+
+    const { data: collFieldMeta2, error: fMetaErr2 } = await supabase
+      .from("collection_fields")
+      .select("id, type")
+      .eq("collection_id", newCollectionId)
+      .eq("tenant_id", tenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null);
+    if (fMetaErr2) throw new Error(fMetaErr2.message);
+    const fieldTypeById2 = new Map(
+      (collFieldMeta2 ?? []).map((f) => [String(f.id), String(f.type)]),
+    );
+
+    batches.push({
+      newCollectionId,
+      templateItemIds,
+      newTidFieldId,
+      newSlugFieldId,
+      templateItemsPublished,
+      fieldTypeById: fieldTypeById2,
+    });
+  }
+
+  const itemIdMap = idMap ?? new Map<string, string>();
+  const now = new Date().toISOString();
+
+  // Phase 1 (all collections): every template item id → new row so reference fields
+  // can point across collections (e.g. event → category).
+  for (const b of batches) {
+    for (const sourceItemId of b.templateItemIds) {
+      const newItemId = crypto.randomUUID();
+      itemIdMap.set(sourceItemId, newItemId);
+
+      const { error: itemErr } = await supabase.from("collection_items").insert({
+        id: newItemId,
+        collection_id: b.newCollectionId,
+        manual_order: 0,
+        is_publishable: true,
+        is_published: false,
+        created_at: now,
+        updated_at: now,
+        tenant_id: tenantId,
+      });
+
+      if (itemErr) {
+        throw new Error(
+          `Failed to clone collection item (${b.newCollectionId}): ${itemErr.message}`,
+        );
+      }
+    }
+  }
+
+  for (const b of batches) {
+    for (const sourceItemId of b.templateItemIds) {
+      const newItemId = itemIdMap.get(sourceItemId);
+      if (!newItemId) {
+        throw new Error(
+          `CMS clone: missing new item id for source ${sourceItemId}`,
+        );
+      }
+      await cloneCollectionItemValuesForTenant(
         sourceItemId,
-        newCollectionId,
+        newItemId,
         tenantId,
         tenantSlug,
-        newTidFieldId,
-        newSlugFieldId,
+        b.newTidFieldId,
+        b.newSlugFieldId,
+        b.fieldTypeById,
+        itemIdMap,
         idMap,
-        templateItemsPublished,
+        b.templateItemsPublished,
       );
     }
   }
 }
 
-async function cloneItemForTenant(
+async function cloneCollectionItemValuesForTenant(
   sourceItemId: string,
-  collectionId: string,
+  newItemId: string,
   tenantId: string,
   tenantSlug: string,
-  tenantIdFieldId: string,
-  tenantSlugFieldId?: string,
-  idMap?: IdMap,
+  /** When null, skip CMS value rows for tenant_id (row-level tenant is still set on collection_items). */
+  tenantIdFieldId: string | null,
+  tenantSlugFieldId: string | undefined,
+  fieldTypeById: Map<string, string>,
+  itemIdMap: IdMap,
+  structureIdMap: IdMap | undefined,
   /** Template item rows were read from published-only snapshots */
-  templateSourcePublished = false,
+  templateSourcePublished: boolean,
 ): Promise<void> {
   const supabase = getServiceSupabase();
-  const newItemId = crypto.randomUUID();
   const now = new Date().toISOString();
-
-  const { error: itemErr } = await supabase.from("collection_items").insert({
-    id: newItemId,
-    collection_id: collectionId,
-    manual_order: 0,
-    is_publishable: true,
-    is_published: false,
-    created_at: now,
-    updated_at: now,
-    tenant_id: tenantId,
-  });
-
-  if (itemErr) {
-    throw new Error(
-      `Failed to clone collection item (${collectionId}): ${itemErr.message}`,
-    );
-  }
 
   let readPublished = templateSourcePublished;
   let { data: sourceValues } = await supabase
@@ -385,42 +656,56 @@ async function cloneItemForTenant(
     sourceValues = fb.data;
   }
 
-  // Template rows may already include tenant_id / tenant_slug; we stamp those below.
-  // Keeping both copies violates idx_collection_item_values_unique (item_id, field_id, is_published).
-  const stampedFieldIds = new Set<string>([tenantIdFieldId]);
-  if (tenantSlugFieldId) stampedFieldIds.add(tenantSlugFieldId);
+  // Drop template tenant_id / tenant_slug value rows; we stamp fresh rows below.
+  // Dedupe by mapped field_id so duplicates cannot violate idx_collection_item_values_unique.
+  const reservedTenantFieldIds = new Set(
+    [tenantIdFieldId, tenantSlugFieldId].filter(
+      (id): id is string => typeof id === "string" && id.length > 0,
+    ),
+  );
 
   const dedupedByMappedField = new Map<
     string,
     { field_id: string; value: string }
   >();
   for (const v of sourceValues ?? []) {
-    const mappedFieldId = mapId(v.field_id, idMap);
-    if (stampedFieldIds.has(mappedFieldId)) continue;
+    const mappedFieldId = mapId(v.field_id, structureIdMap);
+    if (reservedTenantFieldIds.has(mappedFieldId)) continue;
     dedupedByMappedField.set(mappedFieldId, v);
   }
 
-  const clonedRows = [...dedupedByMappedField.values()].map((v) => ({
-    id: crypto.randomUUID(),
-    item_id: newItemId,
-    field_id: mapId(v.field_id, idMap),
-    value: v.value,
-    is_published: false,
-    created_at: now,
-    updated_at: now,
-    tenant_id: tenantId,
-  }));
-
-  clonedRows.push({
-    id: crypto.randomUUID(),
-    item_id: newItemId,
-    field_id: tenantIdFieldId,
-    value: tenantId,
-    is_published: false,
-    created_at: now,
-    updated_at: now,
-    tenant_id: tenantId,
+  const clonedRows = [...dedupedByMappedField.values()].map((v) => {
+    const mappedFieldId = mapId(v.field_id, structureIdMap);
+    const ft = fieldTypeById.get(mappedFieldId);
+    const valueRemapped = remapCmsReferenceValue(
+      v.value as string,
+      ft,
+      itemIdMap,
+    );
+    return {
+      id: crypto.randomUUID(),
+      item_id: newItemId,
+      field_id: mappedFieldId,
+      value: valueRemapped,
+      is_published: false,
+      created_at: now,
+      updated_at: now,
+      tenant_id: tenantId,
+    };
   });
+
+  if (tenantIdFieldId) {
+    clonedRows.push({
+      id: crypto.randomUUID(),
+      item_id: newItemId,
+      field_id: tenantIdFieldId,
+      value: tenantId,
+      is_published: false,
+      created_at: now,
+      updated_at: now,
+      tenant_id: tenantId,
+    });
+  }
 
   if (tenantSlugFieldId) {
     clonedRows.push({
@@ -442,7 +727,7 @@ async function cloneItemForTenant(
 
     if (valErr) {
       throw new Error(
-        `Failed to clone values for item ${sourceItemId} (collection ${collectionId}): ${valErr.message}`,
+        `Failed to clone values for item ${sourceItemId} → ${newItemId}: ${valErr.message}`,
       );
     }
   }
