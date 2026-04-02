@@ -22,6 +22,7 @@ import {
   coerceTenantAdminEmailToSuffix,
   resolvePlaceholderProvisioningEmail,
 } from "./provision-email";
+import { readServerEnv } from "./server-env";
 import {
   assertEmailAvailableForNewTenant,
   normalizeProvisioningEmail,
@@ -37,34 +38,20 @@ export type ProvisionResult = {
   needsCompletion?: boolean;
 };
 
-/** Netlify/Astro inject `import.meta.env`; plain Node (`tsx`) has no `import.meta.env`. */
-function envStr(key: string): string | undefined {
-  let fromMeta: string | undefined;
-  if (typeof import.meta !== "undefined" && import.meta.env) {
-    fromMeta = (import.meta.env as Record<string, string | undefined>)[key];
-  }
-  if (typeof fromMeta === "string" && fromMeta.length > 0) return fromMeta;
-  if (typeof process !== "undefined") {
-    const p = process.env[key];
-    if (typeof p === "string" && p.length > 0) return p;
-  }
-  return undefined;
-}
-
 function getNetlifyToken(): string {
-  const t = envStr("NETLIFY_AUTH_TOKEN");
+  const t = readServerEnv("NETLIFY_AUTH_TOKEN");
   if (!t) throw new Error("NETLIFY_AUTH_TOKEN is not set");
   return t;
 }
 
 function getSiteId(): string {
-  const id = envStr("NETLIFY_SITE_ID");
+  const id = readServerEnv("NETLIFY_SITE_ID");
   if (!id) throw new Error("NETLIFY_SITE_ID is not set");
   return id;
 }
 
 function getDomainSuffix(): string {
-  return envStr("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
+  return readServerEnv("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
 }
 
 /**

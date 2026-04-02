@@ -1,9 +1,11 @@
 /**
  * One-off: provision a client tenant with a random slug, full pipeline + publish.
- * Run from admin-dashboard-v2 with provisioning env set (e.g. Netlify env injected).
+ * Run from admin-dashboard-v2 with provisioning env set.
  *
- *   eval "$(netlify env:list --json | jq -r 'to_entries[] | \"export \\(.key)=\\(.value|@sh)\"')"
- *   npx tsx scripts/provision-test-tenant.ts
+ *   cp .env.example .env   # fill SUPABASE_*, NETLIFY_*, PROVISIONING_WEBHOOK_SECRET, etc.
+ *   npm run provision:test
+ *
+ * Or inject Netlify env, then: npx tsx scripts/provision-test-tenant.ts
  */
 
 import { randomBytes } from "node:crypto";

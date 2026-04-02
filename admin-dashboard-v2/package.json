@@ -11,7 +11,8 @@
     "reseed:cms": "tsx scripts/reseed-cms-cli.ts",
     "provision:cli": "node --import tsx scripts/provision-cli.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "provision:test": "sh -c 'if [ -f .env ]; then node --import tsx --env-file=.env scripts/provision-test-tenant.ts; else node --import tsx scripts/provision-test-tenant.ts; fi'"
   },
   "dependencies": {
     "@astrojs/netlify": "^6.0.0",

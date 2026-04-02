@@ -1,3 +1,5 @@
+import { readServerEnv } from "./server-env";
+
 /**
  * After cloning template + CMS seed, call the YCode app's full publish pipeline
  * (CSS, cache, published_at, collection sync) — same as clicking Publish in the builder.
@@ -62,10 +64,7 @@ export async function triggerPostProvisionPublish(
   domainSuffix: string,
   warnings: string[],
 ): Promise<TriggerPostProvisionPublishResult> {
-  const secret =
-    typeof process !== "undefined"
-      ? process.env["PROVISIONING_WEBHOOK_SECRET"]
-      : undefined;
+  const secret = readServerEnv("PROVISIONING_WEBHOOK_SECRET");
   if (!secret || String(secret).length < 16) {
     warnings.push(
       "Auto-publish skipped: set PROVISIONING_WEBHOOK_SECRET (16+ chars) on this dashboard and the YCode Netlify site to the same value.",
@@ -73,10 +72,7 @@ export async function triggerPostProvisionPublish(
     return { ok: false, configError: true };
   }
 
-  const internalUrl =
-    typeof process !== "undefined"
-      ? process.env["YCODE_SITE_INTERNAL_URL"]
-      : undefined;
+  const internalUrl = readServerEnv("YCODE_SITE_INTERNAL_URL");
 
   const baseUrl = internalUrl || `https://${slug}.${domainSuffix}`;
   const url = `${baseUrl}/ycode/api/publish`;
@@ -93,10 +89,10 @@ export async function triggerPostProvisionPublish(
 
   const publishTimeoutMs = Math.min(
     115_000,
-    Number(process.env["PROVISION_PUBLISH_TIMEOUT_MS"] ?? "") || 115_000,
+    Number(readServerEnv("PROVISION_PUBLISH_TIMEOUT_MS") ?? "") || 115_000,
   );
 
-  const rawMax = Number(process.env["PROVISION_PUBLISH_MAX_ATTEMPTS"] ?? "");
+  const rawMax = Number(readServerEnv("PROVISION_PUBLISH_MAX_ATTEMPTS") ?? "");
   const maxAttempts =
     Number.isFinite(rawMax) && rawMax >= 1 && rawMax <= 5
       ? Math.floor(rawMax)
