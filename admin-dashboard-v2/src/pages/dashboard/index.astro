@@ -67,10 +67,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           <p class="page-desc" style="margin-bottom:0;">Provision, monitor, and manage all tenants on <span class="mono" style="color:var(--accent-hover);">*.{domainSuffix}</span></p>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;">
-        <button type="button" id="previewOrphansBtn" class="btn btn-ghost btn-sm" title="Count rows that would be removed (no changes)">
-          Preview orphans
-        </button>
-        <button type="button" id="cleanupOrphansBtn" class="btn btn-ghost btn-sm" title="Remove YCode/CMS rows whose tenant is missing from tenant_registry">
+        <button type="button" id="cleanupOrphansBtn" class="btn btn-ghost btn-sm" title="Remove CMS rows whose tenant no longer exists">
           Cleanup orphan rows
         </button>
         <button id="toggleFormBtn" class="btn btn-primary">
@@ -224,6 +221,17 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
                         >
                           Login link
                         </button>
+                        {t.status === "provisioning" && (
+                          <button
+                            type="button"
+                            class="btn btn-primary btn-sm"
+                            data-continue-provision-id={t.id}
+                            data-continue-provision-slug={t.slug}
+                            title="Run CMS seed, invite, and publish if phase 1 finished but status stayed on provisioning"
+                          >
+                            Continue setup
+                          </button>
+                        )}
                         {(t.status === "active" || t.status === "suspended") && (
                           <button type="button" class="btn btn-ghost btn-sm" data-deactivate-id={t.id} data-deactivate-slug={t.slug} title="Keep data; mark tenant deactivated">
                             Deactivate
@@ -394,9 +402,80 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     ov.classList.remove("hidden");
     sp.style.display = "block";
     rs.classList.add("hidden");
+    rs.innerHTML = "";
     st.textContent = "Provisioning tenant…";
     dt.textContent = "Setting up database, domain, and CMS content";
     dt.style.display = "block";
+  }
+
+  /** After phase 1 the UI can unblock — CMS seed + publish often take 1–3+ minutes on their own invocations. */
+  function hideProvisionOverlay() {
+    const ov = document.getElementById("provisionOverlay");
+    const sp = document.getElementById("provisionSpinner");
+    const rs = document.getElementById("provisionResult");
+    if (!ov || !sp || !rs) return;
+    ov.classList.add("hidden");
+    sp.style.display = "block";
+    rs.classList.add("hidden");
+    rs.innerHTML = "";
+  }
+
+  /**
+   * Phase 2 + publish (same as post-phase-1 in the form submit handler).
+   * @returns { warnings: string[] }
+   */
+  async function runCompleteAndPublish(tenantId) {
+    const allWarnings = [];
+    const res2 = await fetch("/api/provision-complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenantId }),
+    });
+    let data2;
+    try {
+      data2 = await res2.json();
+    } catch {
+      data2 = null;
+    }
+    if (data2?.ok) {
+      if (data2.warnings) allWarnings.push(...data2.warnings);
+      try {
+        const resPub = await fetch("/api/provision-publish-tenant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tenantId }),
+        });
+        let pubData;
+        try {
+          pubData = await resPub.json();
+        } catch {
+          pubData = null;
+        }
+        if (pubData?.ok) {
+          if (pubData.warnings) allWarnings.push(...pubData.warnings);
+        } else {
+          const msg =
+            pubData?.error ||
+            "Publish step failed or timed out — open the builder and click Publish.";
+          allWarnings.push("Publish: " + msg);
+        }
+      } catch (errPub) {
+        allWarnings.push(
+          "Publish: " +
+            (errPub.message || "request failed — use Publish in the builder."),
+        );
+      }
+    } else {
+      let msg =
+        data2?.error ||
+        "Phase 2 timed out or failed — tenant may need manual activation.";
+      if (data2 == null && res2.status === 504) {
+        msg =
+          "Gateway timeout (504) on completion — retry once; if it persists, contact support (heavy CMS step).";
+      }
+      allWarnings.push("Completion: " + msg);
+    }
+    return { warnings: allWarnings };
   }
 
   function showResult(success, title, detail, url, warnings) {
@@ -503,51 +582,20 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       }
 
       if (data.warnings) allWarnings.push(...data.warnings);
-      const st = document.getElementById("provisionStatus");
-      const dt = document.getElementById("provisionDetail");
-      st.textContent = "Finalizing…";
-      dt.textContent = "Seeding CMS, inviting admin, and activating tenant";
+
+      // Phase 1 is the only “fast” part; phase 2 + publish are separate server invocations and often take 1–3+ minutes.
+      hideProvisionOverlay();
+      addForm.classList.remove("open");
+      toast(
+        "Site copy ready — finishing CMS, invite, and publish in the background (often 1–3 min). You can use the dashboard; refresh when the tenant shows active.",
+        true,
+      );
 
       // Phase 2: CMS seed, invite, activate (separate Netlify invocation from publish)
       if (data.needsCompletion && data.tenantId) {
         try {
-          const res2 = await fetch("/api/provision-complete", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tenantId: data.tenantId }),
-          });
-          let data2;
-          try { data2 = await res2.json(); } catch { data2 = null; }
-          if (data2?.ok) {
-            if (data2.warnings) allWarnings.push(...data2.warnings);
-            st.textContent = "Publishing…";
-            dt.textContent = "Calling YCode publish (may take up to ~2 minutes)";
-            try {
-              const resPub = await fetch("/api/provision-publish-tenant", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tenantId: data.tenantId }),
-              });
-              let pubData;
-              try { pubData = await resPub.json(); } catch { pubData = null; }
-              if (pubData?.ok) {
-                if (pubData.warnings) allWarnings.push(...pubData.warnings);
-              } else {
-                const msg =
-                  pubData?.error ||
-                  "Publish step failed or timed out — open the builder and click Publish.";
-                allWarnings.push("Publish: " + msg);
-              }
-            } catch (errPub) {
-              allWarnings.push(
-                "Publish: " +
-                  (errPub.message || "request failed — use Publish in the builder."),
-              );
-            }
-          } else {
-            const msg = data2?.error || "Phase 2 timed out or failed — tenant may need manual activation.";
-            allWarnings.push("Completion: " + msg);
-          }
+          const { warnings: w2 } = await runCompleteAndPublish(data.tenantId);
+          allWarnings.push(...w2);
         } catch (err2) {
           allWarnings.push("Completion: " + (err2.message || "request failed — tenant may need manual activation."));
         }
@@ -567,6 +615,28 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       btn.disabled = false;
       btn.innerHTML = origHTML;
     }
+  });
+
+  document.querySelectorAll("[data-continue-provision-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tenantId = btn.getAttribute("data-continue-provision-id");
+      const slug = btn.getAttribute("data-continue-provision-slug") || "tenant";
+      if (!tenantId) return;
+      btn.disabled = true;
+      try {
+        toast("Finalizing " + slug + " (CMS, invite, publish — can take a few minutes)…", true);
+        const { warnings } = await runCompleteAndPublish(tenantId);
+        if (warnings.length) {
+          toast(warnings.join(" · ").slice(0, 380), false);
+        } else {
+          toast("Done — refreshing list", true);
+        }
+        location.reload();
+      } catch (e) {
+        toast(e instanceof Error ? e.message : "Continue setup failed", false);
+        btn.disabled = false;
+      }
+    });
   });
 
   /** Clipboard after `await fetch` often fails (user activation consumed); fall back to execCommand / prompt. */
@@ -721,32 +791,9 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     });
   });
 
-  const previewOrphansBtn = document.getElementById("previewOrphansBtn");
-  previewOrphansBtn?.addEventListener("click", async () => {
-    previewOrphansBtn.disabled = true;
-    try {
-      const res = await fetch("/api/cleanup-orphans", { method: "GET" });
-      const data = await res.json();
-      if (data.ok) {
-        const rows = (data.preview && data.preview.length)
-          ? data.preview.map((r) => r.table_name + ": " + r.pending).join(", ")
-          : "none";
-        const total =
-          typeof data.totalPending === "number" ? " (~" + data.totalPending + " rows)" : "";
-        toast("Orphan preview: " + rows + total, true);
-      } else {
-        toast(data.error || "Preview failed", false);
-      }
-    } catch (err) {
-      toast(err.message || "Preview failed", false);
-    } finally {
-      previewOrphansBtn.disabled = false;
-    }
-  });
-
   const cleanupOrphansBtn = document.getElementById("cleanupOrphansBtn");
   cleanupOrphansBtn?.addEventListener("click", async () => {
-    if (!confirm("Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry (and translations for orphan locales)?")) return;
+    if (!confirm("Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry?")) return;
     cleanupOrphansBtn.disabled = true;
     try {
       const res = await fetch("/api/cleanup-orphans", { method: "POST" });

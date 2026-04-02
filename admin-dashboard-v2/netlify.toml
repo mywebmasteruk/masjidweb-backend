@@ -5,4 +5,4 @@
 # Default function timeout is 10s (Hobby) / 26s (Pro). Masjid1 sync may need a higher plan or async job.
 [functions]
   [functions."*"]
-    timeout = "120s"
+    timeout = "300s"

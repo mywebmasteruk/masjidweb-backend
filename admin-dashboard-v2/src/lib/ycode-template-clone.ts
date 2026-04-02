@@ -2,13 +2,21 @@
  * Deep-clone all YCode table data from a template tenant to a new tenant.
  * Uses the service role key (bypasses RLS).
  *
- * Tables cloned: asset_folders, assets, collections, collection_fields,
- * pages, page_layers, components, layer_styles, settings, fonts, locales.
+ * Tables cloned: asset_folders, assets, color_variables, page_folders,
+ * collections, collection_fields, pages, fonts, layer_styles, components,
+ * page_layers, locales, settings.
  *
- * collection_items / collection_item_values are handled by ycode-cms-seed.ts.
+ * Order constraints: fonts and layer_styles before page_layers/components so
+ * `styleId` / font refs remap; components use a two-phase clone so nested
+ * `componentId` values (instances inside master components) all map before `remapIds`.
+ *
+ * Translations (and CMS source_ids) are applied in completeProvision after
+ * CMS seed — see `cloneTranslationsForTenant`.
  *
  * Full tenant table inventory, exclusions, and post-publish patch list:
  * `tenant-clone-manifest.ts`.
+ *
+ * collection_items / collection_item_values are handled by ycode-cms-seed.ts.
  *
  * JSONB blobs have old UUIDs replaced with new ones so cross-references work.
  */
@@ -43,22 +51,87 @@ function parseRowTime(iso: unknown): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
+async function fetchTemplatePageFoldersRows(
+  sb: ReturnType<typeof getServiceSupabase>,
+  templateTenantId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await fetchTemplateVersionRows(
+    sb,
+    "page_folders",
+    templateTenantId,
+  );
+  return [...rows].sort((a, b) => Number(a.depth) - Number(b.depth));
+}
+
 /**
- * When both draft and published rows exist for the same `id`, pick the snapshot
- * that was updated most recently. Tie-break: published (matches the live demo site).
+ * One layers document per page_id — template DB can have duplicates; keep newest.
  */
-export function pickNewerTemplateRow(
-  d: Record<string, unknown> | undefined,
-  p: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  if (d && p) {
-    const dU = parseRowTime(d.updated_at);
-    const pU = parseRowTime(p.updated_at);
-    if (pU > dU) return p;
-    if (dU > pU) return d;
-    return Boolean(p.is_published) && !Boolean(d.is_published) ? p : d;
+async function fetchTemplatePageLayersRows(
+  sb: ReturnType<typeof getServiceSupabase>,
+  templateTenantId: string,
+): Promise<Record<string, unknown>[]> {
+  const merged = await fetchTemplateVersionRows(
+    sb,
+    "page_layers",
+    templateTenantId,
+  );
+  const byPage = new Map<string, Record<string, unknown>>();
+  for (const row of merged) {
+    const pid = row.page_id as string;
+    const prev = byPage.get(pid);
+    if (!prev) {
+      byPage.set(pid, row);
+      continue;
+    }
+    const rowU = parseRowTime(row.updated_at);
+    const prevU = parseRowTime(prev.updated_at);
+    if (rowU > prevU) {
+      byPage.set(pid, row);
+      continue;
+    }
+    if (rowU < prevU) continue;
+    const rowC = parseRowTime(row.created_at);
+    const prevC = parseRowTime(prev.created_at);
+    if (rowC > prevC) {
+      byPage.set(pid, row);
+    }
   }
-  return d ?? p;
+  return [...byPage.values()];
+}
+
+async function cloneColorVariables(
+  sb: ReturnType<typeof getServiceSupabase>,
+  targetTenantId: string,
+  idMap: IdMap,
+  templateTenantId: string,
+): Promise<void> {
+  const { data, error } = await sb
+    .from("color_variables")
+    .select("*")
+    .eq("tenant_id", templateTenantId);
+
+  if (error) {
+    throw new Error(`Failed to read color_variables: ${error.message}`);
+  }
+  if (!data?.length) return;
+
+  const now = new Date().toISOString();
+  for (const raw of data) {
+    const nid = newUuid();
+    idMap.set(raw.id as string, nid);
+    const { error: insertErr } = await sb.from("color_variables").insert({
+      ...raw,
+      id: nid,
+      tenant_id: targetTenantId,
+      created_at: now,
+      updated_at: now,
+    });
+    if (insertErr) {
+      throw new Error(
+        `Failed to clone color_variable ${raw.id}: ${insertErr.message}`,
+      );
+    }
+  }
 }
 
 export async function cloneTemplateForTenant(
@@ -79,6 +152,22 @@ export async function cloneTemplateForTenant(
     asset_folder_id: mapFk(row.asset_folder_id, idMap),
   }));
 
+  await cloneColorVariables(sb, targetTenantId, idMap, templateId);
+
+  await cloneDraftPublished(
+    sb,
+    "page_folders",
+    targetTenantId,
+    idMap,
+    templateId,
+    (row) => ({
+      ...row,
+      page_folder_id: mapFk(row.page_folder_id, idMap),
+      settings: remapIds(row.settings, idMap),
+    }),
+    () => fetchTemplatePageFoldersRows(sb, templateId),
+  );
+
   // `uuid` is globally unique — cannot reuse the template tenant's uuids.
   await cloneDraftPublished(sb, "collections", targetTenantId, idMap, templateId, (row) => ({
     ...row,
@@ -97,24 +186,29 @@ export async function cloneTemplateForTenant(
     settings: remapIds(row.settings, idMap),
   }));
 
-  await cloneDraftPublished(sb, "page_layers", targetTenantId, idMap, templateId, (row) => ({
-    ...row,
-    page_id: mapFk(row.page_id, idMap),
-    layers: remapIds(row.layers, idMap),
-  }));
-
-  await cloneDraftPublished(sb, "components", targetTenantId, idMap, templateId, (row) => ({
-    ...row,
-    layers: remapIds(row.layers, idMap),
-    variables: remapIds(row.variables, idMap),
-  }));
+  await cloneDraftPublished(sb, "fonts", targetTenantId, idMap, templateId);
 
   await cloneDraftPublished(sb, "layer_styles", targetTenantId, idMap, templateId, (row) => ({
     ...row,
     design: remapIds(row.design, idMap),
   }));
 
-  await cloneDraftPublished(sb, "fonts", targetTenantId, idMap, templateId);
+  await cloneComponentsForTenant(sb, targetTenantId, idMap, templateId);
+
+  await cloneDraftPublished(
+    sb,
+    "page_layers",
+    targetTenantId,
+    idMap,
+    templateId,
+    (row) => ({
+      ...row,
+      page_id: mapFk(row.page_id, idMap),
+      layers: remapIds(row.layers, idMap),
+    }),
+    () => fetchTemplatePageLayersRows(sb, templateId),
+  );
+
   await cloneDraftPublished(sb, "locales", targetTenantId, idMap, templateId);
 
   await cloneSettings(sb, targetTenantId, idMap, templateId);
@@ -123,9 +217,90 @@ export async function cloneTemplateForTenant(
 }
 
 /**
- * Prefer draft template rows; if the template only has published snapshots (common
- * after editing/publishing in the builder), fall back to published rows so new
- * tenants still receive full demo content.
+ * Master components often embed nested component instances (`componentId` inside
+ * `layers` JSON). Generic `cloneDraftPublished` registers IDs one row at a time, so
+ * `remapIds` runs before sibling component rows exist in `idMap` and nested refs
+ * stay pointed at the template tenant — empty header/nav in the builder.
+ *
+ * Fix: pre-assign a new UUID in `idMap` for every template component row, then insert
+ * with `remapIds` so all cross-references resolve.
+ */
+async function cloneComponentsForTenant(
+  sb: ReturnType<typeof getServiceSupabase>,
+  targetTenantId: string,
+  idMap: IdMap,
+  templateTenantId: string,
+): Promise<void> {
+  const data = await fetchTemplateVersionRows(sb, "components", templateTenantId);
+  if (!data?.length) return;
+
+  const now = new Date().toISOString();
+
+  for (const raw of data as Record<string, unknown>[]) {
+    idMap.set(raw.id as string, newUuid());
+  }
+
+  for (const raw of data as Record<string, unknown>[]) {
+    const nid = idMap.get(raw.id as string);
+    if (!nid) {
+      throw new Error(
+        `cloneComponentsForTenant: missing idMap entry for component ${String(raw.id)}`,
+      );
+    }
+
+    const base = {
+      ...raw,
+      layers: remapIds(raw.layers, idMap),
+      variables: remapIds(raw.variables, idMap),
+    };
+
+    for (const pub of [false] as const) {
+      const row = {
+        ...base,
+        id: nid,
+        is_published: pub,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+        tenant_id: targetTenantId,
+      };
+      delete (row as Record<string, unknown>).content_hash;
+
+      const { error: insertErr } = await sb.from("components").insert(row);
+      if (insertErr) {
+        throw new Error(
+          `Failed to clone components row ${raw.id}: ${insertErr.message}`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * When both draft and published rows exist for the same `id`, pick the snapshot
+ * that was updated most recently. Tie-break: published (matches the live demo site).
+ *
+ * Always preferring draft caused clones to miss nav/header and other edits that
+ * were published but never re-saved as draft on the template tenant.
+ */
+/** Exported for CMS seed: merge draft vs published field rows the same way as structure clone. */
+export function pickNewerTemplateRow(
+  d: Record<string, unknown> | undefined,
+  p: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (d && p) {
+    const dU = parseRowTime(d.updated_at);
+    const pU = parseRowTime(p.updated_at);
+    if (pU > dU) return p;
+    if (dU > pU) return d;
+    return Boolean(p.is_published) && !Boolean(d.is_published) ? p : d;
+  }
+  return d ?? p;
+}
+
+/**
+ * Merge template draft + published rows by `id`, preferring the **newer** snapshot.
+ * Ensures entities that only exist as published (or only as draft) are still cloned.
  *
  * Exported for `rebuildIdMapForTenant` — it must use the **same** source rows as
  * `cloneTemplateForTenant` or collection/field ids won't match and CMS seed hits
@@ -192,8 +367,11 @@ async function cloneDraftPublished(
   idMap: IdMap,
   templateTenantId: string,
   transform?: (row: Record<string, unknown>) => Record<string, unknown>,
+  fetchRows?: () => Promise<Record<string, unknown>[]>,
 ): Promise<void> {
-  const data = await fetchTemplateVersionRows(sb, table, templateTenantId);
+  const data = fetchRows
+    ? await fetchRows()
+    : await fetchTemplateVersionRows(sb, table, templateTenantId);
   if (!data?.length) return;
 
   const now = new Date().toISOString();
@@ -249,7 +427,7 @@ async function cloneSettings(
     const { error: insertErr } = await sb.from("settings").insert({
       id: newUuid(),
       key: raw.key,
-      value: raw.value,
+      value: remapIds(raw.value, idMap),
       created_at: now,
       updated_at: now,
       tenant_id: targetTenantId,
@@ -262,18 +440,6 @@ async function cloneSettings(
   }
 }
 
-async function fetchTemplatePageFoldersRows(
-  sb: ReturnType<typeof getServiceSupabase>,
-  templateTenantId: string,
-): Promise<Record<string, unknown>[]> {
-  const rows = await fetchTemplateVersionRows(
-    sb,
-    "page_folders",
-    templateTenantId,
-  );
-  return [...rows].sort((a, b) => Number(a.depth) - Number(b.depth));
-}
-
 /**
  * Map template structure IDs → target tenant IDs (locales, folders, pages, components)
  * so translation clone and other post-seed steps can remap `source_id`.
@@ -284,18 +450,54 @@ async function extendStructureIdMapForTenant(
   templateTenantId: string,
   idMap: IdMap,
 ): Promise<void> {
-  const tplLocales = await fetchTemplateVersionRows(
-    sb,
-    "locales",
-    templateTenantId,
-  );
-  const { data: tgtLocales, error: le } = await sb
-    .from("locales")
-    .select("id, code")
-    .eq("tenant_id", targetTenantId)
-    .eq("is_published", false)
-    .is("deleted_at", null);
-  if (le) throw new Error(le.message);
+  const [
+    tplLocales,
+    tplComps,
+    tplFolders,
+    tplPages,
+    locRes,
+    compRes,
+    foldRes,
+    pageRes,
+  ] = await Promise.all([
+    fetchTemplateVersionRows(sb, "locales", templateTenantId),
+    fetchTemplateVersionRows(sb, "components", templateTenantId),
+    fetchTemplatePageFoldersRows(sb, templateTenantId),
+    fetchTemplateVersionRows(sb, "pages", templateTenantId),
+    sb
+      .from("locales")
+      .select("id, code")
+      .eq("tenant_id", targetTenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+    sb
+      .from("components")
+      .select("id, name")
+      .eq("tenant_id", targetTenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+    sb
+      .from("page_folders")
+      .select("id, name, slug, page_folder_id, depth")
+      .eq("tenant_id", targetTenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+    sb
+      .from("pages")
+      .select(
+        "id, name, slug, page_folder_id, is_index, is_dynamic, error_page",
+      )
+      .eq("tenant_id", targetTenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+  ]);
+
+  if (locRes.error) throw new Error(locRes.error.message);
+  if (compRes.error) throw new Error(compRes.error.message);
+  if (foldRes.error) throw new Error(foldRes.error.message);
+  if (pageRes.error) throw new Error(pageRes.error.message);
+
+  const tgtLocales = locRes.data;
   const tgtLocByCode = new Map(
     (tgtLocales ?? []).map((l) => [l.code as string, l.id as string]),
   );
@@ -304,18 +506,7 @@ async function extendStructureIdMapForTenant(
     if (nid) idMap.set(l.id as string, nid);
   }
 
-  const tplComps = await fetchTemplateVersionRows(
-    sb,
-    "components",
-    templateTenantId,
-  );
-  const { data: tgtComps, error: ce } = await sb
-    .from("components")
-    .select("id, name")
-    .eq("tenant_id", targetTenantId)
-    .eq("is_published", false)
-    .is("deleted_at", null);
-  if (ce) throw new Error(ce.message);
+  const tgtComps = compRes.data;
   const tgtCompByName = new Map(
     (tgtComps ?? []).map((c) => [c.name as string, c.id as string]),
   );
@@ -324,15 +515,7 @@ async function extendStructureIdMapForTenant(
     if (nid) idMap.set(c.id as string, nid);
   }
 
-  const tplFolders = await fetchTemplatePageFoldersRows(sb, templateTenantId);
-  const { data: tgtFolders, error: fe } = await sb
-    .from("page_folders")
-    .select("id, name, slug, page_folder_id, depth")
-    .eq("tenant_id", targetTenantId)
-    .eq("is_published", false)
-    .is("deleted_at", null);
-  if (fe) throw new Error(fe.message);
-  const tf = tgtFolders ?? [];
+  const tf = foldRes.data ?? [];
 
   const folderMap = new Map<string, string>();
   for (const f of tplFolders) {
@@ -352,17 +535,7 @@ async function extendStructureIdMapForTenant(
     }
   }
 
-  const tplPages = await fetchTemplateVersionRows(sb, "pages", templateTenantId);
-  const { data: tgtPages, error: pe } = await sb
-    .from("pages")
-    .select(
-      "id, name, slug, page_folder_id, is_index, is_dynamic, error_page",
-    )
-    .eq("tenant_id", targetTenantId)
-    .eq("is_published", false)
-    .is("deleted_at", null);
-  if (pe) throw new Error(pe.message);
-  const tp = tgtPages ?? [];
+  const tp = pageRes.data ?? [];
 
   for (const p of tplPages) {
     const pf = (p.page_folder_id as string | null) ?? null;
@@ -409,7 +582,18 @@ export async function cloneTranslationsForTenant(
   );
   if (!rows.length) return;
 
+  await extendStructureIdMapForTenant(
+    sb,
+    targetTenantId,
+    templateTenantId,
+    idMap,
+  );
+
   const now = new Date().toISOString();
+  const toDbText = (v: unknown): string =>
+    typeof v === "string" ? v : JSON.stringify(v ?? "");
+
+  const toInsert: Record<string, unknown>[] = [];
   for (const raw of rows) {
     const localeId = mapFk(raw.locale_id, idMap);
     if (!localeId) continue;
@@ -419,10 +603,8 @@ export async function cloneTranslationsForTenant(
 
     const contentKeyRemapped = remapIds(raw.content_key, idMap);
     const contentValRemapped = remapIds(raw.content_value, idMap);
-    const toDbText = (v: unknown): string =>
-      typeof v === "string" ? v : JSON.stringify(v ?? "");
 
-    const row = {
+    toInsert.push({
       id: newUuid(),
       locale_id: localeId,
       source_type: raw.source_type,
@@ -436,12 +618,16 @@ export async function cloneTranslationsForTenant(
       updated_at: now,
       deleted_at: null,
       tenant_id: targetTenantId,
-    };
+    });
+  }
 
-    const { error: insertErr } = await sb.from("translations").insert(row);
+  const CHUNK = 80;
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    const chunk = toInsert.slice(i, i + CHUNK);
+    const { error: insertErr } = await sb.from("translations").insert(chunk);
     if (insertErr) {
       throw new Error(
-        `Failed to clone translation (${raw.id}): ${insertErr.message}`,
+        `Failed to clone translations batch (${i}…): ${insertErr.message}`,
       );
     }
   }
@@ -451,6 +637,9 @@ export async function cloneTranslationsForTenant(
  * Rebuild old→new ID mapping by pairing template vs target tenant rows
  * (same `name` on collections; same `key` or `(name, order)` on fields).
  * Used when re-seeding CMS for tenants provisioned before idMap was persisted.
+ *
+ * Does not include locales/pages/components/folder ids — those are merged in
+ * `cloneTranslationsForTenant` only when template translations exist (saves time on phase 2).
  */
 export async function rebuildIdMapForTenant(
   sb: ReturnType<typeof getServiceSupabase>,
@@ -525,13 +714,6 @@ export async function rebuildIdMapForTenant(
     const nid = tgtFieldLookup.get(lookupKey);
     if (nid) idMap.set(f.id, nid);
   }
-
-  await extendStructureIdMapForTenant(
-    sb,
-    targetTenantId,
-    templateTenantId,
-    idMap,
-  );
 
   return idMap;
 }
