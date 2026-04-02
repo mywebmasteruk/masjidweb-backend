@@ -37,6 +37,30 @@ function mapFk(oldId: unknown, idMap: IdMap): string | null {
   return idMap.get(s) ?? s;
 }
 
+function parseRowTime(iso: unknown): number {
+  if (typeof iso !== "string") return 0;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/**
+ * When both draft and published rows exist for the same `id`, pick the snapshot
+ * that was updated most recently. Tie-break: published (matches the live demo site).
+ */
+export function pickNewerTemplateRow(
+  d: Record<string, unknown> | undefined,
+  p: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (d && p) {
+    const dU = parseRowTime(d.updated_at);
+    const pU = parseRowTime(p.updated_at);
+    if (pU > dU) return p;
+    if (dU > pU) return d;
+    return Boolean(p.is_published) && !Boolean(d.is_published) ? p : d;
+  }
+  return d ?? p;
+}
+
 export async function cloneTemplateForTenant(
   targetTenantId: string,
   sourceTemplateTenantId?: string,
@@ -112,31 +136,44 @@ export async function fetchTemplateVersionRows(
   table: string,
   templateTenantId: string,
 ): Promise<Record<string, unknown>[]> {
-  const draft = await sb
-    .from(table)
-    .select("*")
-    .eq("tenant_id", templateTenantId)
-    .eq("is_published", false)
-    .is("deleted_at", null);
+  const [draft, published] = await Promise.all([
+    sb
+      .from(table)
+      .select("*")
+      .eq("tenant_id", templateTenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+    sb
+      .from(table)
+      .select("*")
+      .eq("tenant_id", templateTenantId)
+      .eq("is_published", true)
+      .is("deleted_at", null),
+  ]);
 
   if (draft.error) {
-    throw new Error(`Failed to read ${table}: ${draft.error.message}`);
+    throw new Error(`Failed to read ${table} (draft): ${draft.error.message}`);
   }
-  if (draft.data?.length) {
-    return draft.data as Record<string, unknown>[];
-  }
-
-  const published = await sb
-    .from(table)
-    .select("*")
-    .eq("tenant_id", templateTenantId)
-    .eq("is_published", true)
-    .is("deleted_at", null);
-
   if (published.error) {
-    throw new Error(`Failed to read ${table} (published): ${published.error.message}`);
+    throw new Error(
+      `Failed to read ${table} (published): ${published.error.message}`,
+    );
   }
-  return (published.data ?? []) as Record<string, unknown>[];
+
+  const draftById = new Map(
+    (draft.data ?? []).map((r: { id: string }) => [r.id, r]),
+  );
+  const pubById = new Map(
+    (published.data ?? []).map((r: { id: string }) => [r.id, r]),
+  );
+  const ids = new Set([...draftById.keys(), ...pubById.keys()]);
+  return [...ids].map((id) => {
+    const chosen = pickNewerTemplateRow(draftById.get(id), pubById.get(id));
+    if (!chosen) {
+      throw new Error(`fetchTemplateVersionRows: missing row for id ${id}`);
+    }
+    return chosen;
+  });
 }
 
 /**
@@ -225,6 +262,191 @@ async function cloneSettings(
   }
 }
 
+async function fetchTemplatePageFoldersRows(
+  sb: ReturnType<typeof getServiceSupabase>,
+  templateTenantId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows = await fetchTemplateVersionRows(
+    sb,
+    "page_folders",
+    templateTenantId,
+  );
+  return [...rows].sort((a, b) => Number(a.depth) - Number(b.depth));
+}
+
+/**
+ * Map template structure IDs → target tenant IDs (locales, folders, pages, components)
+ * so translation clone and other post-seed steps can remap `source_id`.
+ */
+async function extendStructureIdMapForTenant(
+  sb: ReturnType<typeof getServiceSupabase>,
+  targetTenantId: string,
+  templateTenantId: string,
+  idMap: IdMap,
+): Promise<void> {
+  const tplLocales = await fetchTemplateVersionRows(
+    sb,
+    "locales",
+    templateTenantId,
+  );
+  const { data: tgtLocales, error: le } = await sb
+    .from("locales")
+    .select("id, code")
+    .eq("tenant_id", targetTenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (le) throw new Error(le.message);
+  const tgtLocByCode = new Map(
+    (tgtLocales ?? []).map((l) => [l.code as string, l.id as string]),
+  );
+  for (const l of tplLocales) {
+    const nid = tgtLocByCode.get(l.code as string);
+    if (nid) idMap.set(l.id as string, nid);
+  }
+
+  const tplComps = await fetchTemplateVersionRows(
+    sb,
+    "components",
+    templateTenantId,
+  );
+  const { data: tgtComps, error: ce } = await sb
+    .from("components")
+    .select("id, name")
+    .eq("tenant_id", targetTenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (ce) throw new Error(ce.message);
+  const tgtCompByName = new Map(
+    (tgtComps ?? []).map((c) => [c.name as string, c.id as string]),
+  );
+  for (const c of tplComps) {
+    const nid = tgtCompByName.get(c.name as string);
+    if (nid) idMap.set(c.id as string, nid);
+  }
+
+  const tplFolders = await fetchTemplatePageFoldersRows(sb, templateTenantId);
+  const { data: tgtFolders, error: fe } = await sb
+    .from("page_folders")
+    .select("id, name, slug, page_folder_id, depth")
+    .eq("tenant_id", targetTenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (fe) throw new Error(fe.message);
+  const tf = tgtFolders ?? [];
+
+  const folderMap = new Map<string, string>();
+  for (const f of tplFolders) {
+    const parentTpl = (f.page_folder_id as string | null) ?? null;
+    const expectedParent = parentTpl ? folderMap.get(parentTpl) : null;
+    if (parentTpl && expectedParent === undefined) continue;
+
+    const match = tf.find(
+      (x) =>
+        x.slug === f.slug &&
+        x.name === f.name &&
+        (x.page_folder_id ?? null) === (expectedParent ?? null),
+    );
+    if (match) {
+      folderMap.set(f.id as string, match.id as string);
+      idMap.set(f.id as string, match.id as string);
+    }
+  }
+
+  const tplPages = await fetchTemplateVersionRows(sb, "pages", templateTenantId);
+  const { data: tgtPages, error: pe } = await sb
+    .from("pages")
+    .select(
+      "id, name, slug, page_folder_id, is_index, is_dynamic, error_page",
+    )
+    .eq("tenant_id", targetTenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (pe) throw new Error(pe.message);
+  const tp = tgtPages ?? [];
+
+  for (const p of tplPages) {
+    const pf = (p.page_folder_id as string | null) ?? null;
+    if (pf && !idMap.has(pf)) continue;
+    const mappedFolder = pf ? idMap.get(pf) ?? null : null;
+
+    const match = tp.find(
+      (x) =>
+        x.slug === p.slug &&
+        x.name === p.name &&
+        Boolean(x.is_index) === Boolean(p.is_index) &&
+        Boolean(x.is_dynamic) === Boolean(p.is_dynamic) &&
+        (x.error_page ?? null) === (p.error_page ?? null) &&
+        (x.page_folder_id ?? null) === (mappedFolder ?? null),
+    );
+    if (match) idMap.set(p.id as string, match.id as string);
+  }
+}
+
+/**
+ * Copy template translations into the target tenant (draft only). Skips if the
+ * tenant already has draft translations (safe on provision retries).
+ * Call after `seedTenantCmsContent` so `idMap` includes cloned collection_item ids.
+ */
+export async function cloneTranslationsForTenant(
+  sb: ReturnType<typeof getServiceSupabase>,
+  targetTenantId: string,
+  idMap: IdMap,
+  templateTenantId: string,
+): Promise<void> {
+  const { count, error: cErr } = await sb
+    .from("translations")
+    .select("*", { count: "exact", head: true })
+    .eq("tenant_id", targetTenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (cErr) throw new Error(`translations count: ${cErr.message}`);
+  if ((count ?? 0) > 0) return;
+
+  const rows = await fetchTemplateVersionRows(
+    sb,
+    "translations",
+    templateTenantId,
+  );
+  if (!rows.length) return;
+
+  const now = new Date().toISOString();
+  for (const raw of rows) {
+    const localeId = mapFk(raw.locale_id, idMap);
+    if (!localeId) continue;
+
+    const sid = String(raw.source_id ?? "");
+    const mappedSource = idMap.get(sid) ?? sid;
+
+    const contentKeyRemapped = remapIds(raw.content_key, idMap);
+    const contentValRemapped = remapIds(raw.content_value, idMap);
+    const toDbText = (v: unknown): string =>
+      typeof v === "string" ? v : JSON.stringify(v ?? "");
+
+    const row = {
+      id: newUuid(),
+      locale_id: localeId,
+      source_type: raw.source_type,
+      source_id: mappedSource,
+      content_key: toDbText(contentKeyRemapped),
+      content_type: raw.content_type,
+      content_value: toDbText(contentValRemapped),
+      is_completed: Boolean(raw.is_completed),
+      is_published: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      tenant_id: targetTenantId,
+    };
+
+    const { error: insertErr } = await sb.from("translations").insert(row);
+    if (insertErr) {
+      throw new Error(
+        `Failed to clone translation (${raw.id}): ${insertErr.message}`,
+      );
+    }
+  }
+}
+
 /**
  * Rebuild old→new ID mapping by pairing template vs target tenant rows
  * (same `name` on collections; same `key` or `(name, order)` on fields).
@@ -303,6 +525,13 @@ export async function rebuildIdMapForTenant(
     const nid = tgtFieldLookup.get(lookupKey);
     if (nid) idMap.set(f.id, nid);
   }
+
+  await extendStructureIdMapForTenant(
+    sb,
+    targetTenantId,
+    templateTenantId,
+    idMap,
+  );
 
   return idMap;
 }
