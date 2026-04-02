@@ -67,7 +67,10 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           <p class="page-desc" style="margin-bottom:0;">Provision, monitor, and manage all tenants on <span class="mono" style="color:var(--accent-hover);">*.{domainSuffix}</span></p>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;">
-        <button type="button" id="cleanupOrphansBtn" class="btn btn-ghost btn-sm" title="Remove CMS rows whose tenant no longer exists">
+        <button type="button" id="previewOrphansBtn" class="btn btn-ghost btn-sm" title="Count rows that would be removed (no changes)">
+          Preview orphans
+        </button>
+        <button type="button" id="cleanupOrphansBtn" class="btn btn-ghost btn-sm" title="Remove YCode/CMS rows whose tenant is missing from tenant_registry">
           Cleanup orphan rows
         </button>
         <button id="toggleFormBtn" class="btn btn-primary">
@@ -718,9 +721,32 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     });
   });
 
+  const previewOrphansBtn = document.getElementById("previewOrphansBtn");
+  previewOrphansBtn?.addEventListener("click", async () => {
+    previewOrphansBtn.disabled = true;
+    try {
+      const res = await fetch("/api/cleanup-orphans", { method: "GET" });
+      const data = await res.json();
+      if (data.ok) {
+        const rows = (data.preview && data.preview.length)
+          ? data.preview.map((r) => r.table_name + ": " + r.pending).join(", ")
+          : "none";
+        const total =
+          typeof data.totalPending === "number" ? " (~" + data.totalPending + " rows)" : "";
+        toast("Orphan preview: " + rows + total, true);
+      } else {
+        toast(data.error || "Preview failed", false);
+      }
+    } catch (err) {
+      toast(err.message || "Preview failed", false);
+    } finally {
+      previewOrphansBtn.disabled = false;
+    }
+  });
+
   const cleanupOrphansBtn = document.getElementById("cleanupOrphansBtn");
   cleanupOrphansBtn?.addEventListener("click", async () => {
-    if (!confirm("Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry?")) return;
+    if (!confirm("Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry (and translations for orphan locales)?")) return;
     cleanupOrphansBtn.disabled = true;
     try {
       const res = await fetch("/api/cleanup-orphans", { method: "POST" });
