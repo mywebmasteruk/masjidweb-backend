@@ -112,7 +112,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           <span class="badge badge-gray" style="font-size:.7rem;">{clientTenants.length} clients · {demoTenants.length} demos</span>
         </div>
 
-        <div id="addForm" class="form-reveal">
+        <div id="addForm" class="form-reveal open">
           <form id="provisionForm">
             {templateOptions && templateOptions.length > 0 ? (
               <div class="field">
@@ -627,10 +627,8 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
 
   const addForm = document.getElementById("addForm");
   document.getElementById("toggleFormBtn").addEventListener("click", () => {
-    addForm.classList.toggle("open");
-    if (addForm.classList.contains("open")) {
-      addForm.querySelector("input")?.focus();
-    }
+    addForm.classList.add("open");
+    addForm.querySelector("input")?.focus();
   });
   document.getElementById("cancelBtn").addEventListener("click", () => {
     addForm.classList.remove("open");
