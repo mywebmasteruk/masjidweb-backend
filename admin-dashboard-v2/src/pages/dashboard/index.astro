@@ -431,6 +431,42 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
+   * Phase 1 (clone) can still hit 504 on cold functions or large templates.
+   */
+  async function fetchProvisionPhase1WithRetry(body) {
+    const maxAttempts = 3;
+    const baseDelayMs = 2500;
+    let lastRes = /** @type {Response | null} */ (null);
+    let lastData = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      lastRes = await fetch("/api/provision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      try {
+        lastData = await lastRes.json();
+      } catch {
+        lastData = null;
+      }
+      if (lastData?.ok) {
+        return { res: lastRes, data: lastData };
+      }
+      const retryable =
+        lastRes.status === 504 ||
+        lastRes.status === 502 ||
+        lastRes.status === 503 ||
+        (lastData == null && lastRes.status >= 500);
+      if (retryable && attempt < maxAttempts) {
+        await sleep(baseDelayMs * attempt);
+      } else {
+        break;
+      }
+    }
+    return { res: lastRes, data: lastData };
+  }
+
+  /**
    * Phase 2 can 504 if invoked immediately after phase 1 (cold SSR + heavy work).
    * Retries mirror what often succeeds when the user clicks "Continue setup" later.
    */
@@ -465,8 +501,39 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     return { res: lastRes, data: lastData };
   }
 
+  async function fetchProvisionPublishWithRetry(tenantId) {
+    const maxAttempts = 3;
+    const baseDelayMs = 2500;
+    let lastRes = /** @type {Response | null} */ (null);
+    let lastData = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      lastRes = await fetch("/api/provision-publish-tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      });
+      try {
+        lastData = await lastRes.json();
+      } catch {
+        lastData = null;
+      }
+      if (lastData?.ok) {
+        return { res: lastRes, data: lastData };
+      }
+      const retryable =
+        lastRes.status === 504 ||
+        lastRes.status === 502 ||
+        lastRes.status === 503 ||
+        (lastData == null && lastRes.status >= 500);
+      if (retryable && attempt < maxAttempts) {
+        await sleep(baseDelayMs * attempt);
+      }
+    }
+    return { res: lastRes, data: lastData };
+  }
+
   /**
-   * Phase 2 + publish (same as post-phase-1 in the form submit handler).
+   * Phase 2 + publish — separate requests from phase 1 so each Netlify invocation stays within limits.
    * @returns { warnings: string[] }
    */
   async function runCompleteAndPublish(tenantId) {
@@ -475,23 +542,22 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     if (data2?.ok) {
       if (data2.warnings) allWarnings.push(...data2.warnings);
       try {
-        const resPub = await fetch("/api/provision-publish-tenant", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tenantId }),
-        });
-        let pubData;
-        try {
-          pubData = await resPub.json();
-        } catch {
-          pubData = null;
-        }
+        const { res: resPub, data: pubData } =
+          await fetchProvisionPublishWithRetry(tenantId);
         if (pubData?.ok) {
           if (pubData.warnings) allWarnings.push(...pubData.warnings);
         } else {
-          const msg =
+          let msg =
             pubData?.error ||
             "Publish step failed or timed out — open the builder and click Publish.";
+          if (pubData?.configError) {
+            msg =
+              pubData.error ||
+              "Set PROVISIONING_WEBHOOK_SECRET on the admin dashboard and YCode Netlify site (same value, 16+ chars).";
+          } else if (pubData == null && resPub && resPub.status === 504) {
+            msg =
+              "Gateway timeout (504) on publish — retried; open the builder and click Publish if the site is empty.";
+          }
           allWarnings.push("Publish: " + msg);
         }
       } catch (errPub) {
@@ -554,7 +620,6 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       '<br><button class="btn btn-ghost btn-sm" style="margin-top:1rem;" onclick="location.reload()">Back to dashboard</button>';
     st.innerHTML = stHtml;
   }
-
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
@@ -602,18 +667,12 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     const body = Object.fromEntries(fd.entries());
     const allWarnings = [];
     try {
-      // Phase 1: fast — insert + domain alias + clone template
-      const res = await fetch("/api/provision", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      let data;
-      try {
-        data = await res.json();
-      } catch {
-        throw new Error("Server returned non-JSON response (status " + res.status + ")");
+      // Phase 1: insert + domain alias + clone template (retries on 502/503/504)
+      const { res, data } = await fetchProvisionPhase1WithRetry(body);
+      if (!data) {
+        throw new Error(
+          "Server returned non-JSON response (status " + (res?.status ?? "?") + ")",
+        );
       }
 
       if (!data.ok) {
@@ -629,70 +688,37 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       if (data.warnings) allWarnings.push(...data.warnings);
 
       addForm.classList.remove("open");
+      toast(
+        "Site copy ready — running CMS seed, invite, and publish (often 1–3 minutes)…",
+        true,
+      );
 
-      const stEl = document.getElementById("provisionStatus");
-      const dtEl = document.getElementById("provisionDetail");
-      const stepsEl = document.getElementById("provisionSteps");
-      const spinEl = document.getElementById("provisionSpinner");
-
-      function setProvisionSteps(lines) {
-        if (!stepsEl) return;
-        stepsEl.classList.remove("hidden");
-        stepsEl.innerHTML = lines
-          .map(
-            (line) =>
-              "<li style=\"margin:.2rem 0\">" + line + "</li>",
-          )
-          .join("");
-      }
-
-      // Phase 2 (+ publish on dev) runs on the server in the same POST as phase 1.
-      if (data.publishPending && data.tenantId) {
-        if (stEl) stEl.textContent = "Finishing live publish…";
+      // Phase 2 + publish: separate API calls (same Netlify budget as Continue setup — avoids 504 on one giant request).
+      if (data.needsCompletion && data.tenantId) {
+        const stEl = document.getElementById("provisionStatus");
+        const dtEl = document.getElementById("provisionDetail");
+        const stepsEl = document.getElementById("provisionSteps");
+        if (stEl) stEl.textContent = "Finishing setup…";
         if (dtEl) {
           dtEl.textContent =
-            "Site copy and CMS setup are done on the server. Waiting for background publish (often 1–2 minutes).";
+            "CMS seed, invite, and YCode publish (please keep this tab open).";
         }
-        setProvisionSteps([
-          "<strong>Done</strong> — domain, template clone, CMS seed, invite, activation",
-          "<strong>In progress</strong> — YCode publish to go live",
-        ]);
-        if (spinEl) spinEl.style.display = "block";
-
-        const deadline = Date.now() + 180000;
-        let terminal = false;
-        while (Date.now() < deadline && !terminal) {
-          await sleep(2500);
-          let stRes;
-          try {
-            stRes = await fetch(
-              "/api/provision-status?tenantId=" + encodeURIComponent(data.tenantId),
-            );
-          } catch {
-            continue;
-          }
-          let stData;
-          try {
-            stData = await stRes.json();
-          } catch {
-            continue;
-          }
-          if (stData?.publishStepDone || stData?.publishFailed) {
-            terminal = true;
-            if (stData.publishFailed) {
-              allWarnings.push(
-                "Background publish reported a failure — check the audit log or open the builder and click Publish.",
-              );
-            }
-          }
+        if (stepsEl) {
+          stepsEl.classList.remove("hidden");
+          stepsEl.innerHTML =
+            "<li style=\"margin:.2rem 0\"><strong>Done</strong> — domain, template clone</li>" +
+            "<li style=\"margin:.2rem 0\"><strong>In progress</strong> — CMS, invite, publish</li>";
         }
-        if (!terminal) {
+        try {
+          await sleep(3500);
+          const { warnings: w2 } = await runCompleteAndPublish(data.tenantId);
+          allWarnings.push(...w2);
+        } catch (err2) {
           allWarnings.push(
-            "Could not confirm publish finished — refresh this page in a minute or use Publish in the builder.",
+            "Completion: " +
+              (err2.message || "request failed — use Continue setup after refresh."),
           );
         }
-      } else {
-        toast("Provisioning finished.", true);
       }
 
       const siteHttps = "https://" + data.slug + "." + domainSuffix;
@@ -703,14 +729,18 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         "If you only see masjidweb.com in that link, check Warnings (invite may have failed), " +
         "or open the new site and use Settings → Users to resend the invite.";
       const completionFailed = allWarnings.some((w) => w.startsWith("Completion:"));
+      const publishFailed = allWarnings.some((w) => w.startsWith("Publish:"));
+      const setupIncomplete = completionFailed || publishFailed;
       hideProvisionOverlay();
       showResult(
-        !completionFailed,
-        completionFailed
+        !setupIncomplete,
+        setupIncomplete
           ? 'Tenant "' + data.slug + '" — copy ready, setup incomplete'
           : 'Tenant "' + data.slug + '" provisioned!',
-        completionFailed
-          ? "The server returned an error during setup. Use Continue setup on this tenant’s row after refreshing, or check the audit log."
+        setupIncomplete
+          ? (publishFailed && !completionFailed
+              ? "CMS and invite may be done, but the site was not published to YCode. Check Warnings (webhook secret / timeout), then use Continue setup or Publish in the builder."
+              : "Setup did not finish in one pass. Refresh and use Continue setup on this tenant, or check the audit log.")
           : inviteExplain,
         siteHttps,
         allWarnings,

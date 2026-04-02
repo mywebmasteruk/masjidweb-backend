@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { isInternalProvisionRequest } from "../../lib/provision-internal-auth";
 import { publishTenantAfterProvision } from "../../lib/provision-pipeline";
+import { ProvisionPublishConfigError } from "../../lib/provision-publish";
 
 export const POST: APIRoute = async (context) => {
   if (
@@ -41,6 +42,12 @@ export const POST: APIRoute = async (context) => {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (e) {
+    if (e instanceof ProvisionPublishConfigError) {
+      return new Response(
+        JSON.stringify({ ok: false, error: e.message, configError: true }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
     const message = e instanceof Error ? e.message : String(e);
     return new Response(
       JSON.stringify({ ok: false, error: message }),

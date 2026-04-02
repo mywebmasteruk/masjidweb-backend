@@ -11,10 +11,10 @@ Run after deploying admin-dashboard-v2 with `SUPABASE_URL`, `SUPABASE_SERVICE_RO
 ## 2. Happy path (unique email)
 
 1. Call `POST /api/provision` with a **new** slug and an email **not** present in `tenant_registry`.
-2. Expect `200`, `ok: true`, `tenantId`, `slug`, `siteUrl`, `needsCompletion: false` (the server runs phase 2 in the same invocation after clone), and possibly `warnings`.
-3. On Netlify production, expect `publishPending: true` when background publish is scheduled (`waitUntil`); the UI polls `GET /api/provision-status?tenantId=…` until `provision_publish_step` appears in `provisioning_audit_log`. Local dev usually awaits publish inline (`publishPending: false`).
-4. In Supabase: confirm `tenant_registry.email` matches the normalized (lowercase, trimmed) address and `status` is `active` after the request succeeds.
-5. Demo parity warnings (template vs tenant row counts, published CMS) are appended during the **publish** step, not during activation — they are non-fatal.
+2. Expect `200`, `ok: true`, `tenantId`, `slug`, `siteUrl`, `needsCompletion: true` (phase 1 only: clone + domain), and possibly `warnings`.
+3. The dashboard then calls `POST /api/provision-complete` and `POST /api/provision-publish-tenant` in separate requests (same as **Continue setup**), so each Netlify function stays within time limits and YCode publish completes before the user opens the builder.
+4. In Supabase: after the full flow, `tenant_registry.status` is `active` and the builder should show template content (draft + published after publish step).
+5. Demo parity warnings (template vs tenant row counts, published CMS) are appended during the **publish** step — they are non-fatal.
 
 ### Idempotency (retries)
 
