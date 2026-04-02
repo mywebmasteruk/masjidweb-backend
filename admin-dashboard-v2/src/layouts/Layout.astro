@@ -191,7 +191,6 @@ const { title } = Astro.props;
 
     .form-reveal {
       overflow: hidden; max-height: 0; opacity: 0;
-      pointer-events: none;
       transition: max-height .35s ease, opacity .25s ease, padding .25s ease;
       padding-top: 0;
     }
@@ -200,7 +199,6 @@ const { title } = Astro.props;
       border-top: 1px solid var(--border); margin-top: 1rem;
       position: relative;
       z-index: 4;
-      pointer-events: auto;
     }
     /* Prevent table head / rows from sitting above the provision form (click interception). */
     .card table { position: relative; z-index: 0; }
