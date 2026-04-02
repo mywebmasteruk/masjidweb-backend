@@ -720,10 +720,18 @@ async function cloneCollectionItemValuesForTenant(
     });
   }
 
-  if (clonedRows.length) {
+  // One row per field_id — template data can repeat the same logical field (e.g. draft +
+  // published field ids both mapping here, or legacy duplicates). DB enforces uniqueness.
+  const byFieldId = new Map<string, (typeof clonedRows)[number]>();
+  for (const row of clonedRows) {
+    byFieldId.set(row.field_id, row);
+  }
+  const rowsToInsert = [...byFieldId.values()];
+
+  if (rowsToInsert.length) {
     const { error: valErr } = await supabase
       .from("collection_item_values")
-      .insert(clonedRows);
+      .insert(rowsToInsert);
 
     if (valErr) {
       throw new Error(
