@@ -1,0 +1,43 @@
+/**
+ * One-off: provision a client tenant with a random slug, full pipeline + publish.
+ * Run from admin-dashboard-v2 with provisioning env set (e.g. Netlify env injected).
+ *
+ *   eval "$(netlify env:list --json | jq -r 'to_entries[] | \"export \\(.key)=\\(.value|@sh)\"')"
+ *   npx tsx scripts/provision-test-tenant.ts
+ */
+
+import { randomBytes } from "node:crypto";
+import {
+  completeProvision,
+  publishTenantAfterProvision,
+  startProvision,
+} from "../src/lib/provision-pipeline";
+
+const suffix = randomBytes(4).toString("hex");
+const slug = `cloneverify-${suffix}`;
+const templateId =
+  process.env.TEMPLATE_TENANT_ID ?? "2fff887d-a78e-4256-9116-6e02fe38c614";
+
+const payload = {
+  business_name: `Clone verify ${suffix}`,
+  email: `${slug}@masjidweb.com`,
+  slug,
+  source_template_tenant_id: templateId,
+};
+
+async function main(): Promise<void> {
+  console.log("Provisioning slug:", slug);
+  const p1 = await startProvision(payload, "provision-test-tenant");
+  console.log("Phase 1:", JSON.stringify({ ...p1, warnings: p1.warnings }, null, 2));
+  const p2 = await completeProvision(p1.tenantId, "provision-test-tenant");
+  console.log("Phase 2 warnings:", JSON.stringify(p2.warnings, null, 2));
+  const p2b = await publishTenantAfterProvision(p1.tenantId, "provision-test-tenant");
+  console.log("Publish warnings:", JSON.stringify(p2b.warnings, null, 2));
+  console.log("\nVERIFY_URL", p1.siteUrl);
+  console.log("BUILDER_URL", `${p1.siteUrl.replace(/\/$/, "")}/ycode`);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

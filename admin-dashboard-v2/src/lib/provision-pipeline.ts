@@ -3,13 +3,14 @@ import { addDomainAlias } from "./netlify-domains";
 import { slugify } from "./slug";
 import { createTenantSchema, type CreateTenantInput } from "./tenant-schema";
 import { seedTenantCmsContent } from "./ycode-cms-seed";
-import { cloneTemplateForTenant, rebuildIdMapForTenant } from "./ycode-template-clone";
+import {
+  cloneTemplateForTenant,
+  cloneTranslationsForTenant,
+  rebuildIdMapForTenant,
+} from "./ycode-template-clone";
 import { triggerPostProvisionPublish } from "./provision-publish";
 import { patchNullTenantIds } from "./provision-tenant-patch";
-import {
-  appendPublishedCollectionDemoWarning,
-  verifyTenantDemoData,
-} from "./provision-demo-verify";
+import { verifyTenantDemoData } from "./provision-demo-verify";
 import {
   assertValidSourceTemplate,
   resolveSourceTemplateIdForClientTenant,
@@ -250,6 +251,8 @@ export async function completeProvision(
       sourceTpl,
     );
 
+    await cloneTranslationsForTenant(supabase, tenantId, idMap, sourceTpl);
+
     // 2. Patch null tenant_ids from clone
     await patchNullTenantIds(supabase, tenantId);
 
@@ -278,16 +281,11 @@ export async function completeProvision(
       warnings.push(`User invite: ${msg}`);
     }
 
-    // 4. Mark active before the separate publish HTTP step (avoids exceeding one function timeout)
+    // 4. Mark active before publish (demo parity checks run in publishTenantAfterProvision — non-blocking for activation).
     await supabase
       .from("tenant_registry")
       .update({ status: "active", updated_at: new Date().toISOString() })
       .eq("id", tenantId);
-
-    // 5. Demo checks (draft/structure). Published CMS check runs after POST /ycode/api/publish.
-    await verifyTenantDemoData(supabase, tenantId, warnings, sourceTpl, {
-      skipPublishedCollectionCheck: true,
-    });
 
     await supabase.from("provisioning_audit_log").insert({
       tenant_id: tenantId,
@@ -316,7 +314,8 @@ export async function completeProvision(
 }
 
 /**
- * Phase 2b — own Netlify invocation so YCode publish (slow) does not blow the phase-2 budget.
+ * Phase 2b — YCode publish + post-publish demo checks (draft parity + published collection snapshot).
+ * Often scheduled with Netlify `waitUntil` so the HTTP response can return after phase 2 while publish finishes.
  */
 export async function publishTenantAfterProvision(
   tenantId: string,
@@ -341,8 +340,15 @@ export async function publishTenantAfterProvision(
 
   const slug = tenant.slug as string;
   const warnings: string[] = [];
+  const sourceTpl = await resolveSourceTemplateIdForClientTenant(
+    supabase,
+    tenantId,
+  );
+
   await triggerPostProvisionPublish(slug, domainSuffix, warnings);
-  await appendPublishedCollectionDemoWarning(supabase, tenantId, warnings);
+  await verifyTenantDemoData(supabase, tenantId, warnings, sourceTpl, {
+    skipPublishedCollectionCheck: false,
+  });
 
   await supabase.from("provisioning_audit_log").insert({
     tenant_id: tenantId,

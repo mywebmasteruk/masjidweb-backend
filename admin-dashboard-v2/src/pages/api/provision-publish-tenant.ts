@@ -1,9 +1,13 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../lib/auth-helpers";
+import { isInternalProvisionRequest } from "../../lib/provision-internal-auth";
 import { publishTenantAfterProvision } from "../../lib/provision-pipeline";
 
 export const POST: APIRoute = async (context) => {
-  if (!(await isAuthorized(context))) {
+  if (
+    !(await isAuthorized(context)) &&
+    !isInternalProvisionRequest(context.request)
+  ) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },

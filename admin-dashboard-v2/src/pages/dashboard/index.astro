@@ -380,6 +380,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     <div id="provisionResult" class="hidden"></div>
     <p id="provisionStatus" style="font-size:.9rem;font-weight:500;">Provisioning tenant…</p>
     <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">Setting up database, domain, and CMS content</p>
+    <ol id="provisionSteps" class="text-xs text-muted hidden" style="margin:0.75rem 0 0;text-align:left;padding-left:1.25rem;line-height:1.5;"></ol>
   </div>
 </div>
 
@@ -406,6 +407,11 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     st.textContent = "Provisioning tenant…";
     dt.textContent = "Setting up database, domain, and CMS content";
     dt.style.display = "block";
+    const stepsEl = document.getElementById("provisionSteps");
+    if (stepsEl) {
+      stepsEl.classList.add("hidden");
+      stepsEl.innerHTML = "";
+    }
   }
 
   /** After phase 1 the UI can unblock — CMS seed + publish often take 1–3+ minutes on their own invocations. */
@@ -420,23 +426,52 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     rs.innerHTML = "";
   }
 
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  /**
+   * Phase 2 can 504 if invoked immediately after phase 1 (cold SSR + heavy work).
+   * Retries mirror what often succeeds when the user clicks "Continue setup" later.
+   */
+  async function fetchProvisionCompleteWithRetry(tenantId) {
+    const maxAttempts = 3;
+    const baseDelayMs = 2500;
+    let lastRes = /** @type {Response | null} */ (null);
+    let lastData = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      lastRes = await fetch("/api/provision-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      });
+      try {
+        lastData = await lastRes.json();
+      } catch {
+        lastData = null;
+      }
+      if (lastData?.ok) {
+        return { res: lastRes, data: lastData };
+      }
+      const retryable =
+        lastRes.status === 504 ||
+        lastRes.status === 502 ||
+        lastRes.status === 503 ||
+        (lastData == null && lastRes.status >= 500);
+      if (retryable && attempt < maxAttempts) {
+        await sleep(baseDelayMs * attempt);
+      }
+    }
+    return { res: lastRes, data: lastData };
+  }
+
   /**
    * Phase 2 + publish (same as post-phase-1 in the form submit handler).
    * @returns { warnings: string[] }
    */
   async function runCompleteAndPublish(tenantId) {
     const allWarnings = [];
-    const res2 = await fetch("/api/provision-complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenantId }),
-    });
-    let data2;
-    try {
-      data2 = await res2.json();
-    } catch {
-      data2 = null;
-    }
+    const { res: res2, data: data2 } = await fetchProvisionCompleteWithRetry(tenantId);
     if (data2?.ok) {
       if (data2.warnings) allWarnings.push(...data2.warnings);
       try {
@@ -469,9 +504,9 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       let msg =
         data2?.error ||
         "Phase 2 timed out or failed — tenant may need manual activation.";
-      if (data2 == null && res2.status === 504) {
+      if (data2 == null && res2 && res2.status === 504) {
         msg =
-          "Gateway timeout (504) on completion — retry once; if it persists, contact support (heavy CMS step).";
+          "Gateway timeout (504) on completion — retried automatically; use Continue setup if still stuck.";
       }
       allWarnings.push("Completion: " + msg);
     }
@@ -479,10 +514,12 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   function showResult(success, title, detail, url, warnings) {
+    const ov = document.getElementById("provisionOverlay");
     const sp = document.getElementById("provisionSpinner");
     const rs = document.getElementById("provisionResult");
     const st = document.getElementById("provisionStatus");
     const dt = document.getElementById("provisionDetail");
+    if (ov) ov.classList.remove("hidden");
     sp.style.display = "none";
 
     let html = '<div class="result-icon ' + (success ? 'success' : 'error') + '">';
@@ -494,7 +531,6 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     html += '</div>';
     rs.innerHTML = html;
     rs.classList.remove("hidden");
-    st.textContent = title;
 
     if (detail) {
       dt.textContent = detail;
@@ -503,15 +539,20 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       dt.style.display = "none";
     }
 
+    let stHtml = title;
     if (url) {
-      st.innerHTML = title + '<br><a href="' + url + '" target="_blank" class="result-url">' + url + '</a>';
+      stHtml +=
+        '<br><a href="' + url + '" target="_blank" class="result-url">' + url + "</a>";
     }
-
     if (warnings && warnings.length > 0) {
-      st.innerHTML += '<div class="result-warnings"><strong>Warnings:</strong><br>' + warnings.join('<br>') + '</div>';
+      stHtml +=
+        '<div class="result-warnings"><strong>Warnings:</strong><br>' +
+        warnings.join("<br>") +
+        "</div>";
     }
-
-    st.innerHTML += '<br><button class="btn btn-ghost btn-sm" style="margin-top:1rem;" onclick="location.reload()">Back to dashboard</button>';
+    stHtml +=
+      '<br><button class="btn btn-ghost btn-sm" style="margin-top:1rem;" onclick="location.reload()">Back to dashboard</button>';
+    st.innerHTML = stHtml;
   }
 
   document.getElementById("logoutBtn").addEventListener("click", async () => {
@@ -577,28 +618,81 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
 
       if (!data.ok) {
         const errMsg = typeof data.error === "string" ? data.error : JSON.stringify(data.error);
-        showResult(false, "Provisioning failed", errMsg);
+        const hint =
+          data.tenantId && data.needsCompletion
+            ? " If the site copy finished, refresh and use Continue setup on this tenant."
+            : "";
+        showResult(false, "Provisioning failed", errMsg + hint);
         return;
       }
 
       if (data.warnings) allWarnings.push(...data.warnings);
 
-      // Phase 1 is the only “fast” part; phase 2 + publish are separate server invocations and often take 1–3+ minutes.
-      hideProvisionOverlay();
       addForm.classList.remove("open");
-      toast(
-        "Site copy ready — finishing CMS, invite, and publish in the background (often 1–3 min). You can use the dashboard; refresh when the tenant shows active.",
-        true,
-      );
 
-      // Phase 2: CMS seed, invite, activate (separate Netlify invocation from publish)
-      if (data.needsCompletion && data.tenantId) {
-        try {
-          const { warnings: w2 } = await runCompleteAndPublish(data.tenantId);
-          allWarnings.push(...w2);
-        } catch (err2) {
-          allWarnings.push("Completion: " + (err2.message || "request failed — tenant may need manual activation."));
+      const stEl = document.getElementById("provisionStatus");
+      const dtEl = document.getElementById("provisionDetail");
+      const stepsEl = document.getElementById("provisionSteps");
+      const spinEl = document.getElementById("provisionSpinner");
+
+      function setProvisionSteps(lines) {
+        if (!stepsEl) return;
+        stepsEl.classList.remove("hidden");
+        stepsEl.innerHTML = lines
+          .map(
+            (line) =>
+              "<li style=\"margin:.2rem 0\">" + line + "</li>",
+          )
+          .join("");
+      }
+
+      // Phase 2 (+ publish on dev) runs on the server in the same POST as phase 1.
+      if (data.publishPending && data.tenantId) {
+        if (stEl) stEl.textContent = "Finishing live publish…";
+        if (dtEl) {
+          dtEl.textContent =
+            "Site copy and CMS setup are done on the server. Waiting for background publish (often 1–2 minutes).";
         }
+        setProvisionSteps([
+          "<strong>Done</strong> — domain, template clone, CMS seed, invite, activation",
+          "<strong>In progress</strong> — YCode publish to go live",
+        ]);
+        if (spinEl) spinEl.style.display = "block";
+
+        const deadline = Date.now() + 180000;
+        let terminal = false;
+        while (Date.now() < deadline && !terminal) {
+          await sleep(2500);
+          let stRes;
+          try {
+            stRes = await fetch(
+              "/api/provision-status?tenantId=" + encodeURIComponent(data.tenantId),
+            );
+          } catch {
+            continue;
+          }
+          let stData;
+          try {
+            stData = await stRes.json();
+          } catch {
+            continue;
+          }
+          if (stData?.publishStepDone || stData?.publishFailed) {
+            terminal = true;
+            if (stData.publishFailed) {
+              allWarnings.push(
+                "Background publish reported a failure — check the audit log or open the builder and click Publish.",
+              );
+            }
+          }
+        }
+        if (!terminal) {
+          allWarnings.push(
+            "Could not confirm publish finished — refresh this page in a minute or use Publish in the builder.",
+          );
+        }
+      } else {
+        toast("Provisioning finished.", true);
       }
 
       const siteHttps = "https://" + data.slug + "." + domainSuffix;
@@ -608,7 +702,19 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         "/ycode/accept-invite — the same subdomain as the site above. " +
         "If you only see masjidweb.com in that link, check Warnings (invite may have failed), " +
         "or open the new site and use Settings → Users to resend the invite.";
-      showResult(true, 'Tenant "' + data.slug + '" provisioned!', inviteExplain, siteHttps, allWarnings);
+      const completionFailed = allWarnings.some((w) => w.startsWith("Completion:"));
+      hideProvisionOverlay();
+      showResult(
+        !completionFailed,
+        completionFailed
+          ? 'Tenant "' + data.slug + '" — copy ready, setup incomplete'
+          : 'Tenant "' + data.slug + '" provisioned!',
+        completionFailed
+          ? "The server returned an error during setup. Use Continue setup on this tenant’s row after refreshing, or check the audit log."
+          : inviteExplain,
+        siteHttps,
+        allWarnings,
+      );
     } catch (err) {
       showResult(false, "Provisioning failed", err.message || "Unknown error");
     } finally {

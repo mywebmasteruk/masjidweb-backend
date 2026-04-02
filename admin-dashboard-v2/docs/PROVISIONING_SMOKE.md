@@ -6,13 +6,23 @@ Run after deploying admin-dashboard-v2 with `SUPABASE_URL`, `SUPABASE_SERVICE_RO
 
 - `tenant_registry_email_exists` function exists (migration `20260325120000_tenant_registry_email_exists.sql`).
 - Dashboard session / auth that passes `isAuthorized` for `POST /api/provision`.
+- Optional: `PROVISION_INTERNAL_SECRET` (16+ chars) if you need to call `provision-complete` / `provision-publish-tenant` without a session (header `x-provision-internal`).
 
 ## 2. Happy path (unique email)
 
-1. Call provision with a **new** slug and an email **not** present in `tenant_registry`.
-2. Expect `200`, `ok: true`, `tenantId`, `slug`, `siteUrl`, and possibly `warnings` (e.g. auto-publish, domain alias).
-3. In Supabase: confirm `tenant_registry.email` matches the normalized (lowercase, trimmed) address.
-4. Confirm demo-related warnings in `warnings` are acceptable for your environment, or fix `PROVISIONING_WEBHOOK_SECRET` / tenant URL if publish was skipped.
+1. Call `POST /api/provision` with a **new** slug and an email **not** present in `tenant_registry`.
+2. Expect `200`, `ok: true`, `tenantId`, `slug`, `siteUrl`, `needsCompletion: false` (the server runs phase 2 in the same invocation after clone), and possibly `warnings`.
+3. On Netlify production, expect `publishPending: true` when background publish is scheduled (`waitUntil`); the UI polls `GET /api/provision-status?tenantId=…` until `provision_publish_step` appears in `provisioning_audit_log`. Local dev usually awaits publish inline (`publishPending: false`).
+4. In Supabase: confirm `tenant_registry.email` matches the normalized (lowercase, trimmed) address and `status` is `active` after the request succeeds.
+5. Demo parity warnings (template vs tenant row counts, published CMS) are appended during the **publish** step, not during activation — they are non-fatal.
+
+### Idempotency (retries)
+
+- **Duplicate `POST /api/provision` with the same slug** — still rejected at insert (unique constraint); use a new slug.
+- **`completeProvision` when tenant is already `active`** — returns `{ warnings: ["Tenant is already active — skipping."] }` without re-seeding.
+- **`completeProvision` for `provisioning`** — safe to retry after timeouts: `seedTenantCmsContent` / translation clone paths skip or overwrite as designed; invite may send again (acceptable for recovery).
+- **`publishTenantAfterProvision` for an active tenant** — may be called multiple times; YCode publish is idempotent enough for “publish all” and audit logs a row each time.
+- **Continue setup** (dashboard) still chains `provision-complete` then `provision-publish-tenant` for tenants stuck in `provisioning` after a partial failure.
 
 ## 3. Duplicate email (must fail)
 
@@ -43,4 +53,4 @@ Apply migration `20260325140000_tenant_lifecycle_cleanup.sql`.
 - **Deactivated** (`PATCH /api/tenants` with `{ "id": "<uuid>", "status": "deactivated" }`): keeps the `tenant_registry` row and all YCode/CMS data; email stays reserved.
 - **Reactivate**: `{ "status": "active" }` for the same `id`.
 - **Delete** (`DELETE /api/tenants` with `{ "id" }`): removes the Netlify subdomain alias, deletes the `tenant_registry` row, and a **before-delete trigger** runs `delete_tenant_scoped_data` so all YCode/CMS rows for that tenant are removed. `tenant_homepage_content` cascades via FK; audit log rows keep `tenant_id` null.
-- **Orphan cleanup**: `GET /api/cleanup-orphans` previews counts (`count_orphan_tenant_rows`). `POST /api/cleanup-orphans` (or `public.cleanup_orphan_tenant_rows()` in SQL) removes rows whose tenant is missing from `tenant_registry`, including translations on orphan locales, `page_folders`, `color_variables`, and `tenant_homepage_content` where applicable.
+- **Orphan cleanup**: `POST /api/cleanup-orphans` (or call `public.cleanup_orphan_tenant_rows()` in SQL) removes rows in YCode tables whose `tenant_id` is not in `tenant_registry` (e.g. after manual DB edits).
