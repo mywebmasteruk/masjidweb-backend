@@ -180,17 +180,30 @@ export async function startProvision(
     return { tenantId, slug, siteUrl, warnings, needsCompletion: true };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    await supabase
-      .from("tenant_registry")
-      .update({ status: "failed", updated_at: new Date().toISOString() })
-      .eq("id", tenantId);
-
+    // Log before delete so we keep slug/email in audit (tenant_id FK may be cleared on delete).
     await supabase.from("provisioning_audit_log").insert({
       tenant_id: tenantId,
       action: "provision_failed",
       actor,
-      details: { error: message, stage: "phase1" },
+      details: {
+        error: message,
+        stage: "phase1",
+        slug,
+        email: input.email ?? null,
+      },
     });
+
+    const { error: deleteErr } = await supabase
+      .from("tenant_registry")
+      .delete()
+      .eq("id", tenantId);
+
+    if (deleteErr) {
+      await supabase
+        .from("tenant_registry")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", tenantId);
+    }
 
     throw e;
   }
