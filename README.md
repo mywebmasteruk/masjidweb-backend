@@ -3,6 +3,13 @@
 **Source of truth: GitHub. Runtime: Netlify.**
 Nothing needs to live on a Mac except a temporary copy while you push code to GitHub (or use GitHub's web UI).
 
+## One working copy on your machine
+
+Use **one clone** of this repo locally. Multiple Git worktrees (for example under `~/.cursor/worktrees/...`) duplicated the same code and led to edits landing in the wrong folder. **Keep a single checkout** — the folder you open in your editor.
+
+- Sanity check: `git worktree list` should show **one** line for this repo (the path you use daily).
+- To remove an extra worktree from the machine that registered it: `git worktree remove <path> --force` (run from the main clone), then `git worktree prune`.
+
 **Branches:** Production admin deploys from **`mw-admin-dash`** (set this as the GitHub default branch if you want new PRs and the landing clone target to match Netlify). The builder submodule **`ycode-masjidweb`** ships from **`tenant-multi`**. **`main`** stays useful for upstream-aligned history and CI; merge into **`mw-admin-dash`** when you want those changes live on admin/builder.
 
 ## What this repo contains
