@@ -3,7 +3,7 @@
 **Source of truth: GitHub. Runtime: Netlify.**
 Nothing needs to live on a Mac except a temporary copy while you push code to GitHub (or use GitHub's web UI).
 
-**Branches:** Production admin deploys from **`multitanant`** (set this as the GitHub default branch if you want new PRs and the landing clone target to match Netlify). The builder submodule **`ycode-masjidweb`** ships from **`tenant-multi`**. **`main`** stays useful for upstream-aligned history and CI; merge into **`multitanant`** when you want those changes live on admin/builder.
+**Branches:** Production admin deploys from **`mw-admin-dash`** (set this as the GitHub default branch if you want new PRs and the landing clone target to match Netlify). The builder submodule **`ycode-masjidweb`** ships from **`tenant-multi`**. **`main`** stays useful for upstream-aligned history and CI; merge into **`mw-admin-dash`** when you want those changes live on admin/builder.
 
 ## What this repo contains
 
@@ -22,7 +22,7 @@ The admin dashboard (`admin-dashboard-v2`) provisions new tenants by: inserting 
 ## Setup
 
 1. **Create a GitHub repository** (private is fine) and push this folder as the repo root.
-2. **Admin dashboard deploy (recommended):** In GitHub → **Settings → Secrets and variables → Actions**, add **`NETLIFY_AUTH_TOKEN`** (Netlify user settings → personal access tokens) and **`NETLIFY_SITE_ID`** (site **Site settings → Site details → Site ID**, e.g. `masjidweb-admin-v2`). Pushes to `main`, `master`, or `multitanant` that touch `admin-dashboard-v2/` run [`.github/workflows/deploy-admin-dashboard.yml`](.github/workflows/deploy-admin-dashboard.yml) and deploy to Netlify production—no manual zip uploads.
+2. **Admin dashboard deploy (recommended):** In GitHub → **Settings → Secrets and variables → Actions**, add **`NETLIFY_AUTH_TOKEN`** (Netlify user settings → personal access tokens) and **`NETLIFY_SITE_ID`** (site **Site settings → Site details → Site ID**, e.g. `masjidweb-admin-v2`). Pushes to `main`, `master`, or `mw-admin-dash` that touch `admin-dashboard-v2/` run [`.github/workflows/deploy-admin-dashboard.yml`](.github/workflows/deploy-admin-dashboard.yml) and deploy to Netlify production—no manual zip uploads.
 3. **Alternative:** Netlify → **Import from Git** on the same repo; build settings are in root [`netlify.toml`](netlify.toml) (`base = admin-dashboard-v2`).
 4. **Supabase schema:** apply all migrations in `supabase/migrations/` via the SQL editor, or run `scripts/apply-supabase-migration.sh` with `DATABASE_URL`.
 5. **Netlify environment variables:** see [`admin-dashboard-v2/.env.example`](admin-dashboard-v2/.env.example) and [`ycode-masjidweb/.env.example`](ycode-masjidweb/.env.example).
