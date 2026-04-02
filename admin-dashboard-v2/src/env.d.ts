@@ -32,6 +32,8 @@ interface ImportMetaEnv {
   readonly PROVISION_INTERNAL_SECRET?: string;
   /** Max wait (ms) for POST /ycode/api/publish during provision; default 115000. */
   readonly PROVISION_PUBLISH_TIMEOUT_MS?: string;
+  /** Retries for YCode publish (1–5); default 2 to stay under Netlify function limits. */
+  readonly PROVISION_PUBLISH_MAX_ATTEMPTS?: string;
   readonly PUBLIC_SUPABASE_URL: string;
   readonly PUBLIC_SUPABASE_ANON_KEY: string;
 }

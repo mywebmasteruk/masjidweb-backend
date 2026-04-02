@@ -8,7 +8,10 @@ import {
   cloneTranslationsForTenant,
   rebuildIdMapForTenant,
 } from "./ycode-template-clone";
-import { triggerPostProvisionPublish } from "./provision-publish";
+import {
+  ProvisionPublishConfigError,
+  triggerPostProvisionPublish,
+} from "./provision-publish";
 import { patchNullTenantIds } from "./provision-tenant-patch";
 import { verifyTenantDemoData } from "./provision-demo-verify";
 import {
@@ -345,10 +348,39 @@ export async function publishTenantAfterProvision(
     tenantId,
   );
 
-  await triggerPostProvisionPublish(slug, domainSuffix, warnings);
-  await verifyTenantDemoData(supabase, tenantId, warnings, sourceTpl, {
-    skipPublishedCollectionCheck: false,
-  });
+  const publishHook = await triggerPostProvisionPublish(
+    slug,
+    domainSuffix,
+    warnings,
+  );
+  if (!publishHook.ok) {
+    if (publishHook.configError) {
+      throw new ProvisionPublishConfigError(
+        "Provisioning cannot finish until PROVISIONING_WEBHOOK_SECRET (16+ chars) is set to the same value on this dashboard and the YCode Netlify site.",
+      );
+    }
+    await supabase.from("provisioning_audit_log").insert({
+      tenant_id: tenantId,
+      action: "provision_publish_failed",
+      actor,
+      details: { message: publishHook.message },
+    });
+    throw new Error(
+      publishHook.message ||
+        "YCode publish did not succeed — retry or open the builder and click Publish.",
+    );
+  }
+
+  try {
+    await verifyTenantDemoData(supabase, tenantId, warnings, sourceTpl, {
+      skipPublishedCollectionCheck: false,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    warnings.push(
+      `Post-publish demo check failed (non-fatal; publish succeeded): ${msg}`,
+    );
+  }
 
   await supabase.from("provisioning_audit_log").insert({
     tenant_id: tenantId,
