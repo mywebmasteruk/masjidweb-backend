@@ -411,6 +411,16 @@ export async function publishTenantAfterProvision(
     domainSuffix,
     warnings,
   );
+  if (publishHook.ok) {
+    try {
+      await patchNullTenantIds(supabase, tenantId);
+    } catch (patchErr) {
+      const msg = patchErr instanceof Error ? patchErr.message : String(patchErr);
+      warnings.push(
+        `Post-publish tenant_id patch (non-fatal): ${msg}`,
+      );
+    }
+  }
   if (!publishHook.ok) {
     if (publishHook.configError) {
       throw new ProvisionPublishConfigError(
