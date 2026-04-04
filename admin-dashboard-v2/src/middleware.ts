@@ -1,7 +1,21 @@
 import type { MiddlewareHandler } from "astro";
+import {
+  isDashboardAllowedHost,
+  wrongHostForAdminMessage,
+} from "./lib/admin-host-allowlist";
 import { parseCookies, verifySessionToken, getSessionCookieName } from "./lib/session";
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
+  const suffix =
+    (import.meta.env.TENANT_DOMAIN_SUFFIX as string | undefined) || "masjidweb.com";
+  const host = context.request.headers.get("host");
+  if (!isDashboardAllowedHost(host, suffix)) {
+    return new Response(wrongHostForAdminMessage(suffix), {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
   const path = context.url.pathname;
   if (path.startsWith("/dashboard")) {
     const cookie = parseCookies(context.request.headers.get("cookie"));
