@@ -74,6 +74,7 @@ async function fetchTemplatePageLayersRows(
     sb,
     "page_layers",
     templateTenantId,
+    pickRicherLayersTemplateRow,
   );
   const byPage = new Map<string, Record<string, unknown>>();
   for (const row of merged) {
@@ -231,7 +232,12 @@ async function cloneComponentsForTenant(
   idMap: IdMap,
   templateTenantId: string,
 ): Promise<void> {
-  const data = await fetchTemplateVersionRows(sb, "components", templateTenantId);
+  const data = await fetchTemplateVersionRows(
+    sb,
+    "components",
+    templateTenantId,
+    pickRicherLayersTemplateRow,
+  );
   if (!data?.length) return;
 
   const now = new Date().toISOString();
@@ -298,6 +304,45 @@ export function pickNewerTemplateRow(
   return d ?? p;
 }
 
+/** JSON size heuristic for `layers` (and similar) blobs — cheap vs deep tree walks. */
+export function jsonPayloadWeight(value: unknown): number {
+  try {
+    return JSON.stringify(value ?? null).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * For `page_layers` / `components`, the **newer** row is not always the right clone
+ * source: editors often touch draft metadata while the real site lives in **published**
+ * with a much larger `layers` tree. Cloning the empty draft produced empty new tenants.
+ *
+ * If one side is dramatically richer than the other, prefer the richer snapshot;
+ * otherwise fall back to {@link pickNewerTemplateRow}.
+ */
+export function pickRicherLayersTemplateRow(
+  d: Record<string, unknown> | undefined,
+  p: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!d || !p) {
+    return pickNewerTemplateRow(d, p);
+  }
+  const wd = jsonPayloadWeight(d.layers);
+  const wp = jsonPayloadWeight(p.layers);
+  const maxW = Math.max(wd, wp);
+  const minW = Math.min(wd, wp);
+  if (maxW >= 200 && minW * 5 < maxW) {
+    return wd >= wp ? d : p;
+  }
+  return pickNewerTemplateRow(d, p)!;
+}
+
+export type TemplateRowPairPicker = (
+  draft: Record<string, unknown> | undefined,
+  published: Record<string, unknown> | undefined,
+) => Record<string, unknown> | undefined;
+
 /**
  * Merge template draft + published rows by `id`, preferring the **newer** snapshot.
  * Ensures entities that only exist as published (or only as draft) are still cloned.
@@ -310,6 +355,7 @@ export async function fetchTemplateVersionRows(
   sb: ReturnType<typeof getServiceSupabase>,
   table: string,
   templateTenantId: string,
+  pairPicker: TemplateRowPairPicker = pickNewerTemplateRow,
 ): Promise<Record<string, unknown>[]> {
   const [draft, published] = await Promise.all([
     sb
@@ -343,7 +389,7 @@ export async function fetchTemplateVersionRows(
   );
   const ids = new Set([...draftById.keys(), ...pubById.keys()]);
   return [...ids].map((id) => {
-    const chosen = pickNewerTemplateRow(draftById.get(id), pubById.get(id));
+    const chosen = pairPicker(draftById.get(id), pubById.get(id));
     if (!chosen) {
       throw new Error(`fetchTemplateVersionRows: missing row for id ${id}`);
     }
@@ -371,7 +417,7 @@ async function cloneDraftPublished(
 ): Promise<void> {
   const data = fetchRows
     ? await fetchRows()
-    : await fetchTemplateVersionRows(sb, table, templateTenantId);
+    : await fetchTemplateVersionRows(sb, table, templateTenantId, pickNewerTemplateRow);
   if (!data?.length) return;
 
   const now = new Date().toISOString();
