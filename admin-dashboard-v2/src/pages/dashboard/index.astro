@@ -622,10 +622,10 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         let hint = "";
         if (res && (res.status === 504 || res.status === 502 || res.status === 503)) {
           hint =
-            " The server timed out — wait a minute, refresh; if a tenant row is stuck on provisioning, click Continue setup once.";
+            " The gateway timed out — the next automatic retry uses the same slug and resumes phase 2 (no duplicate row). If all retries fail, submit again once with the same slug and email.";
         } else if (res && res.status === 500) {
           hint =
-            " If a new tenant row appeared, click Continue setup once to finish seeding and publish.";
+            " If a tenant row exists for this slug in provisioning, submit again with the same details — the server will resume. Otherwise check Logs or try Continue setup.";
         }
         showResult(false, "Provisioning failed", errMsg + hint);
         return;

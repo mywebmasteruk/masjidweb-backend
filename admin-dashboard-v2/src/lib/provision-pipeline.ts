@@ -352,8 +352,27 @@ export async function finishProvisionAndPublish(
 }
 
 /**
+ * Derive URL slug the same way as {@link startProvision} (must stay in sync).
+ */
+function resolveProvisionSlug(raw: unknown): string {
+  const parsed = createTenantSchema.parse(raw);
+  const slug = parsed.slug?.length ? parsed.slug : slugify(parsed.business_name);
+  if (!slug) {
+    throw new ProvisionValidationError(
+      "Could not derive a URL slug from the business name.",
+    );
+  }
+  return slug;
+}
+
+/**
  * Full flow in one server invocation: registry + clone + CMS + invite + activate + publish.
  * For POST /api/provision-all (single browser request — no client-side phase split).
+ *
+ * **Idempotent resume:** If Netlify returns 504 after phase 1, the dashboard retries the same
+ * payload. We detect an existing `tenant_registry` row with this slug and `status = provisioning`
+ * and run only {@link finishProvisionAndPublish} so the operator is not stuck on duplicate-email
+ * errors or forced to use "Continue setup".
  */
 export async function provisionTenantFullFlow(
   raw: unknown,
@@ -364,6 +383,48 @@ export async function provisionTenantFullFlow(
   siteUrl: string;
   warnings: string[];
 }> {
+  const slug = resolveProvisionSlug(raw);
+  const domainSuffix = getDomainSuffix();
+  const siteUrl = `https://${slug}.${domainSuffix}`;
+  const supabase = getServiceSupabase();
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("tenant_registry")
+    .select("id, status")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (existingErr) {
+    throw new Error(
+      `Could not look up tenant by slug: ${existingErr.message}`,
+    );
+  }
+
+  if (existing) {
+    if (existing.status === "provisioning") {
+      const finish = await finishProvisionAndPublish(existing.id as string, actor);
+      return {
+        tenantId: existing.id as string,
+        slug,
+        siteUrl,
+        warnings: [
+          "Resumed provisioning for this slug (e.g. after a gateway timeout). No duplicate tenant was created.",
+          ...finish.warnings,
+        ],
+      };
+    }
+    if (existing.status === "active") {
+      throw new ProvisionValidationError(
+        `A tenant with slug "${slug}" is already active. Choose a different slug or remove the existing site first.`,
+      );
+    }
+    if (existing.status === "failed") {
+      throw new ProvisionValidationError(
+        `A previous provision for slug "${slug}" failed. Delete that failed tenant in the dashboard or pick another slug.`,
+      );
+    }
+  }
+
   const phase1 = await startProvision(raw, actor);
   const finish = await finishProvisionAndPublish(phase1.tenantId, actor);
   return {
