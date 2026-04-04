@@ -1,11 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { isInternalProvisionRequest } from "../../lib/provision-internal-auth";
-import { ProvisionPublishConfigError } from "../../lib/provision-publish";
-import {
-  completeProvision,
-  publishTenantAfterProvision,
-} from "../../lib/provision-pipeline";
+import { finishProvisionAndPublish } from "../../lib/provision-pipeline";
 
 export const POST: APIRoute = async (context) => {
   if (
@@ -36,34 +32,10 @@ export const POST: APIRoute = async (context) => {
   }
 
   try {
-    const result = await completeProvision(body.tenantId, "dashboard-v2");
-    const warnings = [...result.warnings];
-
-    /**
-     * Run auto-publish in the same function invocation as phase 2 (seed, invite, activate).
-     * This avoids a second Netlify cold start and cuts 504s between /provision-complete
-     * and /provision-publish-tenant. Publish failures are warnings when phase 2 succeeded.
-     */
-    try {
-      const pub = await publishTenantAfterProvision(
-        body.tenantId,
-        "dashboard-v2",
-      );
-      warnings.push(...pub.warnings);
-    } catch (pubErr) {
-      if (pubErr instanceof ProvisionPublishConfigError) {
-        warnings.push(
-          `Publish: ${pubErr.message} Set the same PROVISIONING_WEBHOOK_SECRET (16+ chars) on this dashboard and the YCode Netlify site, and set YCODE_SITE_INTERNAL_URL to the pool hostname (e.g. https://your-site.netlify.app) so publish does not depend on new subdomain TLS.`,
-        );
-      } else {
-        const msg =
-          pubErr instanceof Error ? pubErr.message : String(pubErr);
-        warnings.push(
-          `Publish: ${msg} The tenant is active — open the builder on their subdomain and click Publish, or use Continue setup to retry.`,
-        );
-      }
-    }
-
+    const { warnings } = await finishProvisionAndPublish(
+      body.tenantId,
+      "dashboard-v2",
+    );
     return new Response(JSON.stringify({ ok: true, warnings }), {
       status: 200,
       headers: { "Content-Type": "application/json" },

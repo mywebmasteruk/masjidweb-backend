@@ -324,6 +324,57 @@ export async function completeProvision(
 }
 
 /**
+ * Phase 2 (seed, invite, activate) plus auto-publish in one call.
+ * Publish failures become warnings; the tenant stays active when phase 2 succeeded.
+ */
+export async function finishProvisionAndPublish(
+  tenantId: string,
+  actor: string,
+): Promise<{ warnings: string[] }> {
+  const completeOut = await completeProvision(tenantId, actor);
+  const warnings = [...completeOut.warnings];
+  try {
+    const pub = await publishTenantAfterProvision(tenantId, actor);
+    warnings.push(...pub.warnings);
+  } catch (pubErr) {
+    if (pubErr instanceof ProvisionPublishConfigError) {
+      warnings.push(
+        `Publish: ${pubErr.message} Set the same PROVISIONING_WEBHOOK_SECRET (16+ chars) on this dashboard and the YCode Netlify site, and set YCODE_SITE_INTERNAL_URL to the pool hostname (e.g. https://your-site.netlify.app) so publish does not depend on new subdomain TLS.`,
+      );
+    } else {
+      const msg = pubErr instanceof Error ? pubErr.message : String(pubErr);
+      warnings.push(
+        `Publish: ${msg} The tenant is active — open the builder on their subdomain and click Publish, or use Continue setup to retry.`,
+      );
+    }
+  }
+  return { warnings };
+}
+
+/**
+ * Full flow in one server invocation: registry + clone + CMS + invite + activate + publish.
+ * For POST /api/provision-all (single browser request — no client-side phase split).
+ */
+export async function provisionTenantFullFlow(
+  raw: unknown,
+  actor: string,
+): Promise<{
+  tenantId: string;
+  slug: string;
+  siteUrl: string;
+  warnings: string[];
+}> {
+  const phase1 = await startProvision(raw, actor);
+  const finish = await finishProvisionAndPublish(phase1.tenantId, actor);
+  return {
+    tenantId: phase1.tenantId,
+    slug: phase1.slug,
+    siteUrl: phase1.siteUrl,
+    warnings: [...phase1.warnings, ...finish.warnings],
+  };
+}
+
+/**
  * Phase 2b — YCode publish + post-publish demo checks (draft parity + published collection snapshot).
  * Often scheduled with Netlify `waitUntil` so the HTTP response can return after phase 2 while publish finishes.
  */
@@ -407,16 +458,12 @@ export async function runProvisionPipeline(
   raw: unknown,
   actor: string,
 ): Promise<ProvisionResult> {
-  const phase1 = await startProvision(raw, actor);
-  const phase2 = await completeProvision(phase1.tenantId, actor);
-  const phase2b = await publishTenantAfterProvision(phase1.tenantId, actor);
+  const out = await provisionTenantFullFlow(raw, actor);
   return {
-    ...phase1,
-    warnings: [
-      ...phase1.warnings,
-      ...phase2.warnings,
-      ...phase2b.warnings,
-    ],
+    tenantId: out.tenantId,
+    slug: out.slug,
+    siteUrl: out.siteUrl,
+    warnings: out.warnings,
     needsCompletion: false,
   };
 }

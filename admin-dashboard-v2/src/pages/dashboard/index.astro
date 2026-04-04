@@ -379,7 +379,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     <div id="provisionSpinner" class="spinner"></div>
     <div id="provisionResult" class="hidden"></div>
     <p id="provisionStatus" style="font-size:.9rem;font-weight:500;">Provisioning tenant…</p>
-    <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">Setting up database, domain, and CMS content</p>
+    <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">One server step: clone, CMS, invite, publish (often 1–4 min — keep this tab open)</p>
     <ol id="provisionSteps" class="text-xs text-muted hidden" style="margin:0.75rem 0 0;text-align:left;padding-left:1.25rem;line-height:1.5;"></ol>
   </div>
 </div>
@@ -405,7 +405,8 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     rs.classList.add("hidden");
     rs.innerHTML = "";
     st.textContent = "Provisioning tenant…";
-    dt.textContent = "Setting up database, domain, and CMS content";
+    dt.textContent =
+      "One server step: clone template, CMS seed, invite, activate, publish (1–4 min — keep this tab open).";
     dt.style.display = "block";
     const stepsEl = document.getElementById("provisionSteps");
     if (stepsEl) {
@@ -414,7 +415,6 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     }
   }
 
-  /** After phase 1 the UI can unblock — CMS seed + publish often take 1–3+ minutes on their own invocations. */
   function hideProvisionOverlay() {
     const ov = document.getElementById("provisionOverlay");
     const sp = document.getElementById("provisionSpinner");
@@ -431,15 +431,15 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
-   * Phase 1 (clone) can still hit 504 on cold functions or large templates.
+   * Full provision in one API call (clone through publish). Retries on gateway errors only.
    */
-  async function fetchProvisionPhase1WithRetry(body) {
-    const maxAttempts = 3;
-    const baseDelayMs = 2500;
+  async function fetchProvisionAllWithRetry(body) {
+    const maxAttempts = 5;
+    const baseDelayMs = 4000;
     let lastRes = /** @type {Response | null} */ (null);
     let lastData = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      lastRes = await fetch("/api/provision", {
+      lastRes = await fetch("/api/provision-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -610,8 +610,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     const body = Object.fromEntries(fd.entries());
     const allWarnings = [];
     try {
-      // Phase 1: insert + domain alias + clone template (retries on 502/503/504)
-      const { res, data } = await fetchProvisionPhase1WithRetry(body);
+      const { res, data } = await fetchProvisionAllWithRetry(body);
       if (!data) {
         throw new Error(
           "Server returned non-JSON response (status " + (res?.status ?? "?") + ")",
@@ -620,10 +619,14 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
 
       if (!data.ok) {
         const errMsg = typeof data.error === "string" ? data.error : JSON.stringify(data.error);
-        const hint =
-          data.tenantId && data.needsCompletion
-            ? " If the site copy finished, refresh and use Continue setup on this tenant."
-            : "";
+        let hint = "";
+        if (res && (res.status === 504 || res.status === 502 || res.status === 503)) {
+          hint =
+            " The server timed out — wait a minute, refresh; if a tenant row is stuck on provisioning, click Continue setup once.";
+        } else if (res && res.status === 500) {
+          hint =
+            " If a new tenant row appeared, click Continue setup once to finish seeding and publish.";
+        }
         showResult(false, "Provisioning failed", errMsg + hint);
         return;
       }
@@ -631,60 +634,17 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       if (data.warnings) allWarnings.push(...data.warnings);
 
       addForm.classList.remove("open");
-      toast(
-        "Site copy ready — running CMS seed, invite, and publish (often 1–3 minutes)…",
-        true,
-      );
-
-      // Phase 2 + publish: separate API calls (same Netlify budget as Continue setup — avoids 504 on one giant request).
-      if (data.needsCompletion && data.tenantId) {
-        const stEl = document.getElementById("provisionStatus");
-        const dtEl = document.getElementById("provisionDetail");
-        const stepsEl = document.getElementById("provisionSteps");
-        if (stEl) stEl.textContent = "Finishing setup…";
-        if (dtEl) {
-          dtEl.textContent =
-            "Finishing on the server: CMS seed, Supabase invite, activation, and full YCode publish (often 1–3 min — keep this tab open).";
-        }
-        if (stepsEl) {
-          stepsEl.classList.remove("hidden");
-          stepsEl.innerHTML =
-            "<li style=\"margin:.2rem 0\"><strong>Done</strong> — domain alias, template clone</li>" +
-            "<li style=\"margin:.2rem 0\"><strong>In progress</strong> — CMS, invite, live publish</li>";
-        }
-        try {
-          await sleep(3500);
-          const { warnings: w2 } = await runCompleteAndPublish(data.tenantId);
-          allWarnings.push(...w2);
-        } catch (err2) {
-          allWarnings.push(
-            "Completion: " +
-              (err2.message || "request failed — use Continue setup after refresh."),
-          );
-        }
-      }
-
       const siteHttps = "https://" + data.slug + "." + domainSuffix;
       const inviteExplain =
         "The welcome email’s sign-up link should use: " +
         siteHttps +
-        "/ycode/accept-invite — the same subdomain as the site above. " +
-        "If you only see masjidweb.com in that link, check Warnings (invite may have failed), " +
-        "or open the new site and use Settings → Users to resend the invite.";
-      const completionFailed = allWarnings.some((w) => w.startsWith("Completion:"));
-      const publishFailed = allWarnings.some((w) => w.startsWith("Publish:"));
-      const setupIncomplete = completionFailed || publishFailed;
+        "/ycode/accept-invite (same subdomain as the site). " +
+        "If the live homepage looks empty, check Warnings — you may need Publish in the builder once.";
       hideProvisionOverlay();
       showResult(
-        !setupIncomplete,
-        setupIncomplete
-          ? 'Tenant "' + data.slug + '" — copy ready, setup incomplete'
-          : 'Tenant "' + data.slug + '" provisioned!',
-        setupIncomplete
-          ? (publishFailed && !completionFailed
-              ? "CMS and invite may be done, but the site was not published to YCode. Check Warnings (webhook secret / timeout), then use Continue setup or Publish in the builder."
-              : "Setup did not finish in one pass. Refresh and use Continue setup on this tenant, or check the audit log.")
-          : inviteExplain,
+        true,
+        'Tenant "' + data.slug + '" provisioned',
+        inviteExplain,
         siteHttps,
         allWarnings,
       );
