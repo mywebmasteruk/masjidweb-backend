@@ -72,7 +72,12 @@ export async function triggerPostProvisionPublish(
     return { ok: false, configError: true };
   }
 
-  const internalUrl = readServerEnv("YCODE_SITE_INTERNAL_URL");
+  // Prefer the pool’s *.netlify.app hostname so new tenant subdomains work before
+  // per-host TLS is fully live. Same env names documented in .env.example.
+  const internalUrlRaw =
+    readServerEnv("YCODE_SITE_INTERNAL_URL") ||
+    readServerEnv("NETLIFY_YCODE_SITE_URL");
+  const internalUrl = internalUrlRaw?.replace(/\/$/, "");
 
   const baseUrl = internalUrl || `https://${slug}.${domainSuffix}`;
   const url = `${baseUrl}/ycode/api/publish`;

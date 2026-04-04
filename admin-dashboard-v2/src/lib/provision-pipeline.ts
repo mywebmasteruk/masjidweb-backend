@@ -28,6 +28,7 @@ import {
   normalizeProvisioningEmail,
   ProvisionValidationError,
 } from "./provision-email-policy";
+import { isUserAlreadyRegistered } from "./send-tenant-auth-link";
 
 export type ProvisionResult = {
   tenantId: string;
@@ -281,7 +282,13 @@ export async function completeProvision(
       }
     } catch (inviteErr) {
       const msg = inviteErr instanceof Error ? inviteErr.message : String(inviteErr);
-      warnings.push(`User invite: ${msg}`);
+      if (isUserAlreadyRegistered(inviteErr)) {
+        warnings.push(
+          `No invite email — ${inviteEmail} already has an account. Use "Login link" on this tenant in the dashboard (magic link to ${siteUrl}/ycode), or open the builder and sign in.`,
+        );
+      } else {
+        warnings.push(`User invite: ${msg}`);
+      }
     }
 
     // 4. Mark active before publish (demo parity checks run in publishTenantAfterProvision — non-blocking for activation).

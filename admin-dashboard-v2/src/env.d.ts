@@ -25,6 +25,10 @@ interface ImportMetaEnv {
   readonly TEMPLATE_TENANT_ID?: string;
   /** Same secret on the YCode Netlify site — enables POST /ycode/api/publish after provision. */
   readonly PROVISIONING_WEBHOOK_SECRET?: string;
+  /** Pool *.netlify.app URL for server-side publish (optional alias of YCODE_SITE_INTERNAL_URL). */
+  readonly NETLIFY_YCODE_SITE_URL?: string;
+  /** e.g. https://masjidweb-multi.netlify.app — publish after provision without relying on new subdomain TLS. */
+  readonly YCODE_SITE_INTERNAL_URL?: string;
   /**
    * Optional. When set (16+ chars), allows `POST /api/provision-complete` and
    * `POST /api/provision-publish-tenant` with header `x-provision-internal` for automation without a session cookie.

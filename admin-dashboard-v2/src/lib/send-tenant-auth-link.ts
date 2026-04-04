@@ -6,7 +6,7 @@ function getDomainSuffix(): string {
   return import.meta.env.TENANT_DOMAIN_SUFFIX || "masjidweb.com";
 }
 
-function isUserAlreadyRegistered(err: unknown): boolean {
+export function isUserAlreadyRegistered(err: unknown): boolean {
   const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
   return (
     msg.includes("already been registered") ||

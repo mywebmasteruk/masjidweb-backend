@@ -471,8 +471,8 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
    * Retries mirror what often succeeds when the user clicks "Continue setup" later.
    */
   async function fetchProvisionCompleteWithRetry(tenantId) {
-    const maxAttempts = 3;
-    const baseDelayMs = 2500;
+    const maxAttempts = 4;
+    const baseDelayMs = 3000;
     let lastRes = /** @type {Response | null} */ (null);
     let lastData = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -501,39 +501,9 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     return { res: lastRes, data: lastData };
   }
 
-  async function fetchProvisionPublishWithRetry(tenantId) {
-    const maxAttempts = 3;
-    const baseDelayMs = 2500;
-    let lastRes = /** @type {Response | null} */ (null);
-    let lastData = null;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      lastRes = await fetch("/api/provision-publish-tenant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId }),
-      });
-      try {
-        lastData = await lastRes.json();
-      } catch {
-        lastData = null;
-      }
-      if (lastData?.ok) {
-        return { res: lastRes, data: lastData };
-      }
-      const retryable =
-        lastRes.status === 504 ||
-        lastRes.status === 502 ||
-        lastRes.status === 503 ||
-        (lastData == null && lastRes.status >= 500);
-      if (retryable && attempt < maxAttempts) {
-        await sleep(baseDelayMs * attempt);
-      }
-    }
-    return { res: lastRes, data: lastData };
-  }
-
   /**
-   * Phase 2 + publish — separate requests from phase 1 so each Netlify invocation stays within limits.
+   * Phase 2 + auto-publish — one API call (/api/provision-complete) runs CMS seed, invite,
+   * activation, then YCode publish on the server (fewer cold starts than a separate publish request).
    * @returns { warnings: string[] }
    */
   async function runCompleteAndPublish(tenantId) {
@@ -541,41 +511,16 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     const { res: res2, data: data2 } = await fetchProvisionCompleteWithRetry(tenantId);
     if (data2?.ok) {
       if (data2.warnings) allWarnings.push(...data2.warnings);
-      try {
-        const { res: resPub, data: pubData } =
-          await fetchProvisionPublishWithRetry(tenantId);
-        if (pubData?.ok) {
-          if (pubData.warnings) allWarnings.push(...pubData.warnings);
-        } else {
-          let msg =
-            pubData?.error ||
-            "Publish step failed or timed out — open the builder and click Publish.";
-          if (pubData?.configError) {
-            msg =
-              pubData.error ||
-              "Set PROVISIONING_WEBHOOK_SECRET on the admin dashboard and YCode Netlify site (same value, 16+ chars).";
-          } else if (pubData == null && resPub && resPub.status === 504) {
-            msg =
-              "Gateway timeout (504) on publish — retried; open the builder and click Publish if the site is empty.";
-          }
-          allWarnings.push("Publish: " + msg);
-        }
-      } catch (errPub) {
-        allWarnings.push(
-          "Publish: " +
-            (errPub.message || "request failed — use Publish in the builder."),
-        );
-      }
-    } else {
-      let msg =
-        data2?.error ||
-        "Phase 2 timed out or failed — tenant may need manual activation.";
-      if (data2 == null && res2 && res2.status === 504) {
-        msg =
-          "Gateway timeout (504) on completion — retried automatically; use Continue setup if still stuck.";
-      }
-      allWarnings.push("Completion: " + msg);
+      return { warnings: allWarnings };
     }
+    let msg =
+      data2?.error ||
+      "Phase 2 timed out or failed — tenant may need manual activation.";
+    if (data2 == null && res2 && res2.status === 504) {
+      msg =
+        "Gateway timeout (504) on completion — retried automatically; use Continue setup if still stuck.";
+    }
+    allWarnings.push("Completion: " + msg);
     return { warnings: allWarnings };
   }
 
@@ -699,13 +644,13 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         if (stEl) stEl.textContent = "Finishing setup…";
         if (dtEl) {
           dtEl.textContent =
-            "CMS seed, invite, and YCode publish (please keep this tab open).";
+            "Finishing on the server: CMS seed, Supabase invite, activation, and full YCode publish (often 1–3 min — keep this tab open).";
         }
         if (stepsEl) {
           stepsEl.classList.remove("hidden");
           stepsEl.innerHTML =
-            "<li style=\"margin:.2rem 0\"><strong>Done</strong> — domain, template clone</li>" +
-            "<li style=\"margin:.2rem 0\"><strong>In progress</strong> — CMS, invite, publish</li>";
+            "<li style=\"margin:.2rem 0\"><strong>Done</strong> — domain alias, template clone</li>" +
+            "<li style=\"margin:.2rem 0\"><strong>In progress</strong> — CMS, invite, live publish</li>";
         }
         try {
           await sleep(3500);
