@@ -34,6 +34,7 @@ export const POST: APIRoute = async (context) => {
     return new Response(
       JSON.stringify({
         ok: true,
+        outcome: out.outcome,
         tenantId: out.tenantId,
         slug: out.slug,
         siteUrl: out.siteUrl,

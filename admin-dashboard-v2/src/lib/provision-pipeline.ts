@@ -29,6 +29,14 @@ import {
   ProvisionValidationError,
 } from "./provision-email-policy";
 import { isUserAlreadyRegistered } from "./send-tenant-auth-link";
+import { reclaimClientTenantForSlugReuse } from "./provision-tenant-reclaim";
+
+/** Result shape for {@link provisionTenantFullFlow} (single-request dashboard provision). */
+export type ProvisionFullFlowOutcome =
+  | "created"
+  | "resumed_provisioning"
+  | "already_active"
+  | "recreated_after_failure";
 
 export type ProvisionResult = {
   tenantId: string;
@@ -37,6 +45,7 @@ export type ProvisionResult = {
   warnings: string[];
   /** When true, the tenant was created + cloned but publish/seed/invite are pending. */
   needsCompletion?: boolean;
+  outcome?: ProvisionFullFlowOutcome;
 };
 
 function getNetlifyToken(): string {
@@ -369,10 +378,12 @@ function resolveProvisionSlug(raw: unknown): string {
  * Full flow in one server invocation: registry + clone + CMS + invite + activate + publish.
  * For POST /api/provision-all (single browser request — no client-side phase split).
  *
- * **Idempotent resume:** If Netlify returns 504 after phase 1, the dashboard retries the same
- * payload. We detect an existing `tenant_registry` row with this slug and `status = provisioning`
- * and run only {@link finishProvisionAndPublish} so the operator is not stuck on duplicate-email
- * errors or forced to use "Continue setup".
+ * **Idempotent behaviour (best-effort “no false failures”):**
+ * - `provisioning` — resume with {@link finishProvisionAndPublish} (same as before).
+ * - `active` — succeed with `already_active`, refresh publish in the background when possible.
+ * - `failed` / `deactivated` — reclaim slug (alias + scoped data + registry row), then provision fresh.
+ * - Concurrent duplicate insert — short delay + retry by re-reading slug (resume / already_active / throw).
+ * Template rows with the same slug still block with a clear validation error.
  */
 export async function provisionTenantFullFlow(
   raw: unknown,
@@ -382,57 +393,18 @@ export async function provisionTenantFullFlow(
   slug: string;
   siteUrl: string;
   warnings: string[];
+  outcome: ProvisionFullFlowOutcome;
 }> {
-  const slug = resolveProvisionSlug(raw);
-  const domainSuffix = getDomainSuffix();
-  const siteUrl = `https://${slug}.${domainSuffix}`;
-  const supabase = getServiceSupabase();
+  return runProvisionTenantFullFlowResolved(raw, actor, 0);
+}
 
-  const { data: existing, error: existingErr } = await supabase
-    .from("tenant_registry")
-    .select("id, status")
-    .eq("slug", slug)
-    .maybeSingle();
-
-  if (existingErr) {
-    throw new Error(
-      `Could not look up tenant by slug: ${existingErr.message}`,
-    );
-  }
-
-  if (existing) {
-    if (existing.status === "provisioning") {
-      const finish = await finishProvisionAndPublish(existing.id as string, actor);
-      return {
-        tenantId: existing.id as string,
-        slug,
-        siteUrl,
-        warnings: [
-          "Resumed provisioning for this slug (e.g. after a gateway timeout). No duplicate tenant was created.",
-          ...finish.warnings,
-        ],
-      };
-    }
-    if (existing.status === "active") {
-      throw new ProvisionValidationError(
-        `A tenant with slug "${slug}" is already active. Choose a different slug or remove the existing site first.`,
-      );
-    }
-    if (existing.status === "failed") {
-      throw new ProvisionValidationError(
-        `A previous provision for slug "${slug}" failed. Delete that failed tenant in the dashboard or pick another slug.`,
-      );
-    }
-  }
-
-  const phase1 = await startProvision(raw, actor);
-  const finish = await finishProvisionAndPublish(phase1.tenantId, actor);
-  return {
-    tenantId: phase1.tenantId,
-    slug: phase1.slug,
-    siteUrl: phase1.siteUrl,
-    warnings: [...phase1.warnings, ...finish.warnings],
-  };
+export function isDuplicateSlugProvisionError(e: unknown): boolean {
+  if (!(e instanceof ProvisionValidationError)) return false;
+  const m = e.message;
+  return (
+    m.includes("slug already exists") ||
+    m.includes("A tenant with this slug already exists")
+  );
 }
 
 /**
@@ -521,6 +493,166 @@ export async function publishTenantAfterProvision(
   return { warnings };
 }
 
+async function tryRepublishActiveTenant(
+  tenantId: string,
+  actor: string,
+): Promise<string[]> {
+  const warnings: string[] = [];
+  try {
+    const pub = await publishTenantAfterProvision(tenantId, actor);
+    warnings.push(...pub.warnings);
+  } catch (e) {
+    if (e instanceof ProvisionPublishConfigError) {
+      warnings.push(`Publish: ${e.message}`);
+    } else {
+      warnings.push(
+        `Publish refresh: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+  return warnings;
+}
+
+async function runFreshProvisionAfterConflictResolution(
+  raw: unknown,
+  actor: string,
+  slug: string,
+  siteUrl: string,
+  prefixWarnings: string[],
+  outcomeOnSuccess: "created" | "recreated_after_failure",
+  depth: number,
+): Promise<{
+  tenantId: string;
+  slug: string;
+  siteUrl: string;
+  warnings: string[];
+  outcome: ProvisionFullFlowOutcome;
+}> {
+  try {
+    const phase1 = await startProvision(raw, actor);
+    const finish = await finishProvisionAndPublish(phase1.tenantId, actor);
+    return {
+      tenantId: phase1.tenantId,
+      slug: phase1.slug,
+      siteUrl: phase1.siteUrl,
+      warnings: [...prefixWarnings, ...phase1.warnings, ...finish.warnings],
+      outcome: outcomeOnSuccess,
+    };
+  } catch (e) {
+    if (isDuplicateSlugProvisionError(e) && depth < 4) {
+      await new Promise((r) => setTimeout(r, 450));
+      return runProvisionTenantFullFlowResolved(raw, actor, depth + 1);
+    }
+    throw e;
+  }
+}
+
+async function runProvisionTenantFullFlowResolved(
+  raw: unknown,
+  actor: string,
+  depth: number,
+): Promise<{
+  tenantId: string;
+  slug: string;
+  siteUrl: string;
+  warnings: string[];
+  outcome: ProvisionFullFlowOutcome;
+}> {
+  if (depth > 5) {
+    throw new Error(
+      "Provision could not complete after several retries — wait a few seconds and submit again with the same details.",
+    );
+  }
+
+  const slug = resolveProvisionSlug(raw);
+  const domainSuffix = getDomainSuffix();
+  const siteUrl = `https://${slug}.${domainSuffix}`;
+  const supabase = getServiceSupabase();
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("tenant_registry")
+    .select("id, status, tenant_kind")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (existingErr) {
+    throw new Error(`Could not look up tenant by slug: ${existingErr.message}`);
+  }
+
+  if (existing) {
+    if (existing.tenant_kind === "template") {
+      throw new ProvisionValidationError(
+        `Slug "${slug}" is reserved by a demo template. Choose a different slug.`,
+      );
+    }
+
+    if (existing.status === "provisioning") {
+      const finish = await finishProvisionAndPublish(existing.id as string, actor);
+      return {
+        tenantId: existing.id as string,
+        slug,
+        siteUrl,
+        outcome: "resumed_provisioning",
+        warnings: [
+          "Resumed provisioning for this slug (e.g. after a gateway timeout or duplicate request). No duplicate tenant was created.",
+          ...finish.warnings,
+        ],
+      };
+    }
+
+    if (existing.status === "active") {
+      const republishWarnings = await tryRepublishActiveTenant(
+        existing.id as string,
+        actor,
+      );
+      return {
+        tenantId: existing.id as string,
+        slug,
+        siteUrl,
+        outcome: "already_active",
+        warnings: [
+          "This subdomain is already provisioned and active. No duplicate was created; we attempted a publish refresh so the live site stays in sync when possible.",
+          ...republishWarnings,
+        ],
+      };
+    }
+
+    if (existing.status === "failed" || existing.status === "deactivated") {
+      const reclaimWarnings: string[] = [
+        `Removed the previous ${existing.status} tenant for this slug so a clean provision can run.`,
+      ];
+      await reclaimClientTenantForSlugReuse(
+        supabase,
+        { id: existing.id as string, slug },
+        reclaimWarnings,
+      );
+      return runFreshProvisionAfterConflictResolution(
+        raw,
+        actor,
+        slug,
+        siteUrl,
+        reclaimWarnings,
+        "recreated_after_failure",
+        depth,
+      );
+    }
+
+    throw new ProvisionValidationError(
+      `Slug "${slug}" is already in use (status: ${existing.status}). Open the dashboard to resolve that tenant or pick another slug.`,
+    );
+  }
+
+  return runFreshProvisionAfterConflictResolution(
+    raw,
+    actor,
+    slug,
+    siteUrl,
+    [],
+    "created",
+    depth,
+  );
+}
+
 /**
  * Legacy single-call pipeline — runs both phases sequentially.
  * Will timeout on free Netlify plans; use startProvision + completeProvision instead.
@@ -536,5 +668,6 @@ export async function runProvisionPipeline(
     siteUrl: out.siteUrl,
     warnings: out.warnings,
     needsCompletion: false,
+    outcome: out.outcome,
   };
 }

@@ -640,14 +640,27 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         siteHttps +
         "/ycode/accept-invite (same subdomain as the site). " +
         "If the live homepage looks empty, check Warnings — you may need Publish in the builder once.";
+      const outcome = data.outcome;
+      let successTitle = 'Tenant "' + data.slug + '" provisioned';
+      let successDetail = inviteExplain;
+      if (outcome === "already_active") {
+        successTitle = 'Site "' + data.slug + '" is already live';
+        successDetail =
+          "No duplicate was created. We ran a publish refresh in the background when possible. " +
+          inviteExplain;
+      } else if (outcome === "resumed_provisioning") {
+        successTitle = 'Finished provisioning "' + data.slug + '"';
+        successDetail =
+          "This slug was already mid-provision (for example after a timeout). Setup completed without a second tenant row. " +
+          inviteExplain;
+      } else if (outcome === "recreated_after_failure") {
+        successTitle = 'Tenant "' + data.slug + '" provisioned (fresh after cleanup)';
+        successDetail =
+          "A previous failed or deactivated row for this slug was removed first, then a full provision ran. " +
+          inviteExplain;
+      }
       hideProvisionOverlay();
-      showResult(
-        true,
-        'Tenant "' + data.slug + '" provisioned',
-        inviteExplain,
-        siteHttps,
-        allWarnings,
-      );
+      showResult(true, successTitle, successDetail, siteHttps, allWarnings);
     } catch (err) {
       showResult(false, "Provisioning failed", err.message || "Unknown error");
     } finally {
