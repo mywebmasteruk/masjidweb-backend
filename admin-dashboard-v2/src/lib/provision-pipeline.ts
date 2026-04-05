@@ -103,6 +103,20 @@ export async function startProvision(
 
   const siteUrl = `https://${slug}.${domainSuffix}`;
 
+  // Snapshot the template's published_at so we can tell which version was cloned.
+  let templateVersion: string | null = null;
+  try {
+    const { data: tplSetting } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("tenant_id", sourceTemplateId)
+      .eq("key", "published_at")
+      .maybeSingle();
+    templateVersion = (tplSetting?.value as string) ?? null;
+  } catch {
+    // Non-fatal — column may not exist yet or template has never been published.
+  }
+
   const { data: tenantRow, error: insertErr } = await supabase
     .from("tenant_registry")
     .insert({
@@ -117,6 +131,7 @@ export async function startProvision(
       status: "provisioning",
       tenant_kind: "client",
       provisioned_from_template_id: sourceTemplateId,
+      provisioned_template_version: templateVersion,
     })
     .select("id")
     .single();
