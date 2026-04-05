@@ -31,11 +31,16 @@ export const GET: APIRoute = async (context) => {
     0,
   );
 
+  const rawUnassigned = import.meta.env.AUTH_CLEANUP_DELETE_UNASSIGNED;
+  const authCleanupUnassignedEnabled =
+    rawUnassigned === "true" || rawUnassigned === "1" || String(rawUnassigned).toLowerCase() === "yes";
+
   return new Response(
     JSON.stringify({
       ok: true,
       preview,
       totalPending: total,
+      authCleanupUnassignedEnabled,
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
@@ -65,7 +70,21 @@ export const POST: APIRoute = async (context) => {
   }
 
   const authWarnings: string[] = [];
-  const auth = await deleteAuthUsersForMissingTenants(supabase, authWarnings);
+  const rawUnassigned = import.meta.env.AUTH_CLEANUP_DELETE_UNASSIGNED;
+  const deleteFullyUnassigned =
+    rawUnassigned === "true" || rawUnassigned === "1" || String(rawUnassigned).toLowerCase() === "yes";
+  const rawPreserve = import.meta.env.AUTH_CLEANUP_PRESERVE_AUTH_EMAILS ?? "";
+  const preserveEmails = new Set(
+    rawPreserve
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
+  const auth = await deleteAuthUsersForMissingTenants(supabase, authWarnings, {
+    deleteFullyUnassigned,
+    preserveEmails,
+  });
 
   return new Response(
     JSON.stringify({
@@ -73,6 +92,8 @@ export const POST: APIRoute = async (context) => {
       removed: data ?? [],
       authUsersRemoved: auth.removed,
       authUsersRepaired: auth.repaired,
+      authUsersRemovedUnassigned: auth.removedUnassigned,
+      authCleanupUnassignedEnabled: deleteFullyUnassigned,
       ...(authWarnings.length ? { warnings: authWarnings } : {}),
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },

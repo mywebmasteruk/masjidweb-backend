@@ -113,7 +113,24 @@ async function deleteAuthUsersForTenant(
 export type AuthOrphanCleanupResult = {
   removed: number;
   repaired: number;
+  /** Subset of `removed`: users deleted only because they had no tenant_id and no tenant_slug. */
+  removedUnassigned: number;
 };
+
+export type AuthCleanupOptions = {
+  /**
+   * Delete Auth users with no tenant UUID and no tenant_slug in metadata (stray signups / tests).
+   * Dangerous unless `preserveEmails` includes operator accounts. Default off.
+   */
+  deleteFullyUnassigned: boolean;
+  /** Lowercased emails never deleted when `deleteFullyUnassigned` is true. */
+  preserveEmails: Set<string>;
+};
+
+function isPreservedEmail(email: string | undefined, preserve: Set<string>): boolean {
+  const e = (email ?? "").trim().toLowerCase();
+  return e.length > 0 && preserve.has(e);
+}
 
 /**
  * Align Auth users with `tenant_registry`:
@@ -121,15 +138,17 @@ export type AuthOrphanCleanupResult = {
  * - Remove users whose tenant_slug does not match any tenant when they have no valid tenant_id.
  * - Remove users invited via generic builder invite (invited_at) with no tenant_id and no tenant_slug.
  * - Repair users who have a valid slug but missing/wrong tenant_id by setting user_metadata.tenant_id.
+ * - Optional (`deleteFullyUnassigned`): remove users with neither tenant_id nor tenant_slug (not preserved).
  */
 export async function deleteAuthUsersForMissingTenants(
   supabase: SupabaseClient,
   warnings: string[],
+  options?: AuthCleanupOptions,
 ): Promise<AuthOrphanCleanupResult> {
   const { data: tenants, error } = await supabase.from("tenant_registry").select("id, slug");
   if (error) {
     warnings.push(`tenant_registry load for auth cleanup: ${error.message}`);
-    return { removed: 0, repaired: 0 };
+    return { removed: 0, repaired: 0, removedUnassigned: 0 };
   }
 
   const rows = tenants ?? [];
@@ -142,6 +161,9 @@ export async function deleteAuthUsersForMissingTenants(
   const users = await listAllAuthUsers(supabase, warnings);
   let removed = 0;
   let repaired = 0;
+  let removedUnassigned = 0;
+  const deleteUnassigned = options?.deleteFullyUnassigned === true;
+  const preserve = options?.preserveEmails ?? new Set<string>();
 
   for (const u of users) {
     const meta = effectiveMetadata(u);
@@ -195,10 +217,21 @@ export async function deleteAuthUsersForMissingTenants(
       } else {
         removed += 1;
       }
+      continue;
+    }
+
+    if (!tid && !slug && deleteUnassigned && !isPreservedEmail(u.email, preserve)) {
+      const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
+      if (delErr) {
+        warnings.push(`Failed to delete fully unassigned auth user ${u.email ?? u.id}: ${delErr.message}`);
+      } else {
+        removed += 1;
+        removedUnassigned += 1;
+      }
     }
   }
 
-  return { removed, repaired };
+  return { removed, repaired, removedUnassigned };
 }
 
 /**

@@ -23,6 +23,11 @@ const { data: templateOptions } = await supabase
 
 const defaultSourceTemplateId = templateOptions?.[0]?.id ?? "";
 
+const cleanupDeletesUnassigned =
+  import.meta.env.AUTH_CLEANUP_DELETE_UNASSIGNED === "true" ||
+  import.meta.env.AUTH_CLEANUP_DELETE_UNASSIGNED === "1" ||
+  String(import.meta.env.AUTH_CLEANUP_DELETE_UNASSIGNED ?? "").toLowerCase() === "yes";
+
 const activeCount = clientTenants.filter((t) => t.status === "active").length;
 const provisioningCount = clientTenants.filter((t) => t.status === "provisioning").length;
 const failedCount = clientTenants.filter((t) => t.status === "failed").length;
@@ -384,7 +389,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   </div>
 </div>
 
-<script define:vars={{ domainSuffix }}>
+<script define:vars={{ domainSuffix, cleanupDeletesUnassigned }}>
   function toast(msg, ok) {
     const el = document.getElementById("toast");
     if (!el) return;
@@ -964,12 +969,12 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
 
   const cleanupOrphansBtn = document.getElementById("cleanupOrphansBtn");
   cleanupOrphansBtn?.addEventListener("click", async () => {
-    if (
-      !confirm(
-        "Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry, align Auth users (delete orphans / repair missing tenant_id from slug), and remove stale builder invites?",
-      )
-    )
-      return;
+    const msg =
+      "Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry, align Auth users (delete orphans / repair missing tenant_id from slug), and remove stale builder invites?" +
+      (cleanupDeletesUnassigned
+        ? " This server is also configured to DELETE Auth users with no tenant_id and no tenant_slug (except emails listed in AUTH_CLEANUP_PRESERVE_AUTH_EMAILS)."
+        : "");
+    if (!confirm(msg)) return;
     cleanupOrphansBtn.disabled = true;
     try {
       const res = await fetch("/api/cleanup-orphans", { method: "POST" });
@@ -986,7 +991,11 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           typeof data.authUsersRepaired === "number" && data.authUsersRepaired > 0
             ? "; auth repaired: " + data.authUsersRepaired
             : "";
-        toast("Cleanup done: " + rows + removed + repaired, true);
+        const unassigned =
+          typeof data.authUsersRemovedUnassigned === "number" && data.authUsersRemovedUnassigned > 0
+            ? "; no-tenant auth removed: " + data.authUsersRemovedUnassigned
+            : "";
+        toast("Cleanup done: " + rows + removed + repaired + unassigned, true);
       } else {
         toast(data.error || "Cleanup failed", false);
       }
