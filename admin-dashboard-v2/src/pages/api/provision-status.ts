@@ -40,6 +40,21 @@ export const GET: APIRoute = async (context) => {
     );
   }
 
+  // Publish state comes from provisioning audit actions.
+  // `provision_publish_step` => publish pipeline finished (may still include warnings)
+  // `provision_publish_failed` => publish hard-failed.
+  const { data: publishAuditRows } = await supabase
+    .from("provisioning_audit_log")
+    .select("action, created_at")
+    .eq("tenant_id", tenantId)
+    .in("action", ["provision_publish_step", "provision_publish_failed"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const latestPublishAction = publishAuditRows?.[0]?.action ?? null;
+  const publishCompleted = latestPublishAction === "provision_publish_step";
+  const publishFailed = latestPublishAction === "provision_publish_failed";
+
   return new Response(
     JSON.stringify({
       ok: true,
@@ -47,6 +62,8 @@ export const GET: APIRoute = async (context) => {
       slug: tenant.slug,
       status: tenant.status,
       active: tenant.status === "active",
+      publishCompleted,
+      publishFailed,
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );

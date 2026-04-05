@@ -562,15 +562,40 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       return { warnings: allWarnings };
     }
 
-    // Phase 3 — YCode publish (fire-and-forget).
-    // The template clone already copies published data, so the site is live.
-    // This call refreshes caches/CSS; it exceeds Netlify's gateway timeout
-    // but the Lambda completes in the background.
+    // Phase 3 — YCode publish. Trigger it, then poll status until the publish
+    // step reports completion (or failure) so we don't show "provisioned" too early.
     fetch("/api/provision-publish-tenant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tenantId }),
     }).catch(() => {});
+
+    const publishPollStart = Date.now();
+    const publishPollTimeoutMs = 2 * 60 * 1000; // 2 minutes
+    while (Date.now() - publishPollStart < publishPollTimeoutMs) {
+      await sleep(pollIntervalMs);
+      try {
+        const statusRes = await fetch(
+          "/api/provision-status?tenantId=" + encodeURIComponent(tenantId),
+        );
+        const statusData = statusRes.ok ? await statusRes.json() : null;
+        if (statusData?.publishCompleted) {
+          return { warnings: allWarnings };
+        }
+        if (statusData?.publishFailed) {
+          allWarnings.push(
+            "Publish: Auto-publish failed. Use Continue setup or Publish in the builder.",
+          );
+          return { warnings: allWarnings };
+        }
+      } catch {
+        // Network hiccup — keep polling
+      }
+    }
+
+    allWarnings.push(
+      "Publish: Still finishing in background (>2 min). Open the site in a new tab and refresh once, or use Continue setup.",
+    );
     return { warnings: allWarnings };
   }
 
