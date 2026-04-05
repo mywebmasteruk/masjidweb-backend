@@ -165,19 +165,11 @@ export async function startProvision(
       });
     }
 
-    await cloneTemplateForTenant(tenantId, sourceTemplateId);
-
-    await supabase.from("provisioning_audit_log").insert({
-      tenant_id: tenantId,
-      action: "clone_complete",
-      actor,
-      details: { stage: "phase1_done" },
-    });
-
+    // Template clone moved to phase 2 (completeProvision) so phase 1 stays
+    // well under the Netlify gateway timeout (~26 s).  Return immediately.
     return { tenantId, slug, siteUrl, warnings, needsCompletion: true };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    // Log before delete so we keep slug/email in audit (tenant_id FK may be cleared on delete).
     await supabase.from("provisioning_audit_log").insert({
       tenant_id: tenantId,
       action: "provision_failed",
@@ -207,8 +199,13 @@ export async function startProvision(
 }
 
 /**
- * Phase 2 — slow path (publish, CMS seed, invite, activate).
+ * Phase 2 — clone template data, CMS seed, invite, activate.
  * Called by the frontend after Phase 1 succeeds, or retried later.
+ *
+ * Clone is done here (not in Phase 1) so that Phase 1 always returns within
+ * the Netlify gateway timeout (~26 s).  An idempotent guard checks for an
+ * existing `clone_complete` audit entry so that concurrent retries never
+ * clone the same tenant twice.
  */
 export async function completeProvision(
   tenantId: string,
@@ -246,6 +243,24 @@ export async function completeProvision(
   );
 
   try {
+    // 0. Clone template data (idempotent — skip if already done).
+    const { data: cloneDoneRows } = await supabase
+      .from("provisioning_audit_log")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("action", "clone_complete")
+      .limit(1);
+
+    if (!cloneDoneRows || cloneDoneRows.length === 0) {
+      await cloneTemplateForTenant(tenantId, sourceTpl);
+      await supabase.from("provisioning_audit_log").insert({
+        tenant_id: tenantId,
+        action: "clone_complete",
+        actor,
+        details: { stage: "phase2_clone" },
+      });
+    }
+
     // 1. CMS seed (fast DB work — no publish dependency)
     const idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
     await seedTenantCmsContent(
