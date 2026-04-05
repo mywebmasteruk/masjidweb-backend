@@ -434,6 +434,14 @@ export type MergeHeadIntoBaseResult =
   | { status: "conflict"; message: string }
   | { status: "error"; message: string; httpStatus: number };
 
+export interface EnsureMergePRResult {
+  ok: boolean;
+  number?: number;
+  htmlUrl?: string;
+  created?: boolean;
+  message: string;
+}
+
 /** Merge branch `head` into `base` via GitHub merge API (no PR). */
 export async function mergeHeadIntoBase(
   token: string,
@@ -484,5 +492,80 @@ export async function mergeHeadIntoBase(
     status: "error",
     message: text.slice(0, 500) || `GitHub merges API: ${res.status}`,
     httpStatus: res.status,
+  };
+}
+
+/**
+ * Ensure there is an open PR from `head` to `base`.
+ * Used as a durable fallback path when direct merge API hits conflicts.
+ */
+export async function ensureMergePR(
+  token: string,
+  repo: string,
+  head: string,
+  base: string,
+  title: string,
+  body: string,
+): Promise<EnsureMergePRResult> {
+  const [owner] = repo.split("/");
+  const headRef = `${owner}:${head.trim()}`;
+  const baseRef = base.trim();
+
+  const existingRes = await fetch(
+    `${GH}/repos/${repo}/pulls?state=open&base=${encodeURIComponent(baseRef)}&head=${encodeURIComponent(headRef)}`,
+    { headers: headers(token) },
+  );
+  if (!existingRes.ok) {
+    return {
+      ok: false,
+      message: `Could not list open PRs (${existingRes.status}).`,
+    };
+  }
+
+  const existing = (await existingRes.json()) as Array<{
+    number: number;
+    html_url: string;
+  }>;
+  if (existing.length > 0) {
+    const pr = existing[0];
+    return {
+      ok: true,
+      number: pr.number,
+      htmlUrl: pr.html_url,
+      created: false,
+      message: `Using existing PR #${pr.number}.`,
+    };
+  }
+
+  const createRes = await fetch(`${GH}/repos/${repo}/pulls`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      head: head.trim(),
+      base: baseRef,
+      body,
+      maintainer_can_modify: true,
+    }),
+  });
+
+  if (!createRes.ok) {
+    const txt = await createRes.text();
+    return {
+      ok: false,
+      message: `Could not create merge PR (${createRes.status}): ${txt.slice(0, 300)}`,
+    };
+  }
+
+  const created = (await createRes.json()) as {
+    number: number;
+    html_url: string;
+  };
+  return {
+    ok: true,
+    number: created.number,
+    htmlUrl: created.html_url,
+    created: true,
+    message: `Created PR #${created.number}.`,
   };
 }

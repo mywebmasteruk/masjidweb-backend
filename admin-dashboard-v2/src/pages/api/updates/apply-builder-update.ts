@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import {
+  ensureMergePR,
   mergeHeadIntoBase,
   syncForkFromUpstream,
 } from "../../../lib/github-updates";
@@ -72,6 +73,19 @@ export const POST: APIRoute = async (context) => {
     steps.mergeMainIntoProduction = merge;
 
     if (merge.status === "conflict") {
+      const pr = await ensureMergePR(
+        token,
+        repo,
+        "main",
+        productionBranch,
+        `Sync main into ${productionBranch}`,
+        [
+          "Created automatically by MasjidWeb Admin (Apply YCode update).",
+          "",
+          `Direct merge main -> ${productionBranch} hit conflicts.`,
+          "Resolve conflicts in this PR and merge it, then click Apply YCode update again.",
+        ].join("\n"),
+      );
       return new Response(
         JSON.stringify({
           ok: false,
@@ -80,6 +94,10 @@ export const POST: APIRoute = async (context) => {
           error: merge.message,
           hint:
             `Cannot auto-merge main into ${productionBranch}. Resolve conflicts between these branches, then retry.`,
+          prNumber: pr.number,
+          prUrl: pr.htmlUrl,
+          prCreated: pr.created,
+          prMessage: pr.message,
         }),
         { status: 409, headers: json },
       );

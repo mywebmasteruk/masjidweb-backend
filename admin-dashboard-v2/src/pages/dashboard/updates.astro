@@ -104,7 +104,7 @@ import Layout from "../../layouts/Layout.astro";
           <h2>Builder from admin</h2>
         </div>
         <p class="text-xs text-muted" style="margin:-0.5rem 0 1rem;">
-          One action: sync from upstream, merge <span class="mono">main</span> into your production branch (<span class="mono">GITHUB_PRODUCTION_BRANCH</span> / first sync base), then start a Netlify production build — no GitHub UI required. If a deploy breaks tenant sites, use <strong>Restore previous live build</strong> to republish the last ready deploy before the current one.
+          One action: sync from upstream, merge <span class="mono">main</span> into your production branch (<span class="mono">GITHUB_PRODUCTION_BRANCH</span> / first sync base), then start a Netlify production build — no GitHub UI required. If merge conflicts exist, this page auto-creates (or reuses) a conflict PR and links it here so you can resolve once and retry. If a deploy breaks tenant sites, use <strong>Restore previous live build</strong> to republish the last ready deploy before the current one.
         </p>
         <div class="flex" style="flex-wrap:wrap;gap:.75rem;align-items:center;margin-bottom:.75rem;">
           <label class="text-xs text-muted" style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;">
@@ -499,13 +499,21 @@ import Layout from "../../layouts/Layout.astro";
 
   document.getElementById("refreshDeploysBtn").addEventListener("click", loadDeploys);
 
-  function setApplyUpdateResult(message, ok, hint, compareUrl) {
+  function setApplyUpdateResult(message, ok, opts = {}) {
     const el = document.getElementById("applyUpdateResult");
     if (!el) return;
-    const chunks = [message];
-    if (hint) chunks.push(hint);
-    if (compareUrl) chunks.push("Resolve conflicts: " + compareUrl);
-    el.textContent = chunks.filter(Boolean).join(" ");
+
+    const lines = [];
+    if (message) lines.push(String(message));
+    if (opts.hint) lines.push(String(opts.hint));
+    if (opts.prUrl) {
+      const label = opts.prNumber ? "Open PR #" + opts.prNumber : "Open conflict PR";
+      lines.push('<a href="' + String(opts.prUrl) + '" target="_blank" rel="noopener noreferrer">' + label + "</a>");
+    } else if (opts.compareUrl) {
+      lines.push('<a href="' + String(opts.compareUrl) + '" target="_blank" rel="noopener noreferrer">Open compare view</a>');
+    }
+
+    el.innerHTML = lines.join("<br />");
     el.classList.remove("hidden");
     if (ok) {
       el.style.background = "var(--success-bg)";
@@ -534,7 +542,9 @@ import Layout from "../../layouts/Layout.astro";
       return;
     }
     if (data.partial === true) {
-      setApplyUpdateResult(data.message || "Git updated.", true, data.warning);
+      setApplyUpdateResult(data.message || "Git updated.", true, {
+        hint: data.warning,
+      });
       toast(data.message || "Git updated.", true);
       if (data.warning) toast(String(data.warning), false);
       setTimeout(() => {
@@ -547,12 +557,14 @@ import Layout from "../../layouts/Layout.astro";
       typeof data.error === "string"
         ? data.error
         : data.message || "Apply update failed";
-    setApplyUpdateResult(
-      msg,
-      false,
-      typeof data.hint === "string" ? data.hint : undefined,
-      typeof data.compareUrl === "string" ? data.compareUrl : undefined,
-    );
+    setApplyUpdateResult(msg, false, {
+      hint: typeof data.hint === "string" ? data.hint : undefined,
+      compareUrl:
+        typeof data.compareUrl === "string" ? data.compareUrl : undefined,
+      prUrl: typeof data.prUrl === "string" ? data.prUrl : undefined,
+      prNumber:
+        typeof data.prNumber === "number" ? data.prNumber : undefined,
+    });
     toast(msg, false);
   }
 
