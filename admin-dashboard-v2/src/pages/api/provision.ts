@@ -2,7 +2,7 @@ import type { APIRoute } from "astro";
 import { ZodError } from "zod";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { ProvisionValidationError } from "../../lib/provision-email-policy";
-import { startProvision } from "../../lib/provision-pipeline";
+import { startProvisionIdempotent } from "../../lib/provision-pipeline";
 
 /**
  * Phase 1 only — registry + domain alias + template clone.
@@ -28,7 +28,7 @@ export const POST: APIRoute = async (context) => {
   }
 
   try {
-    const result = await startProvision(body, "dashboard-v2");
+    const result = await startProvisionIdempotent(body, "dashboard-v2");
     return new Response(
       JSON.stringify({
         ok: true,
@@ -37,6 +37,7 @@ export const POST: APIRoute = async (context) => {
         siteUrl: result.siteUrl,
         warnings: result.warnings,
         needsCompletion: result.needsCompletion,
+        outcome: result.outcome,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );

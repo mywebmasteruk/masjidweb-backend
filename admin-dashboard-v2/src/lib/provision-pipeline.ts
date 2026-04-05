@@ -361,6 +361,97 @@ export async function finishProvisionAndPublish(
 }
 
 /**
+ * Phase 1 — idempotent variant of {@link startProvision}.
+ *
+ * Checks for an existing tenant with the same slug first:
+ * - `provisioning` → returns it with `needsCompletion: true` so the dashboard chains
+ *   phase 2 + publish as normal (no duplicate row).
+ * - `active` → returns it with `needsCompletion: false` so the dashboard shows success
+ *   immediately.
+ * - `failed` / `deactivated` → reclaims (removes) the old row, then runs a fresh
+ *   {@link startProvision}.
+ * - `template` kind → throws a clear validation error.
+ * - New slug → delegates to {@link startProvision}.
+ */
+export async function startProvisionIdempotent(
+  raw: unknown,
+  actor: string,
+): Promise<ProvisionResult> {
+  const slug = resolveProvisionSlug(raw);
+  const domainSuffix = getDomainSuffix();
+  const siteUrl = `https://${slug}.${domainSuffix}`;
+  const supabase = getServiceSupabase();
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("tenant_registry")
+    .select("id, status, tenant_kind")
+    .eq("slug", slug)
+    .maybeSingle();
+
+  if (existingErr) {
+    throw new Error(`Could not look up tenant by slug: ${existingErr.message}`);
+  }
+
+  if (existing) {
+    if (existing.tenant_kind === "template") {
+      throw new ProvisionValidationError(
+        `Slug "${slug}" is reserved by a demo template. Choose a different slug.`,
+      );
+    }
+
+    if (existing.status === "provisioning") {
+      return {
+        tenantId: existing.id as string,
+        slug,
+        siteUrl,
+        needsCompletion: true,
+        outcome: "resumed_provisioning",
+        warnings: [
+          "Resumed provisioning for this slug (e.g. after a gateway timeout or duplicate request). No duplicate tenant was created.",
+        ],
+      };
+    }
+
+    if (existing.status === "active") {
+      return {
+        tenantId: existing.id as string,
+        slug,
+        siteUrl,
+        needsCompletion: false,
+        outcome: "already_active",
+        warnings: [
+          "This subdomain is already provisioned and active. No duplicate was created.",
+        ],
+      };
+    }
+
+    if (existing.status === "failed" || existing.status === "deactivated") {
+      const reclaimWarnings: string[] = [
+        `Removed the previous ${existing.status} tenant for this slug so a clean provision can run.`,
+      ];
+      await reclaimClientTenantForSlugReuse(
+        supabase,
+        { id: existing.id as string, slug },
+        reclaimWarnings,
+      );
+      const fresh = await startProvision(raw, actor);
+      return {
+        ...fresh,
+        outcome: "recreated_after_failure",
+        warnings: [...reclaimWarnings, ...fresh.warnings],
+      };
+    }
+
+    throw new ProvisionValidationError(
+      `Slug "${slug}" is already in use (status: ${existing.status}). Open the dashboard to resolve that tenant or pick another slug.`,
+    );
+  }
+
+  const result = await startProvision(raw, actor);
+  return { ...result, outcome: "created" };
+}
+
+/**
  * Derive URL slug the same way as {@link startProvision} (must stay in sync).
  */
 function resolveProvisionSlug(raw: unknown): string {
