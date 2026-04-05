@@ -68,6 +68,61 @@ function getDomainSuffix(): string {
   return readServerEnv("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
 }
 
+async function countDraftRows(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  tenantId: string,
+  table: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from(table)
+    .select("*", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (error) {
+    throw new Error(`${table} count failed: ${error.message}`);
+  }
+  return count ?? 0;
+}
+
+/**
+ * Non-fatal clone sanity checks to catch partial copy issues quickly.
+ * Adds warnings (does not fail provisioning) to avoid regressions for live customers.
+ */
+async function appendCloneIntegrityWarnings(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  tenantId: string,
+  warnings: string[],
+): Promise<void> {
+  try {
+    const [pages, layers, collections] = await Promise.all([
+      countDraftRows(supabase, tenantId, "pages"),
+      countDraftRows(supabase, tenantId, "page_layers"),
+      countDraftRows(supabase, tenantId, "collections"),
+    ]);
+
+    if (pages === 0) {
+      warnings.push(
+        "Clone check — tenant has 0 draft pages after clone (expected at least homepage).",
+      );
+    }
+    if (layers === 0) {
+      warnings.push(
+        "Clone check — tenant has 0 draft page_layers after clone (pages may render empty).",
+      );
+    }
+    if (collections === 0) {
+      warnings.push(
+        "Clone check — tenant has 0 draft collections after clone (CMS content may be missing).",
+      );
+    }
+  } catch (e) {
+    warnings.push(
+      `Clone check — non-fatal validation error: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+}
+
 /**
  * Phase 1 — fast path (< 8 s on free Netlify).
  * Validates, inserts registry row, adds domain alias, clones template.
@@ -256,6 +311,7 @@ export async function completeProvision(
   const slug = tenant.slug as string;
   const siteUrl = `https://${slug}.${domainSuffix}`;
   const warnings: string[] = [];
+  const phase2TimingMs: Record<string, number> = {};
   const sourceTpl = await resolveSourceTemplateIdForClientTenant(
     supabase,
     tenantId,
@@ -276,16 +332,22 @@ export async function completeProvision(
       .limit(1);
 
     if (!cloneDoneRows || cloneDoneRows.length === 0) {
+      const cloneStart = Date.now();
       await cloneTemplateForTenant(tenantId, sourceTpl);
+      phase2TimingMs.clone = Date.now() - cloneStart;
+      const cloneCheckStart = Date.now();
+      await appendCloneIntegrityWarnings(supabase, tenantId, warnings);
+      phase2TimingMs.clone_check = Date.now() - cloneCheckStart;
       await supabase.from("provisioning_audit_log").insert({
         tenant_id: tenantId,
         action: "clone_complete",
         actor,
-        details: { stage: "phase2_clone" },
+        details: { stage: "phase2_clone", timing_ms: phase2TimingMs },
       });
     }
 
     // 1. CMS seed (fast DB work — no publish dependency)
+    const cmsSeedStart = Date.now();
     const idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
     await seedTenantCmsContent(
       tenantId,
@@ -302,11 +364,16 @@ export async function completeProvision(
       idMap,
       sourceTpl,
     );
+    phase2TimingMs.cms_seed = Date.now() - cmsSeedStart;
 
+    const translationsStart = Date.now();
     await cloneTranslationsForTenant(supabase, tenantId, idMap, sourceTpl);
+    phase2TimingMs.translations = Date.now() - translationsStart;
 
     // 2. Patch null tenant_ids from clone
+    const patchStart = Date.now();
     await patchNullTenantIds(supabase, tenantId);
+    phase2TimingMs.patch_null_tenant_ids = Date.now() - patchStart;
 
     // 3. Invite primary admin (non-fatal) — always @tenant-domain so SMTP/catch-all receives it
     const inviteFromRegistry = tenant.email
@@ -314,6 +381,7 @@ export async function completeProvision(
       : "";
     const { email: inviteEmail, coerced: inviteCoerced } =
       coerceTenantAdminEmailToSuffix(inviteFromRegistry, slug, domainSuffix);
+    const inviteStart = Date.now();
     try {
       await supabase.auth.admin.inviteUserByEmail(inviteEmail, {
         redirectTo: `https://${slug}.${domainSuffix}/ycode/accept-invite`,
@@ -338,18 +406,26 @@ export async function completeProvision(
         warnings.push(`User invite: ${msg}`);
       }
     }
+    phase2TimingMs.invite = Date.now() - inviteStart;
 
     // 4. Mark active before publish (demo parity checks run in publishTenantAfterProvision — non-blocking for activation).
+    const activateStart = Date.now();
     await supabase
       .from("tenant_registry")
       .update({ status: "active", updated_at: new Date().toISOString() })
       .eq("id", tenantId);
+    phase2TimingMs.activate = Date.now() - activateStart;
 
     await supabase.from("provisioning_audit_log").insert({
       tenant_id: tenantId,
       action: "provision_complete",
       actor,
-      details: { site_url: siteUrl, architecture: "subdomain-multi-tenant", warnings },
+      details: {
+        site_url: siteUrl,
+        architecture: "subdomain-multi-tenant",
+        warnings,
+        phase2_timing_ms: phase2TimingMs,
+      },
     });
 
     return { warnings };
