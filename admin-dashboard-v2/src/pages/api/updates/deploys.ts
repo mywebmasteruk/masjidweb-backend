@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
+import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -11,10 +12,13 @@ export const GET: APIRoute = async (context) => {
   }
 
   const token = import.meta.env.NETLIFY_AUTH_TOKEN;
-  const siteId = import.meta.env.NETLIFY_SITE_ID;
+  const siteId = netlifyBuilderSiteId();
   if (!token || !siteId) {
     return new Response(
-      JSON.stringify({ error: "NETLIFY_AUTH_TOKEN or NETLIFY_SITE_ID not configured" }),
+      JSON.stringify({
+        error:
+          "NETLIFY_AUTH_TOKEN or builder site id not configured (NETLIFY_SITE_ID or NETLIFY_UPDATES_DEPLOY_SITE_ID)",
+      }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }

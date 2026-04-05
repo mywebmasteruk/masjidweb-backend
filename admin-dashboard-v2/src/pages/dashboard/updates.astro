@@ -73,21 +73,55 @@ import Layout from "../../layouts/Layout.astro";
           <div class="flex" style="align-items:flex-start;gap:.5rem;">
             <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--warning)" stroke-width="2.5" style="flex-shrink:0;margin-top:2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
             <div>
-              <span class="text-sm" style="color:var(--warning);font-weight:600;">New upstream release vs fork package version</span>
+              <span class="text-sm" style="color:var(--warning);font-weight:600;">Update available (same semver check as the tenant builder)</span>
               <p class="text-xs text-muted" style="margin:.35rem 0 0;">
-                Latest <span class="mono">ycode/ycode</span> release is <strong id="semverLatestLabel">—</strong> but <span class="mono">package.json</span> on branch <strong id="semverBranchLabel">—</strong> is <strong id="semverForkLabel">—</strong>.
-                The tenant builder compares the same release to the <em>deployed</em> app (baked at build time) — align this branch, merge to production, then let Netlify deploy.
+                Latest <span class="mono">ycode/ycode</span> release is <strong id="semverLatestLabel">—</strong>. Published production build reports <strong id="semverForkLabel">—</strong> <span id="semverContextLabel"></span>.
               </p>
-              <p class="text-xs text-muted" style="margin:.5rem 0 0;">Merge or sync so production’s <span class="mono">package.json</span> matches the release, then deploy. If Git already matches but tenants show an older number, clear cache or redeploy on Netlify.</p>
+              <p id="semverGitAheadNote" class="hidden text-xs" style="margin:.45rem 0 0;color:var(--accent-hover);"></p>
+              <p class="text-xs text-muted" style="margin:.5rem 0 0;">You can run the full pipeline from here (sync → merge <span class="mono">main</span> → production → Netlify build). The builder banner clears once the new build’s <span class="mono">package.json</span> version reaches the release.</p>
+              <div class="flex" style="flex-wrap:wrap;gap:.5rem;margin-top:.65rem;align-items:center;">
+                <button type="button" id="applyFromSemverBtn" class="btn btn-primary btn-sm">Apply full update</button>
+                <label class="text-xs text-muted" style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;">
+                  <input type="checkbox" id="applyFromSemverClearCache" />
+                  Clear Netlify cache
+                </label>
+              </div>
             </div>
           </div>
         </div>
 
+        <div id="deployStaleNote" class="hidden" style="margin-bottom:1rem;padding:1rem;background:rgba(59,130,246,.08);border-radius:var(--radius);border:1px solid rgba(59,130,246,.25);">
+          <p class="text-sm" style="margin:0;color:var(--accent-hover);font-weight:600;">Git is ahead of the published Netlify build</p>
+          <p id="deployStaleBody" class="text-xs text-muted" style="margin:.35rem 0 0;"></p>
+        </div>
+
         <div id="upToDate" class="hidden" style="padding:1rem;background:var(--success-bg);border-radius:var(--radius);border:1px solid rgba(34,197,94,.2);">
-          <div class="flex">
-            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--success)" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-            <span class="text-sm" style="color:var(--success);font-weight:600;">Your fork is up to date with upstream</span>
+          <div class="flex" style="flex-direction:column;gap:.35rem;">
+            <div class="flex" style="align-items:center;gap:.5rem;">
+              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--success)" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              <span class="text-sm" style="color:var(--success);font-weight:600;">No YCode release newer than your published builder</span>
+            </div>
+            <p id="upToDateDetail" class="text-xs text-muted" style="margin:0;"></p>
           </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Builder from admin</h2>
+        </div>
+        <p class="text-xs text-muted" style="margin:-0.5rem 0 1rem;">
+          One action: sync from upstream, merge <span class="mono">main</span> into your production branch (<span class="mono">GITHUB_PRODUCTION_BRANCH</span> / first sync base), then start a Netlify production build — no GitHub UI required. If a deploy breaks tenant sites, use <strong>Restore previous live build</strong> to republish the last ready deploy before the current one.
+        </p>
+        <div class="flex" style="flex-wrap:wrap;gap:.75rem;align-items:center;margin-bottom:.75rem;">
+          <label class="text-xs text-muted" style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;">
+            <input type="checkbox" id="applyUpdateClearCache" />
+            Clear Netlify build cache
+          </label>
+        </div>
+        <div class="flex" style="flex-wrap:wrap;gap:.75rem;">
+          <button type="button" id="applyBuilderUpdateBtn" class="btn btn-primary">Apply YCode update</button>
+          <button type="button" id="restorePreviousDeployBtn" class="btn btn-ghost">Restore previous live build</button>
         </div>
       </div>
 
@@ -205,21 +239,71 @@ import Layout from "../../layouts/Layout.astro";
     statusArea.innerHTML =
       '<p class="text-sm text-muted">Compared your fork’s default branch to <span class="mono">' +
       (data.upstreamRepo || "upstream") +
-      '</span>. Semver vs <span class="mono">ycode/ycode</span> releases uses <span class="mono">package.json</span> on branch <strong class="mono">' +
+      '</span>. <strong>Semver vs releases</strong> uses the <em>published Netlify production deploy</em> when Netlify reports a git commit (same baked <span class="mono">package.json</span> as the tenant builder). Git branch <span class="mono">' +
       pkgRef +
-      "</strong> (Netlify production line — same logic as the tenant builder).</p>";
+      "</span> is shown for sync context.</p>";
 
     const semverWarn = document.getElementById("semverWarning");
     const semverLatestLabel = document.getElementById("semverLatestLabel");
     const semverForkLabel = document.getElementById("semverForkLabel");
-    const semverBranchLabel = document.getElementById("semverBranchLabel");
-    if (semverBranchLabel) semverBranchLabel.textContent = pkgRef;
+    const semverContextLabel = document.getElementById("semverContextLabel");
+    const semverGitAheadNote = document.getElementById("semverGitAheadNote");
+    const deployStaleNote = document.getElementById("deployStaleNote");
+    const deployStaleBody = document.getElementById("deployStaleBody");
+    const upToDateDetail = document.getElementById("upToDateDetail");
+
     if (data.releaseAheadOfForkPackage && semverWarn && semverLatestLabel && semverForkLabel) {
       semverLatestLabel.textContent = data.latestReleaseVersion || "—";
-      semverForkLabel.textContent = data.forkPackageVersion || "—";
+      const deployedV = data.deployedPackageVersion;
+      semverForkLabel.textContent = deployedV || data.forkPackageVersion || "—";
+      if (semverContextLabel) {
+        if (data.deployCommitRef && deployedV) {
+          const short = String(data.deployCommitRef).slice(0, 7);
+          const br = data.deployBranch ? ", branch " + data.deployBranch : "";
+          semverContextLabel.textContent = "(from Netlify production commit " + short + br + ").";
+        } else {
+          semverContextLabel.textContent =
+            "(Netlify commit unknown — using Git branch " + pkgRef + " version " + (data.forkPackageVersion || "—") + ").";
+        }
+      }
+      if (semverGitAheadNote) {
+        if (data.gitAheadOfDeployed && data.forkPackageVersion && deployedV) {
+          semverGitAheadNote.textContent =
+            "Branch " +
+            pkgRef +
+            " already has package.json v" +
+            data.forkPackageVersion +
+            " — production only needs a fresh deploy.";
+          semverGitAheadNote.classList.remove("hidden");
+        } else {
+          semverGitAheadNote.classList.add("hidden");
+        }
+      }
       semverWarn.classList.remove("hidden");
     } else if (semverWarn) {
       semverWarn.classList.add("hidden");
+      if (semverGitAheadNote) semverGitAheadNote.classList.add("hidden");
+    }
+
+    if (deployStaleNote && deployStaleBody) {
+      if (
+        !data.releaseAheadOfForkPackage &&
+        data.gitAheadOfDeployed &&
+        data.forkPackageVersion &&
+        data.deployedPackageVersion
+      ) {
+        deployStaleBody.textContent =
+          "Branch " +
+          pkgRef +
+          " is v" +
+          data.forkPackageVersion +
+          " but the live builder is still v" +
+          data.deployedPackageVersion +
+          ". Trigger a production deploy on Netlify (or wait for the current build).";
+        deployStaleNote.classList.remove("hidden");
+      } else {
+        deployStaleNote.classList.add("hidden");
+      }
     }
 
     if (data.behindBy > 0) {
@@ -234,6 +318,24 @@ import Layout from "../../layouts/Layout.astro";
         document.getElementById("upToDate").classList.add("hidden");
       } else {
         document.getElementById("upToDate").classList.remove("hidden");
+        if (upToDateDetail) {
+          if (data.deployedPackageVersion && data.deployCommitRef) {
+            const short = String(data.deployCommitRef).slice(0, 7);
+            upToDateDetail.textContent =
+              "Published build v" +
+              data.deployedPackageVersion +
+              " at commit " +
+              short +
+              ". Git branch " +
+              pkgRef +
+              " is v" +
+              (data.forkPackageVersion || "—") +
+              ".";
+          } else {
+            upToDateDetail.textContent =
+              "Semver check used Git branch " + pkgRef + " (v" + (data.forkPackageVersion || "—") + ") — set Netlify + GitHub so production deploys include a commit SHA for exact parity with tenants.";
+          }
+        }
       }
     }
 
@@ -402,6 +504,100 @@ import Layout from "../../layouts/Layout.astro";
   }
 
   document.getElementById("refreshDeploysBtn").addEventListener("click", loadDeploys);
+
+  async function postApplyBuilderUpdate(clearCache) {
+    const data = await api("/api/updates/apply-builder-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clearNetlifyCache: clearCache === true }),
+    });
+    if (data.ok === true) {
+      toast(data.message || "Update pipeline completed.", true);
+      setTimeout(() => {
+        loadDeploys();
+        runUpdateCheck();
+      }, 3000);
+      return;
+    }
+    if (data.partial === true) {
+      toast(data.message || "Git updated.", true);
+      if (data.warning) toast(String(data.warning), false);
+      setTimeout(() => {
+        loadDeploys();
+        runUpdateCheck();
+      }, 3000);
+      return;
+    }
+    const msg =
+      typeof data.error === "string"
+        ? data.error
+        : data.message || "Apply update failed";
+    toast(msg, false);
+  }
+
+  const applyBuilderBtn = document.getElementById("applyBuilderUpdateBtn");
+  if (applyBuilderBtn) {
+    applyBuilderBtn.addEventListener("click", async () => {
+      const clear =
+        document.getElementById("applyUpdateClearCache")?.checked === true;
+      if (
+        !confirm(
+          "Sync from upstream, merge main into the production branch, and start a Netlify production build?",
+        )
+      )
+        return;
+      applyBuilderBtn.disabled = true;
+      applyBuilderBtn.textContent = "Running…";
+      await postApplyBuilderUpdate(clear);
+      applyBuilderBtn.disabled = false;
+      applyBuilderBtn.textContent = "Apply YCode update";
+    });
+  }
+
+  const applyFromSemverBtn = document.getElementById("applyFromSemverBtn");
+  if (applyFromSemverBtn) {
+    applyFromSemverBtn.addEventListener("click", async () => {
+      const clear =
+        document.getElementById("applyFromSemverClearCache")?.checked === true;
+      if (
+        !confirm(
+          "Run the full update pipeline (sync → merge → Netlify build)?",
+        )
+      )
+        return;
+      applyFromSemverBtn.disabled = true;
+      applyFromSemverBtn.textContent = "Running…";
+      await postApplyBuilderUpdate(clear);
+      applyFromSemverBtn.disabled = false;
+      applyFromSemverBtn.textContent = "Apply full update";
+    });
+  }
+
+  const restorePrevBtn = document.getElementById("restorePreviousDeployBtn");
+  if (restorePrevBtn) {
+    restorePrevBtn.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "Publish the previous successful deploy? This immediately changes the live builder for tenants.",
+        )
+      )
+        return;
+      restorePrevBtn.disabled = true;
+      restorePrevBtn.textContent = "Restoring…";
+      const res = await api("/api/updates/rollback-previous", { method: "POST" });
+      if (res.ok) {
+        toast(res.message || "Restored previous deploy.", true);
+        setTimeout(() => {
+          loadDeploys();
+          runUpdateCheck();
+        }, 2000);
+      } else {
+        toast(res.error || res.message || "Could not restore", false);
+      }
+      restorePrevBtn.disabled = false;
+      restorePrevBtn.textContent = "Restore previous live build";
+    });
+  }
 
   // Load deploys on page load
   loadDeploys();

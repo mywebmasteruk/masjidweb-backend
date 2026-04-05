@@ -1,18 +1,14 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
-import { getUpdateStatus, getReleaseSemverVsFork } from "../../../lib/github-updates";
-
-/** Branch whose `package.json` matches Netlify production (tenant builder). */
-function productionPackageJsonRef(): string {
-  const explicit = import.meta.env.GITHUB_PRODUCTION_BRANCH?.trim();
-  if (explicit) return explicit;
-  const bases = import.meta.env.GITHUB_SYNC_PR_BASES?.trim();
-  if (bases) {
-    const first = bases.split(",")[0]?.trim();
-    if (first) return first;
-  }
-  return "tenant-multi";
-}
+import {
+  compareVersions,
+  fetchPackageJsonVersion,
+  getReleaseSemverVsFork,
+  getUpdateStatus,
+} from "../../../lib/github-updates";
+import { listRecentDeploys } from "../../../lib/netlify-deploys";
+import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
+import { githubProductionBranch } from "../../../lib/updates-env";
 
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -34,11 +30,64 @@ export const GET: APIRoute = async (context) => {
   try {
     const [status, semver] = await Promise.all([
       getUpdateStatus(token, repo),
-      getReleaseSemverVsFork(token, repo, productionPackageJsonRef()),
+      getReleaseSemverVsFork(token, repo, githubProductionBranch()),
     ]);
-    return new Response(JSON.stringify({ ok: true, ...status, ...semver }), {
-      headers: { "Content-Type": "application/json" },
-    });
+
+    let deployedPackageVersion: string | null = null;
+    let deployCommitRef: string | null = null;
+    let deployBranch: string | null = null;
+
+    const netlifyToken = import.meta.env.NETLIFY_AUTH_TOKEN;
+    const nlSite = netlifyBuilderSiteId();
+    if (netlifyToken && nlSite) {
+      try {
+        const deploys = await listRecentDeploys(netlifyToken, nlSite, 25);
+        const cur = deploys.find((d) => d.isCurrent && d.state === "ready");
+        if (cur?.commitRef) {
+          deployCommitRef = cur.commitRef;
+          deployBranch = cur.branch;
+          deployedPackageVersion = await fetchPackageJsonVersion(
+            token,
+            repo,
+            cur.commitRef,
+          );
+        }
+      } catch {
+        /* ignore — fall back to git-branch semver only */
+      }
+    }
+
+    /** Same boolean the tenant builder uses: latest ycode/ycode release vs baked package.json at published deploy. */
+    let releaseAheadOfForkPackage = semver.releaseAheadOfForkPackage;
+    if (semver.latestReleaseVersion) {
+      if (deployedPackageVersion) {
+        releaseAheadOfForkPackage =
+          compareVersions(semver.latestReleaseVersion, deployedPackageVersion) >
+          0;
+      }
+    }
+
+    const gitAheadOfDeployed = Boolean(
+      semver.forkPackageVersion &&
+        deployedPackageVersion &&
+        compareVersions(semver.forkPackageVersion, deployedPackageVersion) > 0,
+    );
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        ...status,
+        ...semver,
+        releaseAheadOfForkPackage,
+        deployedPackageVersion,
+        deployCommitRef,
+        deployBranch,
+        gitAheadOfDeployed,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   } catch (e) {
     return new Response(
       JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }),

@@ -62,6 +62,16 @@ export async function listRecentDeploys(
   }));
 }
 
+/** Netlify returns deploys newest-first; find the first `ready` deploy older than the live one. */
+export function findPreviousReadyDeploy(deploys: DeployInfo[]): DeployInfo | undefined {
+  const curIdx = deploys.findIndex((d) => d.isCurrent);
+  if (curIdx < 0) return undefined;
+  for (let i = curIdx + 1; i < deploys.length; i++) {
+    if (deploys[i].state === "ready") return deploys[i];
+  }
+  return undefined;
+}
+
 export async function publishDeploy(
   token: string,
   siteId: string,
@@ -76,4 +86,34 @@ export async function publishDeploy(
     return { ok: false, message: `Rollback failed: ${res.status} ${text}` };
   }
   return { ok: true, message: "Deploy published. Site is now serving this version." };
+}
+
+/** Start a new production build from the linked Git branch (same as “Trigger deploy” in Netlify UI). */
+export async function triggerProductionBuild(
+  token: string,
+  siteId: string,
+  options?: { clearCache?: boolean },
+): Promise<{ ok: boolean; message: string; buildId?: string }> {
+  const body =
+    options?.clearCache === true ? JSON.stringify({ clear_cache: true }) : "{}";
+  const res = await fetch(`${API}/sites/${siteId}/builds`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    return {
+      ok: false,
+      message: `Netlify could not start a build (${res.status}). ${text.slice(0, 300)}`,
+    };
+  }
+  const data = (await res.json()) as { id?: string; deploy_id?: string };
+  return {
+    ok: true,
+    message: options?.clearCache
+      ? "Production build started (cache cleared)."
+      : "Production build started.",
+    buildId: data.id ?? data.deploy_id,
+  };
 }

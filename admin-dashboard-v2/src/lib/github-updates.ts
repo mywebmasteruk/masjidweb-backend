@@ -80,6 +80,32 @@ export async function getUpdateStatus(
   };
 }
 
+/** Read `version` from `package.json` at any commit/branch ref (same tree the builder bakes at build time). */
+export async function fetchPackageJsonVersion(
+  token: string,
+  forkRepo: string,
+  ref: string,
+): Promise<string | null> {
+  const pkgRes = await fetch(
+    `${GH}/repos/${forkRepo}/contents/package.json?ref=${encodeURIComponent(ref.trim())}`,
+    { headers: headers(token) },
+  );
+  if (!pkgRes.ok) return null;
+  const raw = (await pkgRes.json()) as {
+    content?: string;
+    encoding?: string;
+  };
+  if (!raw.content || raw.encoding !== "base64") return null;
+  try {
+    const json = JSON.parse(
+      Buffer.from(raw.content, "base64").toString("utf8"),
+    ) as { version?: string };
+    return typeof json.version === "string" ? json.version : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Same semver rules as `ycode-masjidweb/lib/updates/check-updates.ts`. */
 export function compareVersions(a: string, b: string): number {
   const aParts = a.split(".").map(Number);
@@ -139,23 +165,7 @@ export async function getReleaseSemverVsFork(
     const branch = (packageJsonRef?.trim() || defaultBranch).trim();
     packageJsonRefUsed = branch;
 
-    const pkgRes = await fetch(
-      `${GH}/repos/${forkRepo}/contents/package.json?ref=${encodeURIComponent(branch)}`,
-      { headers: headers(token) },
-    );
-    if (pkgRes.ok) {
-      const raw = (await pkgRes.json()) as {
-        content?: string;
-        encoding?: string;
-      };
-      if (raw.content && raw.encoding === "base64") {
-        const json = JSON.parse(
-          Buffer.from(raw.content, "base64").toString("utf8"),
-        ) as { version?: string };
-        forkPackageVersion =
-          typeof json.version === "string" ? json.version : null;
-      }
-    }
+    forkPackageVersion = await fetchPackageJsonVersion(token, forkRepo, branch);
 
     const relRes = await fetch(
       `${GH}/repos/${YCODE_UPSTREAM_REPO}/releases/latest`,
@@ -415,5 +425,64 @@ export async function mergePR(
   return {
     merged: data.merged ?? false,
     message: data.message ?? (res.ok ? "PR merged." : `Merge failed: ${res.status}`),
+  };
+}
+
+export type MergeHeadIntoBaseResult =
+  | { status: "merged"; sha: string; message: string }
+  | { status: "already_up_to_date"; message: string }
+  | { status: "conflict"; message: string }
+  | { status: "error"; message: string; httpStatus: number };
+
+/** Merge branch `head` into `base` via GitHub merge API (no PR). */
+export async function mergeHeadIntoBase(
+  token: string,
+  repo: string,
+  base: string,
+  head: string,
+  commitMessage: string,
+): Promise<MergeHeadIntoBaseResult> {
+  const res = await fetch(`${GH}/repos/${repo}/merges`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      base: base.trim(),
+      head: head.trim(),
+      commit_message: commitMessage,
+    }),
+  });
+
+  if (res.status === 201) {
+    const data = (await res.json()) as { sha?: string };
+    return {
+      status: "merged",
+      sha: data.sha ?? "",
+      message: `Merged ${head} into ${base}.`,
+    };
+  }
+
+  if (res.status === 204) {
+    return {
+      status: "already_up_to_date",
+      message: `${base} already includes everything from ${head}.`,
+    };
+  }
+
+  if (res.status === 409) {
+    let msg = "Merge conflict.";
+    try {
+      const data = (await res.json()) as { message?: string };
+      if (data.message) msg = data.message;
+    } catch {
+      /* ignore */
+    }
+    return { status: "conflict", message: msg };
+  }
+
+  const text = await res.text();
+  return {
+    status: "error",
+    message: text.slice(0, 500) || `GitHub merges API: ${res.status}`,
+    httpStatus: res.status,
   };
 }
