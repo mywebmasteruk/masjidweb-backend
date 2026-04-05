@@ -10,6 +10,15 @@ import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 import { githubProductionBranch } from "../../../lib/updates-env";
 
+type UpdateHistoryRow = {
+  date: string | null;
+  version: string | null;
+  status: "live" | "previous";
+  branch: string | null;
+  commitRef: string | null;
+  deployUrl: string;
+};
+
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -36,6 +45,7 @@ export const GET: APIRoute = async (context) => {
     let deployedPackageVersion: string | null = null;
     let deployCommitRef: string | null = null;
     let deployBranch: string | null = null;
+    let updateHistory: UpdateHistoryRow[] = [];
 
     const netlifyToken = import.meta.env.NETLIFY_AUTH_TOKEN;
     const nlSite = netlifyBuilderSiteId();
@@ -52,6 +62,30 @@ export const GET: APIRoute = async (context) => {
             cur.commitRef,
           );
         }
+
+        const publishedDeploys = deploys
+          .filter((d) => d.state === "ready")
+          .slice(0, 8);
+        updateHistory = await Promise.all(
+          publishedDeploys.map(async (d) => {
+            let version: string | null = null;
+            if (d.commitRef) {
+              try {
+                version = await fetchPackageJsonVersion(token, repo, d.commitRef);
+              } catch {
+                version = null;
+              }
+            }
+            return {
+              date: d.publishedAt ?? d.createdAt ?? null,
+              version,
+              status: d.isCurrent ? "live" : "previous",
+              branch: d.branch,
+              commitRef: d.commitRef,
+              deployUrl: d.deployUrl,
+            };
+          }),
+        );
       } catch {
         /* ignore — fall back to git-branch semver only */
       }
@@ -83,6 +117,7 @@ export const GET: APIRoute = async (context) => {
         deployCommitRef,
         deployBranch,
         gitAheadOfDeployed,
+        updateHistory,
       }),
       {
         headers: { "Content-Type": "application/json" },
