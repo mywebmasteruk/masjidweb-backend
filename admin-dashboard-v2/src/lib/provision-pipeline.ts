@@ -30,6 +30,10 @@ import {
 } from "./provision-email-policy";
 import { isUserAlreadyRegistered } from "./send-tenant-auth-link";
 import { reclaimClientTenantForSlugReuse } from "./provision-tenant-reclaim";
+import {
+  acquirePhase2LeaderOrWait,
+  releasePhase2LeaderClaim,
+} from "./provision-phase2-lock";
 
 /** Result shape for {@link provisionTenantFullFlow} (single-request dashboard provision). */
 export type ProvisionFullFlowOutcome =
@@ -242,6 +246,11 @@ export async function completeProvision(
     tenantId,
   );
 
+  const lock = await acquirePhase2LeaderOrWait(supabase, tenantId, actor);
+  if (lock.role === "follower" || lock.role === "follower_timeout") {
+    return { warnings: [...warnings, ...lock.warnings] };
+  }
+
   try {
     // 0. Clone template data (idempotent — skip if already done).
     const { data: cloneDoneRows } = await supabase
@@ -344,6 +353,8 @@ export async function completeProvision(
     });
 
     throw e;
+  } finally {
+    await releasePhase2LeaderClaim(supabase, tenantId);
   }
 }
 

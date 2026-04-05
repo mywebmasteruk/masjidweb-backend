@@ -712,14 +712,31 @@ export async function rebuildIdMapForTenant(
 
   const { data: tgtColls, error: e2 } = await sb
     .from("collections")
-    .select("id, name")
+    .select("id, name, created_at")
     .eq("tenant_id", targetTenantId)
     .eq("is_published", false)
     .is("deleted_at", null);
 
   if (e2) throw new Error(e2.message);
 
-  const tgtByName = new Map((tgtColls ?? []).map((c) => [c.name, c.id]));
+  // When parallel clones slipped through (before phase-2 lock), many rows share the
+  // same `name`. Map each template id to the **oldest** target row so structure +
+  // CMS idMap stay aligned with the first clone (the one pages/components reference).
+  const byName = new Map<string, { id: string; created_at: string }[]>();
+  for (const c of tgtColls ?? []) {
+    const name = String(c.name ?? "");
+    const list = byName.get(name) ?? [];
+    list.push({
+      id: c.id as string,
+      created_at: String((c as { created_at?: string }).created_at ?? ""),
+    });
+    byName.set(name, list);
+  }
+  const tgtByName = new Map<string, string>();
+  for (const [name, list] of byName) {
+    list.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    tgtByName.set(name, list[0]!.id);
+  }
   for (const tc of tplColls) {
     const nid = tgtByName.get(tc.name);
     if (nid) idMap.set(tc.id, nid as string);
@@ -740,20 +757,30 @@ export async function rebuildIdMapForTenant(
 
   const { data: tgtFields, error: e4 } = await sb
     .from("collection_fields")
-    .select("id, collection_id, key, name, order")
+    .select("id, collection_id, key, name, order, created_at")
     .eq("tenant_id", targetTenantId)
     .eq("is_published", false)
     .is("deleted_at", null);
 
   if (e4) throw new Error(e4.message);
 
-  const tgtFieldLookup = new Map<string, string>();
+  const fieldBuckets = new Map<string, { id: string; created_at: string }[]>();
   for (const f of tgtFields ?? []) {
     const k =
       f.key != null && f.key !== ""
         ? `${f.collection_id}|k:${f.key}`
         : `${f.collection_id}|n:${f.name}|o:${f.order}`;
-    tgtFieldLookup.set(k, f.id as string);
+    const list = fieldBuckets.get(k) ?? [];
+    list.push({
+      id: f.id as string,
+      created_at: String((f as { created_at?: string }).created_at ?? ""),
+    });
+    fieldBuckets.set(k, list);
+  }
+  const tgtFieldLookup = new Map<string, string>();
+  for (const [k, list] of fieldBuckets) {
+    list.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    tgtFieldLookup.set(k, list[0]!.id);
   }
 
   for (const f of tplFields) {
