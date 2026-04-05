@@ -570,14 +570,24 @@ async function copyTemplateContentToTenant(
   const itemIdMap = idMap ?? new Map<string, string>();
   const now = new Date().toISOString();
 
-  // Phase 1 (all collections): every template item id → new row so reference fields
-  // can point across collections (e.g. event → category).
+  // Phase 1: build id map for all items across all collections, then bulk-insert.
+  // Previously inserted one row per item (76 calls → 1 call).
+  const allNewItemRows: {
+    id: string;
+    collection_id: string;
+    manual_order: number;
+    is_publishable: boolean;
+    is_published: boolean;
+    created_at: string;
+    updated_at: string;
+    tenant_id: string;
+  }[] = [];
+
   for (const b of batches) {
     for (const sourceItemId of b.templateItemIds) {
       const newItemId = crypto.randomUUID();
       itemIdMap.set(sourceItemId, newItemId);
-
-      const { error: itemErr } = await supabase.from("collection_items").insert({
+      allNewItemRows.push({
         id: newItemId,
         collection_id: b.newCollectionId,
         manual_order: 0,
@@ -587,35 +597,131 @@ async function copyTemplateContentToTenant(
         updated_at: now,
         tenant_id: tenantId,
       });
+    }
+  }
 
-      if (itemErr) {
-        throw new Error(
-          `Failed to clone collection item (${b.newCollectionId}): ${itemErr.message}`,
-        );
+  if (allNewItemRows.length) {
+    const { error: itemBulkErr } = await supabase
+      .from("collection_items")
+      .insert(allNewItemRows);
+    if (itemBulkErr) {
+      throw new Error(`Failed to bulk-insert collection_items: ${itemBulkErr.message}`);
+    }
+  }
+
+  // Phase 2: fetch ALL source values in one query, build target rows, bulk-insert.
+  // Previously: one SELECT + one INSERT per item (76 × 2 = 152 calls → 2 calls total).
+  const allSourceItemIds = batches.flatMap((b) => b.templateItemIds);
+
+  // Fetch source values in chunks to avoid URL length limits in REST API.
+  const CHUNK_SIZE = 200;
+  const allSourceValues: { item_id: string; field_id: string; value: unknown }[] = [];
+
+  for (let i = 0; i < allSourceItemIds.length; i += CHUNK_SIZE) {
+    const chunk = allSourceItemIds.slice(i, i + CHUNK_SIZE);
+    const { data: chunkVals } = await supabase
+      .from("collection_item_values")
+      .select("item_id, field_id, value")
+      .in("item_id", chunk)
+      .is("deleted_at", null);
+    if (chunkVals) allSourceValues.push(...chunkVals);
+  }
+
+  // Group fetched values by item_id.
+  const sourceValuesByItem = new Map<string, { field_id: string; value: unknown }[]>();
+  for (const v of allSourceValues) {
+    const key = String(v.item_id);
+    if (!sourceValuesByItem.has(key)) sourceValuesByItem.set(key, []);
+    sourceValuesByItem.get(key)!.push({ field_id: String(v.field_id), value: v.value });
+  }
+
+  // Build all target rows in memory.
+  const allValueRows: {
+    id: string;
+    item_id: string;
+    field_id: string;
+    value: unknown;
+    is_published: boolean;
+    created_at: string;
+    updated_at: string;
+    tenant_id: string;
+  }[] = [];
+
+  for (const b of batches) {
+    const reservedTenantFieldIds = new Set(
+      [b.newTidFieldId, b.newSlugFieldId].filter(
+        (id): id is string => typeof id === "string" && id.length > 0,
+      ),
+    );
+
+    for (const sourceItemId of b.templateItemIds) {
+      const newItemId = itemIdMap.get(sourceItemId);
+      if (!newItemId) continue;
+
+      const sourceVals = sourceValuesByItem.get(sourceItemId) ?? [];
+
+      const dedupedByMappedField = new Map<string, { field_id: string; value: unknown }>();
+      for (const v of sourceVals) {
+        const mappedFieldId = mapId(v.field_id, idMap);
+        if (reservedTenantFieldIds.has(mappedFieldId)) continue;
+        dedupedByMappedField.set(mappedFieldId, v);
+      }
+
+      for (const [mappedFieldId, v] of dedupedByMappedField) {
+        const ft = b.fieldTypeById.get(mappedFieldId);
+        const valueRemapped = remapCmsReferenceValue(v.value as string, ft, itemIdMap);
+        allValueRows.push({
+          id: crypto.randomUUID(),
+          item_id: newItemId,
+          field_id: mappedFieldId,
+          value: valueRemapped,
+          is_published: false,
+          created_at: now,
+          updated_at: now,
+          tenant_id: tenantId,
+        });
+      }
+
+      if (b.newTidFieldId) {
+        allValueRows.push({
+          id: crypto.randomUUID(),
+          item_id: newItemId,
+          field_id: b.newTidFieldId,
+          value: tenantId,
+          is_published: false,
+          created_at: now,
+          updated_at: now,
+          tenant_id: tenantId,
+        });
+      }
+      if (b.newSlugFieldId) {
+        allValueRows.push({
+          id: crypto.randomUUID(),
+          item_id: newItemId,
+          field_id: b.newSlugFieldId,
+          value: tenantSlug,
+          is_published: false,
+          created_at: now,
+          updated_at: now,
+          tenant_id: tenantId,
+        });
       }
     }
   }
 
-  for (const b of batches) {
-    for (const sourceItemId of b.templateItemIds) {
-      const newItemId = itemIdMap.get(sourceItemId);
-      if (!newItemId) {
-        throw new Error(
-          `CMS clone: missing new item id for source ${sourceItemId}`,
-        );
-      }
-      await cloneCollectionItemValuesForTenant(
-        sourceItemId,
-        newItemId,
-        tenantId,
-        tenantSlug,
-        b.newTidFieldId,
-        b.newSlugFieldId,
-        b.fieldTypeById,
-        itemIdMap,
-        idMap,
-        b.templateItemsPublished,
-      );
+  // Deduplicate by (item_id, field_id) to prevent unique-constraint violations.
+  const dedupedValueRows = [...new Map(
+    allValueRows.map((r) => [`${r.item_id}:${r.field_id}`, r]),
+  ).values()];
+
+  // Bulk-insert in chunks to stay within Supabase payload limits.
+  for (let i = 0; i < dedupedValueRows.length; i += CHUNK_SIZE) {
+    const chunk = dedupedValueRows.slice(i, i + CHUNK_SIZE);
+    const { error: valBulkErr } = await supabase
+      .from("collection_item_values")
+      .insert(chunk);
+    if (valBulkErr) {
+      throw new Error(`Failed to bulk-insert collection_item_values: ${valBulkErr.message}`);
     }
   }
 }
