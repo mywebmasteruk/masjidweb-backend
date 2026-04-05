@@ -509,11 +509,16 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
-   * Phase 2 — CMS seed, invite, activate. Retries on 5xx/504.
+   * Phase 2 — CMS seed, invite, activate.
+   *
+   * Netlify gateway returns 502/504 after ~10-26 s even though the function
+   * continues running and completes in ~30-50 s total.  After a gateway error
+   * we wait 40 s so the background function has time to finish, then retry
+   * once — completeProvision returns {ok:true} immediately when it sees the
+   * tenant is already active.
    */
   async function fetchProvisionCompleteWithRetry(tenantId) {
-    const maxAttempts = 4;
-    const baseDelayMs = 3000;
+    const maxAttempts = 3;
     let lastRes = /** @type {Response | null} */ (null);
     let lastData = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -530,13 +535,15 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       if (lastData?.ok) {
         return { res: lastRes, data: lastData };
       }
-      const retryable =
+      const isGateway =
         lastRes.status === 504 ||
         lastRes.status === 502 ||
         lastRes.status === 503 ||
         (lastData == null && lastRes.status >= 500);
-      if (retryable && attempt < maxAttempts) {
-        await sleep(baseDelayMs * attempt);
+      if (isGateway && attempt < maxAttempts) {
+        // Wait long enough for Netlify's background function to finish so the
+        // retry finds the tenant already active and returns immediately.
+        await sleep(40000);
       }
     }
     return { res: lastRes, data: lastData };
@@ -614,10 +621,12 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     } else {
       let msg =
         data2?.error ||
-        "Phase 2 timed out or failed — tenant may need manual activation.";
-      if (data2 == null && res2 && res2.status === 504) {
+        "CMS setup timed out — use Continue setup on this tenant to finish.";
+      if (data2 == null && res2 && (res2.status === 504 || res2.status === 502)) {
         msg =
-          "Gateway timeout (504) on completion — retried automatically; use Continue setup if still stuck.";
+          "Gateway timeout after retries — the Netlify function may still be running. " +
+          "Wait 1 minute then refresh and check: if the tenant shows Continue setup it is still mid-provision; " +
+          "if it shows active the site is ready (you may need to click Publish in the builder once).";
       }
       allWarnings.push("Completion: " + msg);
     }
@@ -751,7 +760,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         if (stEl) stEl.textContent = "Finishing setup…";
         if (dtEl) {
           dtEl.textContent =
-            "CMS seed, invite, and YCode publish (please keep this tab open).";
+            "CMS seed, invite, and YCode publish — up to 90 s, keep this tab open.";
         }
         if (stepsEl) {
           stepsEl.classList.remove("hidden");
