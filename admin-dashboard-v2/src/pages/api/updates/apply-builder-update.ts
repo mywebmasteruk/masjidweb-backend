@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import {
+  createOrUpdateConflictIssue,
   ensureMergePR,
   mergeHeadIntoBase,
   syncForkFromUpstream,
@@ -86,6 +87,17 @@ export const POST: APIRoute = async (context) => {
           "Resolve conflicts in this PR and merge it, then click Apply YCode update again.",
         ].join("\n"),
       );
+      const conflictIssue = await createOrUpdateConflictIssue(
+        token,
+        repo,
+        productionBranch,
+        {
+          prUrl: pr.htmlUrl,
+          compareUrl:
+            (sync as { compareUrl?: string } | undefined)?.compareUrl,
+          error: merge.message,
+        },
+      );
       return new Response(
         JSON.stringify({
           ok: false,
@@ -93,11 +105,17 @@ export const POST: APIRoute = async (context) => {
           steps,
           error: merge.message,
           hint:
-            `Cannot auto-merge main into ${productionBranch}. Resolve conflicts between these branches, then retry.`,
+            "Update paused for a technical merge conflict. Your live tenant sites stay unchanged on the current stable version.",
+          requiresTechAction: true,
+          adminMessage:
+            "No action needed from platform admin right now. A technical task has been created automatically.",
           prNumber: pr.number,
           prUrl: pr.htmlUrl,
           prCreated: pr.created,
           prMessage: pr.message,
+          issueNumber: conflictIssue.number,
+          issueUrl: conflictIssue.issueUrl,
+          issueMessage: conflictIssue.message,
         }),
         { status: 409, headers: json },
       );

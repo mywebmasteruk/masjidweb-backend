@@ -442,6 +442,13 @@ export interface EnsureMergePRResult {
   message: string;
 }
 
+export interface ConflictIssueResult {
+  ok: boolean;
+  issueUrl?: string;
+  number?: number;
+  message: string;
+}
+
 /** Merge branch `head` into `base` via GitHub merge API (no PR). */
 export async function mergeHeadIntoBase(
   token: string,
@@ -567,5 +574,85 @@ export async function ensureMergePR(
     htmlUrl: created.html_url,
     created: true,
     message: `Created PR #${created.number}.`,
+  };
+}
+
+/** Create (or reuse) an open tracking issue for auto-update conflicts. */
+export async function createOrUpdateConflictIssue(
+  token: string,
+  repo: string,
+  productionBranch: string,
+  details: {
+    prUrl?: string;
+    compareUrl?: string;
+    error: string;
+  },
+): Promise<ConflictIssueResult> {
+  const label = "auto-update-conflict";
+  const title = `Auto update conflict: main -> ${productionBranch}`;
+
+  const listRes = await fetch(
+    `${GH}/repos/${repo}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=30`,
+    { headers: headers(token) },
+  );
+  if (!listRes.ok) {
+    return {
+      ok: false,
+      message: `Could not list conflict issues (${listRes.status}).`,
+    };
+  }
+
+  const existing = (await listRes.json()) as Array<{
+    number: number;
+    title: string;
+    html_url: string;
+  }>;
+  const match = existing.find((i) => i.title === title);
+  if (match) {
+    return {
+      ok: true,
+      issueUrl: match.html_url,
+      number: match.number,
+      message: `Using existing issue #${match.number}.`,
+    };
+  }
+
+  const bodyLines = [
+    "Created automatically by Admin Dashboard while running Apply YCode update.",
+    "",
+    `Conflict while merging \`main\` into \`${productionBranch}\`.`,
+    "",
+    `Error: ${details.error}`,
+    details.prUrl ? `Conflict PR: ${details.prUrl}` : "",
+    details.compareUrl ? `Compare: ${details.compareUrl}` : "",
+  ].filter(Boolean);
+
+  const createRes = await fetch(`${GH}/repos/${repo}/issues`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      body: bodyLines.join("\n"),
+      labels: [label],
+    }),
+  });
+
+  if (!createRes.ok) {
+    const txt = await createRes.text();
+    return {
+      ok: false,
+      message: `Could not create issue (${createRes.status}): ${txt.slice(0, 250)}`,
+    };
+  }
+
+  const created = (await createRes.json()) as {
+    number: number;
+    html_url: string;
+  };
+  return {
+    ok: true,
+    number: created.number,
+    issueUrl: created.html_url,
+    message: `Created issue #${created.number}.`,
   };
 }

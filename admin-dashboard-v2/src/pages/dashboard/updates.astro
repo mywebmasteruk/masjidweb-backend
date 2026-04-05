@@ -504,7 +504,18 @@ import Layout from "../../layouts/Layout.astro";
     if (!el) return;
 
     const lines = [];
-    if (opts.prUrl) {
+    if (opts.requiresTechAction === true) {
+      if (opts.adminMessage) lines.push(String(opts.adminMessage));
+      else lines.push("Update paused for technical review.");
+      lines.push("No action needed from platform admin.");
+      if (opts.issueUrl) {
+        const issueLabel =
+          opts.issueNumber
+            ? "Open technical issue #" + opts.issueNumber
+            : "Open technical issue";
+        lines.push('<a href="' + String(opts.issueUrl) + '" target="_blank" rel="noopener noreferrer">' + issueLabel + "</a>");
+      }
+    } else if (opts.prUrl) {
       const label =
         opts.prNumber ? "Open conflict PR #" + opts.prNumber : "Open conflict PR";
       lines.push("Update paused: one merge conflict needs a one-time fix.");
@@ -567,11 +578,17 @@ import Layout from "../../layouts/Layout.astro";
         : data.message || "Apply update failed";
     setApplyUpdateResult(msg, false, {
       hint: typeof data.hint === "string" ? data.hint : undefined,
+      adminMessage:
+        typeof data.adminMessage === "string" ? data.adminMessage : undefined,
+      requiresTechAction: data.requiresTechAction === true,
       compareUrl:
         typeof data.compareUrl === "string" ? data.compareUrl : undefined,
       prUrl: typeof data.prUrl === "string" ? data.prUrl : undefined,
       prNumber:
         typeof data.prNumber === "number" ? data.prNumber : undefined,
+      issueUrl: typeof data.issueUrl === "string" ? data.issueUrl : undefined,
+      issueNumber:
+        typeof data.issueNumber === "number" ? data.issueNumber : undefined,
     });
     toast(msg, false);
   }
