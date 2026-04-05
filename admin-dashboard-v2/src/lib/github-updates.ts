@@ -408,6 +408,14 @@ async function getHeadCheckStatus(
   return "pending";
 }
 
+export async function getCommitCiStatus(
+  token: string,
+  repo: string,
+  sha: string,
+): Promise<"success" | "failure" | "pending" | "unknown"> {
+  return getHeadCheckStatus(token, repo, sha);
+}
+
 // ── Merge PR ─────────────────────────────────────────────────────────────────
 
 export async function mergePR(
@@ -447,6 +455,14 @@ export interface ConflictIssueResult {
   issueUrl?: string;
   number?: number;
   message: string;
+}
+
+export interface PullRequestMergeState {
+  number: number;
+  mergeable: boolean | null;
+  mergeableState: string | null;
+  headSha: string;
+  htmlUrl: string;
 }
 
 /** Merge branch `head` into `base` via GitHub merge API (no PR). */
@@ -654,5 +670,32 @@ export async function createOrUpdateConflictIssue(
     number: created.number,
     issueUrl: created.html_url,
     message: `Created issue #${created.number}.`,
+  };
+}
+
+export async function getPullRequestMergeState(
+  token: string,
+  repo: string,
+  prNumber: number,
+): Promise<PullRequestMergeState | null> {
+  const res = await fetch(`${GH}/repos/${repo}/pulls/${prNumber}`, {
+    headers: headers(token),
+  });
+  if (!res.ok) return null;
+
+  const pr = (await res.json()) as {
+    number: number;
+    mergeable: boolean | null;
+    mergeable_state: string | null;
+    html_url: string;
+    head?: { sha?: string };
+  };
+  if (!pr.head?.sha) return null;
+  return {
+    number: pr.number,
+    mergeable: pr.mergeable,
+    mergeableState: pr.mergeable_state,
+    headSha: pr.head.sha,
+    htmlUrl: pr.html_url,
   };
 }

@@ -508,13 +508,6 @@ import Layout from "../../layouts/Layout.astro";
       if (opts.adminMessage) lines.push(String(opts.adminMessage));
       else lines.push("Update paused for technical review.");
       lines.push("No action needed from platform admin.");
-      if (opts.issueUrl) {
-        const issueLabel =
-          opts.issueNumber
-            ? "Open technical issue #" + opts.issueNumber
-            : "Open technical issue";
-        lines.push('<a href="' + String(opts.issueUrl) + '" target="_blank" rel="noopener noreferrer">' + issueLabel + "</a>");
-      }
     } else if (opts.prUrl) {
       const label =
         opts.prNumber ? "Open conflict PR #" + opts.prNumber : "Open conflict PR";

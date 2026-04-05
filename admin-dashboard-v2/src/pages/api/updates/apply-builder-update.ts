@@ -3,7 +3,10 @@ import { isAuthorized } from "../../../lib/auth-helpers";
 import {
   createOrUpdateConflictIssue,
   ensureMergePR,
+  getCommitCiStatus,
+  getPullRequestMergeState,
   mergeHeadIntoBase,
+  mergePR,
   syncForkFromUpstream,
 } from "../../../lib/github-updates";
 import { triggerProductionBuild } from "../../../lib/netlify-deploys";
@@ -73,6 +76,8 @@ export const POST: APIRoute = async (context) => {
     );
     steps.mergeMainIntoProduction = merge;
 
+    let mergedViaAutoPr = false;
+
     if (merge.status === "conflict") {
       const pr = await ensureMergePR(
         token,
@@ -87,6 +92,63 @@ export const POST: APIRoute = async (context) => {
           "Resolve conflicts in this PR and merge it, then click Apply YCode update again.",
         ].join("\n"),
       );
+      steps.mergeFallbackPr = pr;
+
+      if (pr.number) {
+        const prState = await getPullRequestMergeState(token, repo, pr.number);
+        if (prState) {
+          steps.mergeFallbackPrState = prState;
+          if (prState.mergeable === true) {
+            const ci = await getCommitCiStatus(token, repo, prState.headSha);
+            steps.mergeFallbackPrCi = { status: ci };
+            if (ci === "success") {
+              const autoMerge = await mergePR(token, repo, pr.number);
+              steps.mergeFallbackPrAutoMerge = autoMerge;
+              if (autoMerge.merged) {
+                mergedViaAutoPr = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (mergedViaAutoPr) {
+        const nlToken = import.meta.env.NETLIFY_AUTH_TOKEN;
+        const nlSite = netlifyBuilderSiteId();
+        if (!nlToken || !nlSite) {
+          const skipMsg =
+            "NETLIFY_AUTH_TOKEN or builder site id not set — Git updated but no deploy was triggered from here.";
+          steps.netlify = { ok: false, skipped: true, message: skipMsg };
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              partial: true,
+              steps,
+              warning: skipMsg,
+              message:
+                "Update merged automatically; configure Netlify env to trigger deploys from admin.",
+            }),
+            { status: 200, headers: json },
+          );
+        }
+        const netlify = await triggerProductionBuild(nlToken, nlSite, {
+          clearCache: clearNetlifyCache,
+        });
+        steps.netlify = netlify;
+        return new Response(
+          JSON.stringify({
+            ok: netlify.ok,
+            partial: !netlify.ok,
+            steps,
+            message: netlify.ok
+              ? "Update merged automatically and production build started."
+              : "Update merged automatically but Netlify did not start a build.",
+            warning: !netlify.ok ? netlify.message : undefined,
+          }),
+          { status: 200, headers: json },
+        );
+      }
+
       const conflictIssue = await createOrUpdateConflictIssue(
         token,
         repo,
@@ -108,7 +170,7 @@ export const POST: APIRoute = async (context) => {
             "Update paused for a technical merge conflict. Your live tenant sites stay unchanged on the current stable version.",
           requiresTechAction: true,
           adminMessage:
-            "No action needed from platform admin right now. A technical task has been created automatically.",
+            "No action needed from platform admin right now. The system has queued this for technical auto-resolution and will keep the live site stable.",
           prNumber: pr.number,
           prUrl: pr.htmlUrl,
           prCreated: pr.created,
