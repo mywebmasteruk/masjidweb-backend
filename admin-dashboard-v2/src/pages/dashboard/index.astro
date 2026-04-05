@@ -964,7 +964,12 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
 
   const cleanupOrphansBtn = document.getElementById("cleanupOrphansBtn");
   cleanupOrphansBtn?.addEventListener("click", async () => {
-    if (!confirm("Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry?")) return;
+    if (
+      !confirm(
+        "Remove CMS/YCode rows whose tenant_id no longer exists in tenant_registry, align Auth users (delete orphans / repair missing tenant_id from slug), and remove stale builder invites?",
+      )
+    )
+      return;
     cleanupOrphansBtn.disabled = true;
     try {
       const res = await fetch("/api/cleanup-orphans", { method: "POST" });
@@ -973,11 +978,15 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         const rows = (data.removed && data.removed.length)
           ? data.removed.map((r) => r.table_name + ": " + r.removed).join(", ")
           : "none";
-        const auth =
+        const removed =
           typeof data.authUsersRemoved === "number" && data.authUsersRemoved > 0
-            ? "; auth users removed: " + data.authUsersRemoved
+            ? "; auth removed: " + data.authUsersRemoved
             : "";
-        toast("Cleanup done: " + rows + auth, true);
+        const repaired =
+          typeof data.authUsersRepaired === "number" && data.authUsersRepaired > 0
+            ? "; auth repaired: " + data.authUsersRepaired
+            : "";
+        toast("Cleanup done: " + rows + removed + repaired, true);
       } else {
         toast(data.error || "Cleanup failed", false);
       }

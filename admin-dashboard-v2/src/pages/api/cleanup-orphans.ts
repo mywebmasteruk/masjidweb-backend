@@ -65,13 +65,14 @@ export const POST: APIRoute = async (context) => {
   }
 
   const authWarnings: string[] = [];
-  const authUsersRemoved = await deleteAuthUsersForMissingTenants(supabase, authWarnings);
+  const auth = await deleteAuthUsersForMissingTenants(supabase, authWarnings);
 
   return new Response(
     JSON.stringify({
       ok: true,
       removed: data ?? [],
-      authUsersRemoved,
+      authUsersRemoved: auth.removed,
+      authUsersRepaired: auth.repaired,
       ...(authWarnings.length ? { warnings: authWarnings } : {}),
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },

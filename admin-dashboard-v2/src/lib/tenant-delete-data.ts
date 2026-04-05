@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 /**
  * YCode / CMS tables keyed by tenant_id. Keep aligned with
@@ -33,81 +33,172 @@ export const TENANT_SCOPED_CONTENT_TABLES = [
   "tenant_homepage_content",
 ] as const;
 
-function tenantIdFromMetadata(metadata: Record<string, unknown> | undefined): string | null {
-  const raw = metadata?.tenant_id;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function normalizeUuid(raw: unknown): string | null {
   if (raw == null || raw === "") return null;
-  return String(raw);
+  const s = String(raw).trim().toLowerCase();
+  return UUID_RE.test(s) ? s : null;
+}
+
+/** Merge metadata sources the way admin list endpoints do (latest wins). */
+function effectiveMetadata(user: User): Record<string, unknown> {
+  const raw = (user as { raw_user_meta_data?: Record<string, unknown> }).raw_user_meta_data ?? {};
+  const app = (user.app_metadata ?? {}) as Record<string, unknown>;
+  const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+  return { ...raw, ...app, ...meta };
+}
+
+function tenantIdFromEffective(meta: Record<string, unknown>): string | null {
+  return normalizeUuid(meta.tenant_id);
+}
+
+function tenantSlugFromEffective(meta: Record<string, unknown>): string | null {
+  const raw = meta.tenant_slug;
+  if (raw == null || raw === "") return null;
+  const s = String(raw).trim();
+  return s || null;
+}
+
+function hasInviteMarker(meta: Record<string, unknown>): boolean {
+  return meta.invited_at != null && meta.invited_at !== "";
+}
+
+async function listAllAuthUsers(
+  supabase: SupabaseClient,
+  warnings: string[],
+): Promise<User[]> {
+  const out: User[] = [];
+  let page = 1;
+  const perPage = 1000;
+  for (;;) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      warnings.push(`listUsers (page ${page}): ${error.message}`);
+      break;
+    }
+    const batch = data?.users ?? [];
+    out.push(...batch);
+    if (batch.length < perPage) break;
+    page += 1;
+  }
+  return out;
 }
 
 /**
  * Delete Supabase Auth users whose `user_metadata.tenant_id` equals the given tenant.
- * Paginates through all users (listUsers defaults are not sufficient for large projects).
+ * Collects all users first so pagination stays stable while deleting.
  */
 async function deleteAuthUsersForTenant(
   supabase: SupabaseClient,
   tenantId: string,
   warnings: string[],
 ): Promise<void> {
-  const perPage = 1000;
-  let page = 1;
-  for (;;) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error) {
-      warnings.push(`listUsers (page ${page}): ${error.message}`);
-      return;
+  const want = normalizeUuid(tenantId);
+  if (!want) return;
+
+  const users = await listAllAuthUsers(supabase, warnings);
+  for (const u of users) {
+    const meta = effectiveMetadata(u);
+    const tid = tenantIdFromEffective(meta);
+    if (tid !== want) continue;
+    const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
+    if (delErr) {
+      warnings.push(`Failed to delete auth user ${u.email ?? u.id}: ${delErr.message}`);
     }
-    const users = data?.users ?? [];
-    const matches = users.filter((u) => tenantIdFromMetadata(u.user_metadata) === tenantId);
-    for (const u of matches) {
-      const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
-      if (delErr) {
-        warnings.push(`Failed to delete auth user ${u.email ?? u.id}: ${delErr.message}`);
-      }
-    }
-    if (users.length < perPage) break;
-    page += 1;
   }
 }
 
+export type AuthOrphanCleanupResult = {
+  removed: number;
+  repaired: number;
+};
+
 /**
- * Delete Auth users whose metadata references a tenant id that is not in `tenant_registry`.
- * Use after `cleanup_orphan_tenant_rows` to remove builder accounts for deleted tenants.
+ * Align Auth users with `tenant_registry`:
+ * - Remove users whose tenant_id (any metadata source) is not a current tenant (case-normalized).
+ * - Remove users whose tenant_slug does not match any tenant when they have no valid tenant_id.
+ * - Remove users invited via generic builder invite (invited_at) with no tenant_id and no tenant_slug.
+ * - Repair users who have a valid slug but missing/wrong tenant_id by setting user_metadata.tenant_id.
  */
 export async function deleteAuthUsersForMissingTenants(
   supabase: SupabaseClient,
   warnings: string[],
-): Promise<number> {
-  const { data: rows, error } = await supabase.from("tenant_registry").select("id");
+): Promise<AuthOrphanCleanupResult> {
+  const { data: tenants, error } = await supabase.from("tenant_registry").select("id, slug");
   if (error) {
     warnings.push(`tenant_registry load for auth cleanup: ${error.message}`);
-    return 0;
+    return { removed: 0, repaired: 0 };
   }
-  const valid = new Set((rows ?? []).map((r) => r.id as string));
 
+  const rows = tenants ?? [];
+  const validIds = new Set(rows.map((r) => String(r.id).trim().toLowerCase()));
+  const slugToId = new Map<string, string>();
+  for (const r of rows) {
+    if (r.slug) slugToId.set(String(r.slug).trim(), String(r.id).trim().toLowerCase());
+  }
+
+  const users = await listAllAuthUsers(supabase, warnings);
   let removed = 0;
-  const perPage = 1000;
-  let page = 1;
-  for (;;) {
-    const { data, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (listErr) {
-      warnings.push(`listUsers (page ${page}): ${listErr.message}`);
-      break;
+  let repaired = 0;
+
+  for (const u of users) {
+    const meta = effectiveMetadata(u);
+    const tid = tenantIdFromEffective(meta);
+    const slug = tenantSlugFromEffective(meta);
+
+    if (tid && validIds.has(tid)) {
+      continue;
     }
-    const users = data?.users ?? [];
-    for (const u of users) {
-      const tid = tenantIdFromMetadata(u.user_metadata);
-      if (!tid || valid.has(tid)) continue;
+
+    if (tid && !validIds.has(tid)) {
       const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
       if (delErr) {
         warnings.push(`Failed to delete orphan auth user ${u.email ?? u.id}: ${delErr.message}`);
       } else {
         removed += 1;
       }
+      continue;
     }
-    if (users.length < perPage) break;
-    page += 1;
+
+    if (!tid && slug) {
+      const canonicalId = slugToId.get(slug);
+      if (canonicalId) {
+        const { error: upErr } = await supabase.auth.admin.updateUserById(u.id, {
+          user_metadata: {
+            ...(u.user_metadata as Record<string, unknown>),
+            tenant_id: canonicalId,
+            tenant_slug: slug,
+          },
+        });
+        if (upErr) {
+          warnings.push(`Failed to repair auth user ${u.email ?? u.id}: ${upErr.message}`);
+        } else {
+          repaired += 1;
+        }
+        continue;
+      }
+      const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
+      if (delErr) {
+        warnings.push(`Failed to delete slug-orphan user ${u.email ?? u.id}: ${delErr.message}`);
+      } else {
+        removed += 1;
+      }
+      continue;
+    }
+
+    if (!tid && !slug && hasInviteMarker(meta)) {
+      const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
+      if (delErr) {
+        warnings.push(`Failed to delete unassigned invite user ${u.email ?? u.id}: ${delErr.message}`);
+      } else {
+        removed += 1;
+      }
+    }
   }
-  return removed;
+
+  return { removed, repaired };
 }
 
 /**
