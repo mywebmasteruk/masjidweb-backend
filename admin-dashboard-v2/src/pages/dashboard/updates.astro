@@ -116,6 +116,7 @@ import Layout from "../../layouts/Layout.astro";
           <button type="button" id="applyBuilderUpdateBtn" class="btn btn-primary">Apply YCode update</button>
           <button type="button" id="restorePreviousDeployBtn" class="btn btn-ghost">Restore previous live build</button>
         </div>
+        <div id="applyUpdateResult" class="hidden text-xs" style="margin-top:.75rem;padding:.75rem;border-radius:var(--radius);border:1px solid var(--border);"></div>
       </div>
 
       <!-- Section B: Open sync PRs -->
@@ -498,6 +499,25 @@ import Layout from "../../layouts/Layout.astro";
 
   document.getElementById("refreshDeploysBtn").addEventListener("click", loadDeploys);
 
+  function setApplyUpdateResult(message, ok, hint, compareUrl) {
+    const el = document.getElementById("applyUpdateResult");
+    if (!el) return;
+    const chunks = [message];
+    if (hint) chunks.push(hint);
+    if (compareUrl) chunks.push("Resolve conflicts: " + compareUrl);
+    el.textContent = chunks.filter(Boolean).join(" ");
+    el.classList.remove("hidden");
+    if (ok) {
+      el.style.background = "var(--success-bg)";
+      el.style.borderColor = "rgba(34,197,94,.2)";
+      el.style.color = "var(--success)";
+    } else {
+      el.style.background = "rgba(239,68,68,.1)";
+      el.style.borderColor = "rgba(239,68,68,.35)";
+      el.style.color = "var(--danger)";
+    }
+  }
+
   async function postApplyBuilderUpdate(clearCache) {
     const data = await api("/api/updates/apply-builder-update", {
       method: "POST",
@@ -505,6 +525,7 @@ import Layout from "../../layouts/Layout.astro";
       body: JSON.stringify({ clearNetlifyCache: clearCache === true }),
     });
     if (data.ok === true) {
+      setApplyUpdateResult(data.message || "Update pipeline completed.", true);
       toast(data.message || "Update pipeline completed.", true);
       setTimeout(() => {
         loadDeploys();
@@ -513,6 +534,7 @@ import Layout from "../../layouts/Layout.astro";
       return;
     }
     if (data.partial === true) {
+      setApplyUpdateResult(data.message || "Git updated.", true, data.warning);
       toast(data.message || "Git updated.", true);
       if (data.warning) toast(String(data.warning), false);
       setTimeout(() => {
@@ -525,6 +547,12 @@ import Layout from "../../layouts/Layout.astro";
       typeof data.error === "string"
         ? data.error
         : data.message || "Apply update failed";
+    setApplyUpdateResult(
+      msg,
+      false,
+      typeof data.hint === "string" ? data.hint : undefined,
+      typeof data.compareUrl === "string" ? data.compareUrl : undefined,
+    );
     toast(msg, false);
   }
 

@@ -49,8 +49,13 @@ export const POST: APIRoute = async (context) => {
       return new Response(
         JSON.stringify({
           ok: false,
+          stage: "sync",
           steps,
           error: sync.message,
+          hint:
+            sync.httpStatus === 409
+              ? "Upstream sync has conflicts. Resolve conflicts on the fork branch, then retry Apply YCode update."
+              : "Sync from upstream failed. Check GitHub token scopes and repo access.",
           compareUrl: sync.compareUrl,
         }),
         { status, headers: json },
@@ -70,8 +75,11 @@ export const POST: APIRoute = async (context) => {
       return new Response(
         JSON.stringify({
           ok: false,
+          stage: "merge",
           steps,
           error: merge.message,
+          hint:
+            `Cannot auto-merge main into ${productionBranch}. Resolve conflicts between these branches, then retry.`,
         }),
         { status: 409, headers: json },
       );
@@ -83,7 +91,13 @@ export const POST: APIRoute = async (context) => {
           ? merge.httpStatus
           : 500;
       return new Response(
-        JSON.stringify({ ok: false, steps, error: merge.message }),
+        JSON.stringify({
+          ok: false,
+          stage: "merge",
+          steps,
+          error: merge.message,
+          hint: "GitHub merge API failed while merging main into production branch.",
+        }),
         { status: code, headers: json },
       );
     }
