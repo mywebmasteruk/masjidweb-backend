@@ -17,6 +17,10 @@ interface ImportMetaEnv {
   readonly GITHUB_TOKEN?: string;
   readonly GITHUB_REPO?: string;
   readonly GITHUB_SYNC_BRANCH?: string;
+  /** Branch whose package.json semver is compared to ycode/ycode releases (e.g. tenant-multi). Overrides default tenant-multi when unset. */
+  readonly GITHUB_PRODUCTION_BRANCH?: string;
+  /** Comma-separated PR base branches for sync PR list; first entry also used as production package ref fallback. */
+  readonly GITHUB_SYNC_PR_BASES?: string;
   /** Base domain for tenant subdomains (e.g. masjidweb.com). */
   readonly TENANT_DOMAIN_SUFFIX: string;
   /** @deprecated Optional legacy global builder URL. Builder lives at `https://{slug}.<TENANT_DOMAIN_SUFFIX>/ycode`. */

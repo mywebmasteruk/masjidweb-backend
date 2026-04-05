@@ -96,23 +96,30 @@ export function compareVersions(a: string, b: string): number {
 export interface ReleaseSemverVsFork {
   latestReleaseVersion: string | null;
   forkPackageVersion: string | null;
+  /** Git branch (or ref) used to read `package.json` for semver (production deploy branch, not necessarily the repo default). */
+  packageJsonRefUsed: string;
   /** True when latest GitHub Release tag is newer than `version` in fork package.json (matches tenant Settings → Updates). */
   releaseAheadOfForkPackage: boolean;
   releaseUrl: string | null;
 }
 
 /**
- * Compare latest upstream **GitHub Release** semver to the fork’s **package.json** on its default branch.
- * This aligns the admin “Core updates” view with tenant `/ycode/settings/updates`, which uses
- * `releases/latest` vs deployed package version — not only fork-vs-upstream **commit** compare.
+ * Compare latest upstream **GitHub Release** semver to the fork’s **package.json** on the branch you deploy
+ * (e.g. `tenant-multi`). If `packageJsonRef` is omitted, uses the fork’s GitHub default branch — which often
+ * does **not** match Netlify production and makes the admin look “up to date” while tenants still show
+ * “Update available”.
  */
 export async function getReleaseSemverVsFork(
   token: string,
   forkRepo: string,
+  /** Branch/ref for `package.json` (e.g. `tenant-multi`). Omit to use the repo default branch. */
+  packageJsonRef?: string,
 ): Promise<ReleaseSemverVsFork> {
+  const refDesired = packageJsonRef?.trim();
   let latestReleaseVersion: string | null = null;
   let forkPackageVersion: string | null = null;
   let releaseUrl: string | null = null;
+  let packageJsonRefUsed = refDesired || "main";
 
   try {
     const metaRes = await fetch(`${GH}/repos/${forkRepo}`, {
@@ -122,12 +129,15 @@ export async function getReleaseSemverVsFork(
       return {
         latestReleaseVersion: null,
         forkPackageVersion: null,
+        packageJsonRefUsed: refDesired || "main",
         releaseAheadOfForkPackage: false,
         releaseUrl: null,
       };
     }
     const meta = (await metaRes.json()) as { default_branch?: string };
-    const branch = (meta.default_branch || "main").trim();
+    const defaultBranch = (meta.default_branch || "main").trim();
+    const branch = (packageJsonRef?.trim() || defaultBranch).trim();
+    packageJsonRefUsed = branch;
 
     const pkgRes = await fetch(
       `${GH}/repos/${forkRepo}/contents/package.json?ref=${encodeURIComponent(branch)}`,
@@ -164,6 +174,7 @@ export async function getReleaseSemverVsFork(
     return {
       latestReleaseVersion: null,
       forkPackageVersion: null,
+      packageJsonRefUsed: refDesired || "main",
       releaseAheadOfForkPackage: false,
       releaseUrl: null,
     };
@@ -178,6 +189,7 @@ export async function getReleaseSemverVsFork(
   return {
     latestReleaseVersion,
     forkPackageVersion,
+    packageJsonRefUsed,
     releaseAheadOfForkPackage,
     releaseUrl,
   };

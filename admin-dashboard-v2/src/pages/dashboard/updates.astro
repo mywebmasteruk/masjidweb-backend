@@ -75,10 +75,10 @@ import Layout from "../../layouts/Layout.astro";
             <div>
               <span class="text-sm" style="color:var(--warning);font-weight:600;">New upstream release vs fork package version</span>
               <p class="text-xs text-muted" style="margin:.35rem 0 0;">
-                Latest <span class="mono">ycode/ycode</span> release is <strong id="semverLatestLabel">—</strong> but your fork’s <span class="mono">package.json</span> on the default branch is <strong id="semverForkLabel">—</strong>.
-                Tenant builder <strong>Settings → Updates</strong> compares this release to the <em>deployed</em> app version — it can show an update even when Git reports no extra commits behind upstream.
+                Latest <span class="mono">ycode/ycode</span> release is <strong id="semverLatestLabel">—</strong> but <span class="mono">package.json</span> on branch <strong id="semverBranchLabel">—</strong> is <strong id="semverForkLabel">—</strong>.
+                The tenant builder compares the same release to the <em>deployed</em> app (baked at build time) — align this branch, merge to production, then let Netlify deploy.
               </p>
-              <p class="text-xs text-muted" style="margin:.5rem 0 0;">Merge or sync so <span class="mono">package.json</span> matches the release, then deploy. If versions already match in Git but tenants still show an older number, trigger a new production deploy.</p>
+              <p class="text-xs text-muted" style="margin:.5rem 0 0;">Merge or sync so production’s <span class="mono">package.json</span> matches the release, then deploy. If Git already matches but tenants show an older number, clear cache or redeploy on Netlify.</p>
             </div>
           </div>
         </div>
@@ -201,14 +201,19 @@ import Layout from "../../layouts/Layout.astro";
       return;
     }
 
+    const pkgRef = data.packageJsonRefUsed || "tenant-multi";
     statusArea.innerHTML =
       '<p class="text-sm text-muted">Compared your fork’s default branch to <span class="mono">' +
       (data.upstreamRepo || "upstream") +
-      "</span>. Also compares <span class=\"mono\">ycode/ycode</span> latest GitHub Release to your fork’s <span class=\"mono\">package.json</span> (same signal as tenant Settings → Updates).</p>";
+      '</span>. Semver vs <span class="mono">ycode/ycode</span> releases uses <span class="mono">package.json</span> on branch <strong class="mono">' +
+      pkgRef +
+      "</strong> (Netlify production line — same logic as the tenant builder).</p>";
 
     const semverWarn = document.getElementById("semverWarning");
     const semverLatestLabel = document.getElementById("semverLatestLabel");
     const semverForkLabel = document.getElementById("semverForkLabel");
+    const semverBranchLabel = document.getElementById("semverBranchLabel");
+    if (semverBranchLabel) semverBranchLabel.textContent = pkgRef;
     if (data.releaseAheadOfForkPackage && semverWarn && semverLatestLabel && semverForkLabel) {
       semverLatestLabel.textContent = data.latestReleaseVersion || "—";
       semverForkLabel.textContent = data.forkPackageVersion || "—";

@@ -19,8 +19,17 @@ export const GET: APIRoute = async (context) => {
     );
   }
 
+  const basesRaw = import.meta.env.GITHUB_SYNC_PR_BASES?.trim();
+  const basesFromEnv = basesRaw
+    ? basesRaw.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
   try {
-    const prs = await listSyncPRs(token, repo);
+    const prs = await listSyncPRs(
+      token,
+      repo,
+      basesFromEnv && basesFromEnv.length > 0 ? basesFromEnv : undefined,
+    );
     return new Response(JSON.stringify({ ok: true, prs }), {
       headers: { "Content-Type": "application/json" },
     });
