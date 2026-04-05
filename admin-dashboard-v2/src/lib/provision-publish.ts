@@ -18,7 +18,7 @@ export class ProvisionPublishConfigError extends Error {
 }
 
 export type TriggerPostProvisionPublishResult =
-  | { ok: true }
+  | { ok: true; likelyBackground?: boolean }
   | { ok: false; configError: true }
   | { ok: false; configError: false; message: string };
 
@@ -43,6 +43,10 @@ async function attemptPostProvisionPublishOnce(
     });
     clearTimeout(timer);
 
+    if (res.status === 502 || res.status === 504) {
+      return { ok: true, likelyBackground: true };
+    }
+
     if (!res.ok) {
       const text = await res.text();
       const snippet = text.slice(0, 280);
@@ -55,6 +59,9 @@ async function attemptPostProvisionPublishOnce(
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("abort") || msg.includes("timeout")) {
+      return { ok: true, likelyBackground: true };
+    }
     return { ok: false, configError: false, message: msg };
   }
 }
@@ -117,7 +124,12 @@ export async function triggerPostProvisionPublish(
       publishTimeoutMs,
     );
     if (last.ok) {
-      return { ok: true };
+      if (last.likelyBackground) {
+        warnings.push(
+          "Publish was accepted but the CDN timed out before it finished. The function continues in the background — the site should be live within a minute.",
+        );
+      }
+      return { ok: true, likelyBackground: last.likelyBackground };
     }
     if (attempt < maxAttempts) {
       await sleep(1500 * attempt);
