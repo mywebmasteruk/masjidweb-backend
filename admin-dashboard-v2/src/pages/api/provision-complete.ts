@@ -1,8 +1,19 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { isInternalProvisionRequest } from "../../lib/provision-internal-auth";
-import { finishProvisionAndPublish } from "../../lib/provision-pipeline";
+import { completeProvision } from "../../lib/provision-pipeline";
 
+/**
+ * Phase 2 — clone template + CMS seed + invite + activate.
+ *
+ * This can take 60-120 s and will gateway-timeout (502/504) on the client side.
+ * The Netlify Lambda continues running until it completes.
+ * The dashboard does NOT wait for this response; it polls /api/provision-status
+ * instead and proceeds to phase 3 once the tenant is active.
+ *
+ * Returns 200 when complete (rarely seen by client), 202 should the function
+ * detect it is already queued, or 500 on hard failure.
+ */
 export const POST: APIRoute = async (context) => {
   if (
     !(await isAuthorized(context)) &&
@@ -32,14 +43,11 @@ export const POST: APIRoute = async (context) => {
   }
 
   try {
-    const { warnings } = await finishProvisionAndPublish(
-      body.tenantId,
-      "dashboard-v2",
+    const result = await completeProvision(body.tenantId, "dashboard-v2");
+    return new Response(
+      JSON.stringify({ ok: true, warnings: result.warnings }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
-    return new Response(JSON.stringify({ ok: true, warnings }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return new Response(

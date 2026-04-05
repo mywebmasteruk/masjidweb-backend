@@ -509,47 +509,6 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
-   * Phase 2 — CMS seed, invite, activate.
-   *
-   * Netlify gateway returns 502/504 after ~10-26 s even though the function
-   * continues running and completes in ~30-50 s total.  After a gateway error
-   * we wait 40 s so the background function has time to finish, then retry
-   * once — completeProvision returns {ok:true} immediately when it sees the
-   * tenant is already active.
-   */
-  async function fetchProvisionCompleteWithRetry(tenantId) {
-    const maxAttempts = 3;
-    let lastRes = /** @type {Response | null} */ (null);
-    let lastData = null;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      lastRes = await fetch("/api/provision-complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId }),
-      });
-      try {
-        lastData = await lastRes.json();
-      } catch {
-        lastData = null;
-      }
-      if (lastData?.ok) {
-        return { res: lastRes, data: lastData };
-      }
-      const isGateway =
-        lastRes.status === 504 ||
-        lastRes.status === 502 ||
-        lastRes.status === 503 ||
-        (lastData == null && lastRes.status >= 500);
-      if (isGateway && attempt < maxAttempts) {
-        // Wait long enough for Netlify's background function to finish so the
-        // retry finds the tenant already active and returns immediately.
-        await sleep(40000);
-      }
-    }
-    return { res: lastRes, data: lastData };
-  }
-
-  /**
    * Phase 3 — YCode publish. Retries on 5xx/504.
    */
   async function fetchProvisionPublishWithRetry(tenantId) {
@@ -584,51 +543,84 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
-   * Phase 2 + publish — chained as separate requests so each Netlify invocation stays
-   * within limits. Mirrors what "Continue setup" does.
+   * Fire /api/provision-complete and immediately start polling /api/provision-status.
+   *
+   * The Netlify Lambda for provision-complete takes 60-120 s and will gateway-
+   * timeout the HTTP response, but it KEEPS RUNNING in the background.  We don't
+   * wait for its response — we poll the lightweight status endpoint every 5 s
+   * until the tenant reaches "active" status, then proceed to publish.
+   *
    * @returns {{ warnings: string[] }}
    */
   async function runCompleteAndPublish(tenantId) {
     const allWarnings = [];
-    const { res: res2, data: data2 } = await fetchProvisionCompleteWithRetry(tenantId);
-    if (data2?.ok) {
-      if (data2.warnings) allWarnings.push(...data2.warnings);
+
+    // Fire phase 2 (don't await the response — it will gateway-timeout).
+    fetch("/api/provision-complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenantId }),
+    }).catch(() => {/* gateway timeouts are expected and ignored */});
+
+    // Poll /api/provision-status every 5 s for up to 3 minutes.
+    const pollIntervalMs = 5000;
+    const pollTimeoutMs = 3 * 60 * 1000; // 3 minutes
+    const pollStart = Date.now();
+    let tenantActive = false;
+
+    while (Date.now() - pollStart < pollTimeoutMs) {
+      await sleep(pollIntervalMs);
       try {
-        const { res: resPub, data: pubData } =
-          await fetchProvisionPublishWithRetry(tenantId);
-        if (pubData?.ok) {
-          if (pubData.warnings) allWarnings.push(...pubData.warnings);
-        } else {
-          let msg =
-            pubData?.error ||
-            "Publish step failed or timed out — open the builder and click Publish.";
-          if (pubData?.configError) {
-            msg =
-              pubData.error ||
-              "Set PROVISIONING_WEBHOOK_SECRET on this dashboard and the YCode Netlify site (same value, 16+ chars).";
-          } else if (pubData == null && resPub && resPub.status === 504) {
-            msg =
-              "Gateway timeout (504) on publish — retried; open the builder and click Publish if the site is empty.";
-          }
-          allWarnings.push("Publish: " + msg);
-        }
-      } catch (errPub) {
-        allWarnings.push(
-          "Publish: " +
-            (errPub.message || "request failed — use Publish in the builder."),
+        const statusRes = await fetch(
+          "/api/provision-status?tenantId=" + encodeURIComponent(tenantId),
         );
+        const statusData = statusRes.ok ? await statusRes.json() : null;
+        if (statusData?.active) {
+          tenantActive = true;
+          break;
+        }
+        if (statusData?.status === "failed") {
+          allWarnings.push("Completion: Tenant was marked failed during setup. Check Logs.");
+          return { warnings: allWarnings };
+        }
+      } catch {
+        // Network hiccup — keep polling
       }
-    } else {
-      let msg =
-        data2?.error ||
-        "CMS setup timed out — use Continue setup on this tenant to finish.";
-      if (data2 == null && res2 && (res2.status === 504 || res2.status === 502)) {
-        msg =
-          "Gateway timeout after retries — the Netlify function may still be running. " +
-          "Wait 1 minute then refresh and check: if the tenant shows Continue setup it is still mid-provision; " +
-          "if it shows active the site is ready (you may need to click Publish in the builder once).";
+    }
+
+    if (!tenantActive) {
+      allWarnings.push(
+        "Completion: Setup is taking longer than expected (> 3 min). " +
+          "Check the tenant list — if it shows active the CMS is ready; use Continue setup if still provisioning.",
+      );
+      return { warnings: allWarnings };
+    }
+
+    // Phase 3 — YCode publish (now that tenant is active)
+    try {
+      const { res: resPub, data: pubData } =
+        await fetchProvisionPublishWithRetry(tenantId);
+      if (pubData?.ok) {
+        if (pubData.warnings) allWarnings.push(...pubData.warnings);
+      } else {
+        let msg =
+          pubData?.error ||
+          "Publish step failed or timed out — open the builder and click Publish.";
+        if (pubData?.configError) {
+          msg =
+            pubData.error ||
+            "Set PROVISIONING_WEBHOOK_SECRET on this dashboard and the YCode Netlify site (same value, 16+ chars).";
+        } else if (pubData == null && resPub && resPub.status === 504) {
+          msg =
+            "Gateway timeout (504) on publish — open the builder and click Publish if the site looks empty.";
+        }
+        allWarnings.push("Publish: " + msg);
       }
-      allWarnings.push("Completion: " + msg);
+    } catch (errPub) {
+      allWarnings.push(
+        "Publish: " +
+          (errPub.message || "request failed — use Publish in the builder."),
+      );
     }
     return { warnings: allWarnings };
   }
@@ -760,7 +752,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         if (stEl) stEl.textContent = "Finishing setup…";
         if (dtEl) {
           dtEl.textContent =
-            "CMS seed, invite, and YCode publish — up to 90 s, keep this tab open.";
+            "CMS clone, seed, and publish running in background — polling for completion (up to 3 min). Keep this tab open.";
         }
         if (stepsEl) {
           stepsEl.classList.remove("hidden");
