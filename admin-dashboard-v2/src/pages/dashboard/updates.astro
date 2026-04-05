@@ -104,7 +104,7 @@ import Layout from "../../layouts/Layout.astro";
           <h2>Builder from admin</h2>
         </div>
         <p class="text-xs text-muted" style="margin:-0.5rem 0 1rem;">
-          One action: sync from upstream, merge <span class="mono">main</span> into your production branch (<span class="mono">GITHUB_PRODUCTION_BRANCH</span> / first sync base), then start a Netlify production build — no GitHub UI required. If merge conflicts exist, this page auto-creates (or reuses) a conflict PR and links it here so you can resolve once and retry. If a deploy breaks tenant sites, use <strong>Restore previous live build</strong> to republish the last ready deploy before the current one.
+          Click <strong>Apply YCode update</strong> to update core automatically. If a rare merge conflict happens, this page gives one link to fix it, then you click update again. If a deploy breaks tenant sites, use <strong>Restore previous live build</strong>.
         </p>
         <div class="flex" style="flex-wrap:wrap;gap:.75rem;align-items:center;margin-bottom:.75rem;">
           <label class="text-xs text-muted" style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;">
@@ -504,12 +504,20 @@ import Layout from "../../layouts/Layout.astro";
     if (!el) return;
 
     const lines = [];
-    if (message) lines.push(String(message));
-    if (opts.hint) lines.push(String(opts.hint));
     if (opts.prUrl) {
-      const label = opts.prNumber ? "Open PR #" + opts.prNumber : "Open conflict PR";
+      const label =
+        opts.prNumber ? "Open conflict PR #" + opts.prNumber : "Open conflict PR";
+      lines.push("Update paused: one merge conflict needs a one-time fix.");
+      lines.push("Step 1: Open the conflict PR.");
       lines.push('<a href="' + String(opts.prUrl) + '" target="_blank" rel="noopener noreferrer">' + label + "</a>");
-    } else if (opts.compareUrl) {
+      lines.push("Step 2: Resolve conflicts and merge that PR on GitHub.");
+      lines.push("Step 3: Return here and click Apply YCode update again.");
+    } else {
+      if (message) lines.push(String(message));
+      if (opts.hint) lines.push(String(opts.hint));
+    }
+
+    if (opts.compareUrl && !opts.prUrl) {
       lines.push('<a href="' + String(opts.compareUrl) + '" target="_blank" rel="noopener noreferrer">Open compare view</a>');
     }
 
@@ -575,7 +583,7 @@ import Layout from "../../layouts/Layout.astro";
         document.getElementById("applyUpdateClearCache")?.checked === true;
       if (
         !confirm(
-          "Sync from upstream, merge main into the production branch, and start a Netlify production build?",
+          "Start YCode core update now? If a conflict appears, this page will show a link to fix it.",
         )
       )
         return;
