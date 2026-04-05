@@ -50,6 +50,18 @@ export const POST: APIRoute = async (context) => {
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    const stack = e instanceof Error ? e.stack ?? "" : "";
+    // Persist error to audit log so we can diagnose crashes even when Netlify
+    // swallows the response with a generic "unknown error".
+    try {
+      const { getServiceSupabase } = await import("../../lib/supabase-server");
+      await getServiceSupabase().from("provisioning_audit_log").insert({
+        tenant_id: body.tenantId,
+        action: "provision_complete_api_error",
+        actor: "dashboard-v2",
+        details: { error: message, stack: stack.slice(0, 2000) },
+      });
+    } catch { /* best-effort logging */ }
     return new Response(
       JSON.stringify({ ok: false, error: message }),
       { status: 500, headers: { "Content-Type": "application/json" } },
