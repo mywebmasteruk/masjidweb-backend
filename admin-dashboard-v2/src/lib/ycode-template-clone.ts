@@ -170,16 +170,44 @@ export async function cloneTemplateForTenant(
   );
 
   // `uuid` is globally unique — cannot reuse the template tenant's uuids.
-  await cloneDraftPublished(sb, "collections", targetTenantId, idMap, templateId, (row) => ({
-    ...row,
-    uuid: newUuid(),
-  }));
+  // Deduplicate template rows that share the same collection `name` (orphan published
+  // snapshots) so we insert one target collection per logical CMS bucket.
+  const { templateCollIdToCanonical, canonicalRows } =
+    await buildTemplateCollectionIdAliases(sb, templateId);
 
-  await cloneDraftPublished(sb, "collection_fields", targetTenantId, idMap, templateId, (row) => ({
-    ...row,
-    collection_id: mapFk(row.collection_id, idMap),
-    reference_collection_id: mapFk(row.reference_collection_id, idMap),
-  }));
+  await cloneCollectionsNameDeduped(
+    sb,
+    targetTenantId,
+    idMap,
+    canonicalRows,
+    templateCollIdToCanonical,
+  );
+
+  await cloneDraftPublished(
+    sb,
+    "collection_fields",
+    targetTenantId,
+    idMap,
+    templateId,
+    (row) => ({
+      ...row,
+      collection_id: mapFk(row.collection_id, idMap),
+      reference_collection_id: mapFk(row.reference_collection_id, idMap),
+    }),
+    async () => {
+      const data = await fetchTemplateVersionRows(
+        sb,
+        "collection_fields",
+        templateId,
+        pickNewerTemplateRow,
+      );
+      return data.filter((raw) => {
+        const cid = raw.collection_id as string;
+        const canon = templateCollIdToCanonical.get(cid);
+        return canon === undefined || canon === cid;
+      });
+    },
+  );
 
   await cloneDraftPublished(sb, "pages", targetTenantId, idMap, templateId, (row) => ({
     ...row,
@@ -395,6 +423,142 @@ export async function fetchTemplateVersionRows(
     }
     return chosen;
   });
+}
+
+/**
+ * Template DBs can accumulate extra **published** collection rows that share the same
+ * `name` but use different `id`s (orphan snapshots). `fetchTemplateVersionRows` merges
+ * draft+published per id, so each orphan becomes a separate clone → triplicate CMS.
+ *
+ * Returns `templateCollIdToCanonical`: every template collection id maps to the one
+ * canonical id we keep per distinct `name` (prefers an id that still has a draft row).
+ */
+async function buildTemplateCollectionIdAliases(
+  sb: ReturnType<typeof getServiceSupabase>,
+  templateTenantId: string,
+): Promise<{
+  templateCollIdToCanonical: Map<string, string>;
+  canonicalRows: Record<string, unknown>[];
+}> {
+  const [draft, published] = await Promise.all([
+    sb
+      .from("collections")
+      .select("*")
+      .eq("tenant_id", templateTenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+    sb
+      .from("collections")
+      .select("*")
+      .eq("tenant_id", templateTenantId)
+      .eq("is_published", true)
+      .is("deleted_at", null),
+  ]);
+
+  if (draft.error) {
+    throw new Error(`collections draft read: ${draft.error.message}`);
+  }
+  if (published.error) {
+    throw new Error(`collections published read: ${published.error.message}`);
+  }
+
+  const draftById = new Map(
+    (draft.data ?? []).map((r: { id: string }) => [r.id, r as Record<string, unknown>]),
+  );
+  const pubById = new Map(
+    (published.data ?? []).map((r: { id: string }) => [r.id, r as Record<string, unknown>]),
+  );
+  const ids = new Set([...draftById.keys(), ...pubById.keys()]);
+
+  const idToMerged = new Map<string, Record<string, unknown>>();
+  for (const id of ids) {
+    const chosen = pickNewerTemplateRow(draftById.get(id), pubById.get(id));
+    if (chosen) idToMerged.set(id, chosen);
+  }
+
+  const byName = new Map<string, string[]>();
+  for (const [id, row] of idToMerged) {
+    const name = String(row.name ?? "");
+    const list = byName.get(name) ?? [];
+    list.push(id);
+    byName.set(name, list);
+  }
+
+  const templateCollIdToCanonical = new Map<string, string>();
+  const canonicalRows: Record<string, unknown>[] = [];
+
+  for (const idList of byName.values()) {
+    const withDraft = idList.filter((id) => draftById.has(id));
+    let canonicalId: string;
+    if (withDraft.length > 0) {
+      withDraft.sort();
+      canonicalId = withDraft[0]!;
+    } else {
+      let best = idList[0]!;
+      let bestU = -1;
+      for (const id of idList) {
+        const row = idToMerged.get(id)!;
+        const u = parseRowTime(row.updated_at);
+        if (u > bestU) {
+          bestU = u;
+          best = id;
+        }
+      }
+      canonicalId = best;
+    }
+
+    canonicalRows.push(idToMerged.get(canonicalId)!);
+    for (const id of idList) {
+      templateCollIdToCanonical.set(id, canonicalId);
+    }
+  }
+
+  return { templateCollIdToCanonical, canonicalRows };
+}
+
+async function cloneCollectionsNameDeduped(
+  sb: ReturnType<typeof getServiceSupabase>,
+  targetTenantId: string,
+  idMap: IdMap,
+  canonicalRows: Record<string, unknown>[],
+  templateCollIdToCanonical: Map<string, string>,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const allRows: Record<string, unknown>[] = [];
+
+  for (const raw of canonicalRows) {
+    const templateCanonId = raw.id as string;
+    const nid = newUuid();
+    for (const [anyTid, canon] of templateCollIdToCanonical) {
+      if (canon === templateCanonId) {
+        idMap.set(anyTid, nid);
+      }
+    }
+
+    const base = { ...raw, uuid: newUuid() };
+    const row = {
+      ...base,
+      id: nid,
+      is_published: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      tenant_id: targetTenantId,
+    };
+    delete (row as Record<string, unknown>).content_hash;
+    allRows.push(row);
+  }
+
+  const CHUNK = 200;
+  for (let i = 0; i < allRows.length; i += CHUNK) {
+    const chunk = allRows.slice(i, i + CHUNK);
+    const { error: insertErr } = await sb.from("collections").insert(chunk);
+    if (insertErr) {
+      throw new Error(
+        `Failed to bulk-clone collections (${chunk.length} rows): ${insertErr.message}`,
+      );
+    }
+  }
 }
 
 /**
