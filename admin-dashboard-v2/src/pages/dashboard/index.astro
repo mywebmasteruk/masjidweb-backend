@@ -430,6 +430,47 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  /** Safe string from API JSON; avoids `JSON.stringify(undefined)` becoming the word "undefined" in UI. */
+  function formatApiErrorPayload(data) {
+    if (!data || typeof data !== "object") return "";
+    if (typeof data.error === "string" && data.error.trim()) return data.error.trim();
+    if (typeof data.message === "string" && data.message.trim()) return data.message.trim();
+    if (data.error !== undefined && data.error !== null) {
+      try {
+        const s = JSON.stringify(data.error);
+        if (typeof s === "string") return s;
+      } catch {
+        return String(data.error);
+      }
+    }
+    return "";
+  }
+
+  /** User-facing text when POST /api/provision-all fails (empty body and 504 are common). */
+  function provisionAllFailureMessage(res, data) {
+    const fromBody = formatApiErrorPayload(data);
+    if (fromBody) return fromBody;
+    const status = res?.status ?? 0;
+    if (status === 504) {
+      return (
+        "Gateway timeout (504): the platform closed the connection before the function finished. " +
+        "Full provision (clone, CMS seed, invite, publish) can exceed edge limits even when Netlify allows a longer function runtime. " +
+        "Check the tenant list below: if this slug shows Continue setup, click it. Otherwise submit this form again with the same slug and email — the server resumes without creating a duplicate tenant."
+      );
+    }
+    if (status === 502 || status === 503) {
+      return (
+        "Bad gateway or service unavailable (" +
+        status +
+        "). Wait a minute and retry, or use Continue setup on the tenant row if it appears."
+      );
+    }
+    if (status >= 500) {
+      return "Server error (" + status + "). Check Logs or try again with the same slug to resume.";
+    }
+    return "Provisioning did not complete. Check Logs, Continue setup, or submit again with the same slug.";
+  }
+
   /**
    * Full provision in one API call (clone through publish). Retries on gateway errors only.
    */
@@ -612,22 +653,17 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     try {
       const { res, data } = await fetchProvisionAllWithRetry(body);
       if (!data) {
-        throw new Error(
-          "Server returned non-JSON response (status " + (res?.status ?? "?") + ")",
+        showResult(
+          false,
+          "Provisioning failed",
+          provisionAllFailureMessage(res, null) ||
+            "Server returned a non-JSON or empty response (status " + (res?.status ?? "?") + ").",
         );
+        return;
       }
 
       if (!data.ok) {
-        const errMsg = typeof data.error === "string" ? data.error : JSON.stringify(data.error);
-        let hint = "";
-        if (res && (res.status === 504 || res.status === 502 || res.status === 503)) {
-          hint =
-            " The gateway timed out — the next automatic retry uses the same slug and resumes phase 2 (no duplicate row). If all retries fail, submit again once with the same slug and email.";
-        } else if (res && res.status === 500) {
-          hint =
-            " If a tenant row exists for this slug in provisioning, submit again with the same details — the server will resume. Otherwise check Logs or try Continue setup.";
-        }
-        showResult(false, "Provisioning failed", errMsg + hint);
+        showResult(false, "Provisioning failed", provisionAllFailureMessage(res, data));
         return;
       }
 
@@ -735,7 +771,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           return;
         }
         if (!data.ok) {
-          toast(typeof data.error === "string" ? data.error : JSON.stringify(data.error), false);
+          toast(formatApiErrorPayload(data) || "Request failed (status " + res.status + ")", false);
           return;
         }
 
