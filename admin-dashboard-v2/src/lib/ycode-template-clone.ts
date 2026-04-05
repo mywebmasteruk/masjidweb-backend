@@ -422,30 +422,36 @@ async function cloneDraftPublished(
 
   const now = new Date().toISOString();
 
+  // Build all rows in memory, then bulk-insert (replaces N sequential inserts).
+  const allRows: Record<string, unknown>[] = [];
+
   for (const raw of data as Record<string, unknown>[]) {
     const nid = newUuid();
     idMap.set(raw.id as string, nid);
 
     const base = transform ? transform(raw) : { ...raw };
 
-    for (const pub of [false] as const) {
-      const row = {
-        ...base,
-        id: nid,
-        is_published: pub,
-        created_at: now,
-        updated_at: now,
-        deleted_at: null,
-        tenant_id: targetTenantId,
-      };
-      delete (row as Record<string, unknown>).content_hash;
+    const row = {
+      ...base,
+      id: nid,
+      is_published: false,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      tenant_id: targetTenantId,
+    };
+    delete (row as Record<string, unknown>).content_hash;
+    allRows.push(row);
+  }
 
-      const { error: insertErr } = await sb.from(table).insert(row);
-      if (insertErr) {
-        throw new Error(
-          `Failed to clone ${table} row ${raw.id}: ${insertErr.message}`,
-        );
-      }
+  const CHUNK = 200;
+  for (let i = 0; i < allRows.length; i += CHUNK) {
+    const chunk = allRows.slice(i, i + CHUNK);
+    const { error: insertErr } = await sb.from(table).insert(chunk);
+    if (insertErr) {
+      throw new Error(
+        `Failed to bulk-clone ${table} (${chunk.length} rows): ${insertErr.message}`,
+      );
     }
   }
 }
@@ -469,19 +475,19 @@ async function cloneSettings(
   if (!data?.length) return;
 
   const now = new Date().toISOString();
-  for (const raw of data) {
-    const { error: insertErr } = await sb.from("settings").insert({
-      id: newUuid(),
-      key: raw.key,
-      value: remapIds(raw.value, idMap),
-      created_at: now,
-      updated_at: now,
-      tenant_id: targetTenantId,
-    });
+  const rows = data.map((raw) => ({
+    id: newUuid(),
+    key: raw.key,
+    value: remapIds(raw.value, idMap),
+    created_at: now,
+    updated_at: now,
+    tenant_id: targetTenantId,
+  }));
+
+  if (rows.length) {
+    const { error: insertErr } = await sb.from("settings").insert(rows);
     if (insertErr) {
-      throw new Error(
-        `Failed to clone setting "${raw.key}": ${insertErr.message}`,
-      );
+      throw new Error(`Failed to bulk-clone settings: ${insertErr.message}`);
     }
   }
 }
