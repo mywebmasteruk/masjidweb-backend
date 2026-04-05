@@ -973,7 +973,11 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         const rows = (data.removed && data.removed.length)
           ? data.removed.map((r) => r.table_name + ": " + r.removed).join(", ")
           : "none";
-        toast("Cleanup done: " + rows, true);
+        const auth =
+          typeof data.authUsersRemoved === "number" && data.authUsersRemoved > 0
+            ? "; auth users removed: " + data.authUsersRemoved
+            : "";
+        toast("Cleanup done: " + rows + auth, true);
       } else {
         toast(data.error || "Cleanup failed", false);
       }

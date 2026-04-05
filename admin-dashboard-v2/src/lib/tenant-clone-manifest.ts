@@ -7,13 +7,10 @@
  * ## Tables carrying tenant_id (tenant-scoped rows)
  *
  * **Deleted by** `delete_tenant_scoped_data` (order matters for FKs): webhook_deliveries,
- * webhooks, versions, collection_imports, api_keys, mcp_tokens, app_settings, translations,
- * color_variables, form_submissions, collection_item_values, collection_items, page_layers,
- * collection_fields, pages, collections, components, layer_styles, assets, asset_folders,
- * fonts, locales, settings.
- *
- * **Also tenant-scoped** (see backfill migrations): page_folders. It is not listed in
- * `delete_tenant_scoped_data` today — a merge hotspot if you tighten tenant teardown.
+ * webhooks, versions, collection_imports, api_keys, mcp_tokens, app_settings; translations
+ * (via locales + `tenant_id`); form_submissions; collection_item_values, collection_items,
+ * page_layers, collection_fields, pages, page_folders, collections, components, layer_styles,
+ * color_variables, assets, asset_folders, fonts, locales, settings; tenant_homepage_content.
  *
  * ## What we copy from the demo template when provisioning a client tenant
  *

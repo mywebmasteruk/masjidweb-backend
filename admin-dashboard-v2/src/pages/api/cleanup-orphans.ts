@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { getServiceSupabase } from "../../lib/supabase-server";
+import { deleteAuthUsersForMissingTenants } from "../../lib/tenant-delete-data";
 
 /**
  * GET /api/cleanup-orphans
@@ -63,10 +64,15 @@ export const POST: APIRoute = async (context) => {
     });
   }
 
+  const authWarnings: string[] = [];
+  const authUsersRemoved = await deleteAuthUsersForMissingTenants(supabase, authWarnings);
+
   return new Response(
     JSON.stringify({
       ok: true,
       removed: data ?? [],
+      authUsersRemoved,
+      ...(authWarnings.length ? { warnings: authWarnings } : {}),
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
