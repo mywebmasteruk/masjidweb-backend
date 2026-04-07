@@ -131,14 +131,14 @@ export interface ReleaseSemverVsFork {
 
 /**
  * Compare latest upstream **GitHub Release** semver to the fork’s **package.json** on the branch you deploy
- * (e.g. `tenant-multi`). If `packageJsonRef` is omitted, uses the fork’s GitHub default branch — which often
+ * (e.g. `main`). If `packageJsonRef` is omitted, uses the fork’s GitHub default branch — which often
  * does **not** match Netlify production and makes the admin look “up to date” while tenants still show
  * “Update available”.
  */
 export async function getReleaseSemverVsFork(
   token: string,
   forkRepo: string,
-  /** Branch/ref for `package.json` (e.g. `tenant-multi`). Omit to use the repo default branch. */
+  /** Branch/ref for `package.json` (e.g. `main`). Omit to use the repo default branch. */
   packageJsonRef?: string,
 ): Promise<ReleaseSemverVsFork> {
   const refDesired = packageJsonRef?.trim();
@@ -302,8 +302,8 @@ export interface SyncPR {
   htmlUrl: string;
 }
 
-/** Default: MasjidWeb v2 builder line (`tenant-multi`). Override with `GITHUB_SYNC_PR_BASES` if you add more base branches. */
-export const DEFAULT_SYNC_PR_BASE_BRANCHES = ["tenant-multi"] as const;
+/** Default: MasjidWeb v2 builder line (`main`). Override with `GITHUB_SYNC_PR_BASES` if you add more base branches. */
+export const DEFAULT_SYNC_PR_BASE_BRANCHES = ["main"] as const;
 
 export async function listSyncPRs(
   token: string,
