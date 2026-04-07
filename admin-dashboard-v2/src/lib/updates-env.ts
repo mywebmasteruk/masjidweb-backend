@@ -7,5 +7,5 @@ export function githubProductionBranch(): string {
     const first = bases.split(",")[0]?.trim();
     if (first) return first;
   }
-  return "tenant-multi";
+  return "main";
 }
