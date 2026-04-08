@@ -2,10 +2,24 @@ import type { APIRoute } from "astro";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { isInternalProvisionRequest } from "../../lib/provision-internal-auth";
 import { getServiceSupabase } from "../../lib/supabase-server";
+import { readServerEnv } from "../../lib/server-env";
+
+const KNOWN_STEPS = [
+  "tenant_created",
+  "clone_complete",
+  "cms_seed_complete",
+  "provision_complete",
+  "provision_publish_step",
+] as const;
+
+type StepName = (typeof KNOWN_STEPS)[number];
 
 /**
  * Lightweight status check for the provision polling loop.
- * Returns the current tenant status so the dashboard knows when phase 2 is done.
+ *
+ * Returns:
+ * - `steps`: ordered list of provision milestones with completion timestamps
+ * - `sslReady`: true once the tenant URL responds over HTTPS (cert issued)
  */
 export const GET: APIRoute = async (context) => {
   if (
@@ -40,27 +54,39 @@ export const GET: APIRoute = async (context) => {
     );
   }
 
-  // Publish state comes from provisioning audit actions.
-  // `provision_publish_step` => explicit phase-3 publish success.
-  // `provision_complete` => legacy/full-flow completion where publish may be bundled.
-  // `provision_publish_failed` => publish hard-failed.
-  const { data: publishAuditRows } = await supabase
+  const { data: auditRows } = await supabase
     .from("provisioning_audit_log")
     .select("action, created_at")
     .eq("tenant_id", tenantId)
     .in("action", [
-      "provision_publish_step",
+      ...KNOWN_STEPS,
       "provision_publish_failed",
-      "provision_complete",
     ])
-    .order("created_at", { ascending: false })
-    .limit(1);
+    .order("created_at", { ascending: true });
 
-  const latestPublishAction = publishAuditRows?.[0]?.action ?? null;
-  const publishCompleted =
-    latestPublishAction === "provision_publish_step" ||
-    latestPublishAction === "provision_complete";
-  const publishFailed = latestPublishAction === "provision_publish_failed";
+  const completedSet = new Map<string, string>();
+  let publishFailed = false;
+
+  for (const row of auditRows ?? []) {
+    completedSet.set(row.action, row.created_at);
+    if (row.action === "provision_publish_failed") publishFailed = true;
+  }
+
+  const steps = KNOWN_STEPS.map((name) => ({
+    name,
+    completed: completedSet.has(name),
+    completedAt: completedSet.get(name) ?? null,
+  }));
+
+  const publishCompleted = completedSet.has("provision_publish_step");
+
+  // SSL probe: only run after publish is done so we don't waste time probing early.
+  let sslReady = false;
+  if (publishCompleted) {
+    const domainSuffix = readServerEnv("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
+    const tenantUrl = `https://${tenant.slug}.${domainSuffix}/`;
+    sslReady = await probeSsl(tenantUrl);
+  }
 
   return new Response(
     JSON.stringify({
@@ -71,7 +97,29 @@ export const GET: APIRoute = async (context) => {
       active: tenant.status === "active",
       publishCompleted,
       publishFailed,
+      sslReady,
+      steps,
     }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
 };
+
+/**
+ * Quick HEAD probe to verify the tenant URL is reachable over HTTPS.
+ * Returns true if the server responds (any status), false on TLS/network errors.
+ */
+async function probeSsl(url: string): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res.status < 500;
+  } catch {
+    return false;
+  }
+}
