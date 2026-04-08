@@ -306,17 +306,10 @@ async function copyTemplateContentToTenant(
     (await resolveTenantsCollectionIdForTemplate(supabase, src)) ??
     ORIG_TENANTS_COLLECTION_ID;
 
-  const templateTidFields = await selectTemplateFieldsByKey(
-    supabase,
-    "tenant_id",
-    src,
-  );
-
-  const templateSlugFields = await selectTemplateFieldsByKey(
-    supabase,
-    "tenant_slug",
-    src,
-  );
+  const [templateTidFields, templateSlugFields] = await Promise.all([
+    selectTemplateFieldsByKey(supabase, "tenant_id", src),
+    selectTemplateFieldsByKey(supabase, "tenant_slug", src),
+  ]);
 
   const slugFieldByTemplateCollection = Object.fromEntries(
     templateSlugFields.map((f) => [f.collection_id, f.id]),

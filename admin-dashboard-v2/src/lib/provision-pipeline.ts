@@ -32,6 +32,7 @@ import { isUserAlreadyRegistered } from "./send-tenant-auth-link";
 import { reclaimClientTenantForSlugReuse } from "./provision-tenant-reclaim";
 import {
   acquirePhase2LeaderOrWait,
+  emitPhase2Heartbeat,
   releasePhase2LeaderClaim,
 } from "./provision-phase2-lock";
 
@@ -347,6 +348,7 @@ export async function completeProvision(
     }
 
     // 1. CMS seed (fast DB work — no publish dependency)
+    await emitPhase2Heartbeat(supabase, tenantId, actor, "cms_seed_start");
     const cmsSeedStart = Date.now();
     const idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
     await seedTenantCmsContent(
@@ -366,14 +368,15 @@ export async function completeProvision(
     );
     phase2TimingMs.cms_seed = Date.now() - cmsSeedStart;
 
-    const translationsStart = Date.now();
-    await cloneTranslationsForTenant(supabase, tenantId, idMap, sourceTpl);
-    phase2TimingMs.translations = Date.now() - translationsStart;
-
-    // 2. Patch null tenant_ids from clone
-    const patchStart = Date.now();
-    await patchNullTenantIds(supabase, tenantId);
-    phase2TimingMs.patch_null_tenant_ids = Date.now() - patchStart;
+    // 2. Translations + patch null tenant_ids run concurrently (independent work).
+    await emitPhase2Heartbeat(supabase, tenantId, actor, "translations_and_patch_start");
+    const parallelStart = Date.now();
+    const [, ] = await Promise.all([
+      cloneTranslationsForTenant(supabase, tenantId, idMap, sourceTpl),
+      patchNullTenantIds(supabase, tenantId),
+    ]);
+    const parallelElapsed = Date.now() - parallelStart;
+    phase2TimingMs.translations_and_patch = parallelElapsed;
 
     // 3. Invite primary admin (non-fatal) — always @tenant-domain so SMTP/catch-all receives it
     const inviteFromRegistry = tenant.email
