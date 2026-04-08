@@ -142,7 +142,7 @@ export async function reseedTenantCmsDemo(
 
 // ── Seed the Tenants collection ─────────────────────────────────────────────
 
-async function seedTenantsCollection(
+export async function seedTenantsCollection(
   tenantId: string,
   tenantSlug: string,
   t: TenantCmsContent,

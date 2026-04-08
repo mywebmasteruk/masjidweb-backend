@@ -2,7 +2,7 @@ import { getServiceSupabase } from "./supabase-server";
 import { addDomainAlias } from "./netlify-domains";
 import { slugify } from "./slug";
 import { createTenantSchema, type CreateTenantInput } from "./tenant-schema";
-import { seedTenantCmsContent } from "./ycode-cms-seed";
+import { seedTenantsCollection } from "./ycode-cms-seed";
 import {
   cloneTemplateForTenant,
   cloneTranslationsForTenant,
@@ -332,6 +332,8 @@ export async function completeProvision(
       .eq("action", "clone_complete")
       .limit(1);
 
+    let idMap: Awaited<ReturnType<typeof rebuildIdMapForTenant>> | undefined;
+
     if (!cloneDoneRows || cloneDoneRows.length === 0) {
       const cloneStart = Date.now();
       await cloneTemplateForTenant(tenantId, sourceTpl);
@@ -347,7 +349,7 @@ export async function completeProvision(
       });
     }
 
-    // 1. CMS seed (idempotent — skip if already done on a previous attempt).
+    // 1. CMS seed via SQL function (idempotent — skip if already done).
     const { data: seedDoneRows } = await supabase
       .from("provisioning_audit_log")
       .select("id")
@@ -355,13 +357,31 @@ export async function completeProvision(
       .eq("action", "cms_seed_complete")
       .limit(1);
 
-    let idMap: Awaited<ReturnType<typeof rebuildIdMapForTenant>> | undefined;
-
     if (!seedDoneRows || seedDoneRows.length === 0) {
       await emitPhase2Heartbeat(supabase, tenantId, actor, "cms_seed_start");
       const cmsSeedStart = Date.now();
+
       idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
-      await seedTenantCmsContent(
+      const idMapObj = Object.fromEntries(idMap);
+
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc(
+        "clone_cms_for_tenant",
+        {
+          p_source_tenant: sourceTpl,
+          p_target_tenant: tenantId,
+          p_target_slug: slug,
+          p_id_map: idMapObj,
+        },
+      );
+
+      if (rpcErr) {
+        throw new Error(`clone_cms_for_tenant RPC failed: ${rpcErr.message}`);
+      }
+
+      // Seed the Tenants collection item with tenant business details.
+      // The SQL RPC already cloned generic CMS items; this inserts the
+      // per-tenant "Tenants" row with the business name / address / etc.
+      await seedTenantsCollection(
         tenantId,
         slug,
         {
@@ -376,12 +396,17 @@ export async function completeProvision(
         idMap,
         sourceTpl,
       );
+
       phase2TimingMs.cms_seed = Date.now() - cmsSeedStart;
       await supabase.from("provisioning_audit_log").insert({
         tenant_id: tenantId,
         action: "cms_seed_complete",
         actor,
-        details: { timing_ms: phase2TimingMs.cms_seed },
+        details: {
+          timing_ms: phase2TimingMs.cms_seed,
+          rpc_result: rpcResult,
+          method: "sql_rpc",
+        },
       });
     }
 
@@ -639,8 +664,13 @@ export function isDuplicateSlugProvisionError(e: unknown): boolean {
 }
 
 /**
- * Phase 2b — YCode publish + post-publish demo checks (draft parity + published collection snapshot).
- * Often scheduled with Netlify `waitUntil` so the HTTP response can return after phase 2 while publish finishes.
+ * Phase 2b — publish all drafts for the tenant.
+ *
+ * Primary path: SQL function `publish_tenant_drafts` (runs entirely inside
+ * Postgres — fast and reliable, no HTTP round-trips).
+ *
+ * Fallback: webhook POST /ycode/api/publish (used when RPC fails or for
+ * CSS-generation side-effects the SQL path cannot handle).
  */
 export async function publishTenantAfterProvision(
   tenantId: string,
@@ -670,37 +700,61 @@ export async function publishTenantAfterProvision(
     tenantId,
   );
 
-  const publishHook = await triggerPostProvisionPublish(
-    slug,
-    domainSuffix,
-    warnings,
-  );
-  if (publishHook.ok) {
-    try {
-      await patchNullTenantIds(supabase, tenantId);
-    } catch (patchErr) {
-      const msg = patchErr instanceof Error ? patchErr.message : String(patchErr);
-      warnings.push(
-        `Post-publish tenant_id patch (non-fatal): ${msg}`,
-      );
-    }
-  }
-  if (!publishHook.ok) {
-    if (publishHook.configError) {
-      throw new ProvisionPublishConfigError(
-        "Provisioning cannot finish until PROVISIONING_WEBHOOK_SECRET (16+ chars) is set to the same value on this dashboard and the YCode Netlify site.",
-      );
-    }
-    await supabase.from("provisioning_audit_log").insert({
-      tenant_id: tenantId,
-      action: "provision_publish_failed",
-      actor,
-      details: { message: publishHook.message },
-    });
-    throw new Error(
-      publishHook.message ||
-        "YCode publish did not succeed — retry or open the builder and click Publish.",
+  // Try SQL publish first (fast, no timeout risk)
+  let sqlPublishOk = false;
+  try {
+    const { data: pubResult, error: pubErr } = await supabase.rpc(
+      "publish_tenant_drafts",
+      { p_tenant_id: tenantId },
     );
+    if (pubErr) {
+      warnings.push(`SQL publish failed (will try webhook): ${pubErr.message}`);
+    } else {
+      sqlPublishOk = true;
+      await supabase.from("provisioning_audit_log").insert({
+        tenant_id: tenantId,
+        action: "provision_publish_step",
+        actor,
+        details: { method: "sql_rpc", result: pubResult, warnings },
+      });
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    warnings.push(`SQL publish exception (will try webhook): ${msg}`);
+  }
+
+  // Fallback: webhook publish (handles CSS generation + cache clear)
+  if (!sqlPublishOk) {
+    const publishHook = await triggerPostProvisionPublish(
+      slug,
+      domainSuffix,
+      warnings,
+    );
+    if (publishHook.ok) {
+      try {
+        await patchNullTenantIds(supabase, tenantId);
+      } catch (patchErr) {
+        const msg = patchErr instanceof Error ? patchErr.message : String(patchErr);
+        warnings.push(`Post-publish tenant_id patch (non-fatal): ${msg}`);
+      }
+    }
+    if (!publishHook.ok) {
+      if (publishHook.configError) {
+        throw new ProvisionPublishConfigError(
+          "Provisioning cannot finish until PROVISIONING_WEBHOOK_SECRET (16+ chars) is set to the same value on this dashboard and the YCode Netlify site.",
+        );
+      }
+      await supabase.from("provisioning_audit_log").insert({
+        tenant_id: tenantId,
+        action: "provision_publish_failed",
+        actor,
+        details: { message: publishHook.message },
+      });
+      throw new Error(
+        publishHook.message ||
+          "YCode publish did not succeed — retry or open the builder and click Publish.",
+      );
+    }
   }
 
   try {
@@ -713,13 +767,6 @@ export async function publishTenantAfterProvision(
       `Post-publish demo check failed (non-fatal; publish succeeded): ${msg}`,
     );
   }
-
-  await supabase.from("provisioning_audit_log").insert({
-    tenant_id: tenantId,
-    action: "provision_publish_step",
-    actor,
-    details: { warnings },
-  });
 
   return { warnings };
 }
