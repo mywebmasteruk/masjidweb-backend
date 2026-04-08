@@ -283,19 +283,7 @@ BEGIN
   GET DIAGNOSTICS v_cnt = ROW_COUNT;
   v_counts := v_counts || jsonb_build_object('page_folders', v_cnt);
 
-  -- ── page_layers ──
-  DELETE FROM page_layers WHERE tenant_id = p_tenant_id AND is_published = true;
-  INSERT INTO page_layers
-         (id, page_id, layers, is_published, content_hash,
-          created_at, updated_at, deleted_at, tenant_id)
-  SELECT  id, page_id, layers, true, NULL,
-          v_now, v_now, deleted_at, tenant_id
-  FROM    page_layers
-  WHERE   tenant_id = p_tenant_id AND is_published = false;
-  GET DIAGNOSTICS v_cnt = ROW_COUNT;
-  v_counts := v_counts || jsonb_build_object('page_layers', v_cnt);
-
-  -- ── pages ──
+  -- ── pages (before page_layers: FK cascade) ──
   DELETE FROM pages WHERE tenant_id = p_tenant_id AND is_published = true;
   INSERT INTO pages
          (id, page_folder_id, name, slug, "order", depth, is_index, is_dynamic,
@@ -308,6 +296,18 @@ BEGIN
   WHERE   tenant_id = p_tenant_id AND is_published = false;
   GET DIAGNOSTICS v_cnt = ROW_COUNT;
   v_counts := v_counts || jsonb_build_object('pages', v_cnt);
+
+  -- ── page_layers (after pages: FK page_id,is_published → pages ON DELETE CASCADE) ──
+  DELETE FROM page_layers WHERE tenant_id = p_tenant_id AND is_published = true;
+  INSERT INTO page_layers
+         (id, page_id, layers, is_published, content_hash,
+          created_at, updated_at, deleted_at, tenant_id)
+  SELECT  id, page_id, layers, true, NULL,
+          v_now, v_now, deleted_at, tenant_id
+  FROM    page_layers
+  WHERE   tenant_id = p_tenant_id AND is_published = false;
+  GET DIAGNOSTICS v_cnt = ROW_COUNT;
+  v_counts := v_counts || jsonb_build_object('page_layers', v_cnt);
 
   -- ── translations ──
   DELETE FROM translations WHERE tenant_id = p_tenant_id AND is_published = true;
