@@ -117,7 +117,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           <span class="badge badge-gray" style="font-size:.7rem;">{clientTenants.length} clients · {demoTenants.length} demos</span>
         </div>
 
-        <div id="addForm" class="form-reveal open">
+        <div id="addForm" class="form-reveal">
           <form id="provisionForm">
             {templateOptions && templateOptions.length > 0 ? (
               <div class="field">
