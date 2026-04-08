@@ -594,11 +594,14 @@ async function copyTemplateContentToTenant(
   }
 
   if (allNewItemRows.length) {
-    const { error: itemBulkErr } = await supabase
-      .from("collection_items")
-      .insert(allNewItemRows);
-    if (itemBulkErr) {
-      throw new Error(`Failed to bulk-insert collection_items: ${itemBulkErr.message}`);
+    for (let i = 0; i < allNewItemRows.length; i += CHUNK_SIZE) {
+      const chunk = allNewItemRows.slice(i, i + CHUNK_SIZE);
+      const { error: itemBulkErr } = await supabase
+        .from("collection_items")
+        .upsert(chunk, { onConflict: "id,is_published", ignoreDuplicates: true });
+      if (itemBulkErr) {
+        throw new Error(`Failed to bulk-insert collection_items: ${itemBulkErr.message}`);
+      }
     }
   }
 
@@ -707,12 +710,12 @@ async function copyTemplateContentToTenant(
     allValueRows.map((r) => [`${r.item_id}:${r.field_id}`, r]),
   ).values()];
 
-  // Bulk-insert in chunks to stay within Supabase payload limits.
+  // Bulk-upsert in chunks; ignoreDuplicates makes retries safe after a partial insert.
   for (let i = 0; i < dedupedValueRows.length; i += CHUNK_SIZE) {
     const chunk = dedupedValueRows.slice(i, i + CHUNK_SIZE);
     const { error: valBulkErr } = await supabase
       .from("collection_item_values")
-      .insert(chunk);
+      .upsert(chunk, { ignoreDuplicates: true });
     if (valBulkErr) {
       throw new Error(`Failed to bulk-insert collection_item_values: ${valBulkErr.message}`);
     }
