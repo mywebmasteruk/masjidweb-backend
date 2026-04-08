@@ -514,32 +514,39 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
-   * Fire /api/provision-complete and immediately start polling /api/provision-status.
+   * Fire /api/provision-complete, poll status, and auto-retry.
    *
-   * The Netlify Lambda for provision-complete takes 60-120 s and will gateway-
-   * timeout the HTTP response, but it KEEPS RUNNING in the background.  We don't
-   * wait for its response — we poll the lightweight status endpoint every 5 s
-   * until the tenant reaches "active" status, then proceed to publish.
+   * Netlify kills synchronous functions at ~26 s. completeProvision is idempotent
+   * (clone_complete guard, leader lock, CMS dedup), so the first invocation does
+   * as much as it can before being killed, and each retry picks up where the
+   * previous one left off. Typically 2 invocations are enough.
+   *
+   * After the tenant reaches "active", fire the publish webhook + poll.
    *
    * @returns {{ warnings: string[] }}
    */
   async function runCompleteAndPublish(tenantId) {
     const allWarnings = [];
-
-    // Fire phase 2 (don't await the response — it will gateway-timeout).
-    fetch("/api/provision-complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenantId }),
-    }).catch(() => {/* gateway timeouts are expected and ignored */});
-
-    // Poll /api/provision-status every 5 s for up to 3 minutes.
     const pollIntervalMs = 5000;
-    const pollTimeoutMs = 3 * 60 * 1000; // 3 minutes
-    const pollStart = Date.now();
+    const retryIntervalMs = 35000;
+    const maxRetries = 5;
+    const overallTimeoutMs = 4 * 60 * 1000;
+    const overallStart = Date.now();
+
+    function fireComplete() {
+      fetch("/api/provision-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId }),
+      }).catch(() => {});
+    }
+
+    fireComplete();
+    let lastFireTime = Date.now();
+    let retryCount = 0;
     let tenantActive = false;
 
-    while (Date.now() - pollStart < pollTimeoutMs) {
+    while (Date.now() - overallStart < overallTimeoutMs) {
       await sleep(pollIntervalMs);
       try {
         const statusRes = await fetch(
@@ -557,18 +564,26 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       } catch {
         // Network hiccup — keep polling
       }
+
+      if (
+        Date.now() - lastFireTime >= retryIntervalMs &&
+        retryCount < maxRetries
+      ) {
+        retryCount++;
+        fireComplete();
+        lastFireTime = Date.now();
+      }
     }
 
     if (!tenantActive) {
       allWarnings.push(
-        "Completion: Setup is taking longer than expected (> 3 min). " +
+        "Completion: Setup is taking longer than expected (> 4 min). " +
           "Check the tenant list — if it shows active the CMS is ready; use Continue setup if still provisioning.",
       );
       return { warnings: allWarnings };
     }
 
-    // Phase 3 — YCode publish. Trigger it, then poll status until the publish
-    // step reports completion (or failure) so we don't show "provisioned" too early.
+    // Phase 3 — YCode publish. Fire webhook, poll for completion.
     fetch("/api/provision-publish-tenant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -576,7 +591,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     }).catch(() => {});
 
     const publishPollStart = Date.now();
-    const publishPollTimeoutMs = 2 * 60 * 1000; // 2 minutes
+    const publishPollTimeoutMs = 2 * 60 * 1000;
     while (Date.now() - publishPollStart < publishPollTimeoutMs) {
       await sleep(pollIntervalMs);
       try {

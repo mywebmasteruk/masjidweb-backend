@@ -411,7 +411,7 @@ export async function completeProvision(
     }
     phase2TimingMs.invite = Date.now() - inviteStart;
 
-    // 4. Mark active before publish (demo parity checks run in publishTenantAfterProvision — non-blocking for activation).
+    // 4. Mark active.
     const activateStart = Date.now();
     await supabase
       .from("tenant_registry")

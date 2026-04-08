@@ -17,6 +17,85 @@ export async function patchNullTenantIds(
   }
 }
 
+/**
+ * After clone + CMS seed (all draft), create published snapshots by reading
+ * each table's draft rows and inserting `is_published = true` copies.
+ *
+ * Processed one table at a time so peak Lambda memory stays manageable.
+ * Idempotent: skips tables that already have published rows for this tenant.
+ *
+ * Tables with special handling:
+ *   - `collections` → `uuid` column must be globally unique (new uuid per published copy)
+ *   - `collection_item_values` / `translations` → `id` must be unique per row
+ */
+export async function publishDraftRowsForTenant(
+  supabase: SupabaseClient,
+  tenantId: string,
+): Promise<void> {
+  for (const table of DRAFT_PUBLISHED_PATCH_TABLES) {
+    await copyDraftToPublishedForTable(supabase, table, tenantId);
+  }
+}
+
+const TABLES_NEEDING_NEW_UUID_COL = new Set(["collections"]);
+const TABLES_NEEDING_NEW_ROW_ID = new Set([
+  "collection_item_values",
+  "translations",
+]);
+const CHUNK = 200;
+
+async function copyDraftToPublishedForTable(
+  supabase: SupabaseClient,
+  table: string,
+  tenantId: string,
+): Promise<void> {
+  const { count, error: cntErr } = await supabase
+    .from(table)
+    .select("*", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("is_published", true);
+  if (cntErr) return;
+  if ((count ?? 0) > 0) return;
+
+  const { count: draftCount } = await supabase
+    .from(table)
+    .select("*", { count: "exact", head: true })
+    .eq("tenant_id", tenantId)
+    .eq("is_published", false);
+  if (!draftCount) return;
+
+  let offset = 0;
+  while (true) {
+    const { data: drafts, error: readErr } = await supabase
+      .from(table)
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .eq("is_published", false)
+      .range(offset, offset + CHUNK - 1);
+
+    if (readErr) throw new Error(`publishDraft read ${table}: ${readErr.message}`);
+    if (!drafts?.length) break;
+
+    const published = drafts.map((row: Record<string, unknown>) => {
+      const copy = { ...row, is_published: true };
+      delete copy.content_hash;
+      if (TABLES_NEEDING_NEW_UUID_COL.has(table) && "uuid" in copy) {
+        copy.uuid = crypto.randomUUID();
+      }
+      if (TABLES_NEEDING_NEW_ROW_ID.has(table)) {
+        copy.id = crypto.randomUUID();
+      }
+      return copy;
+    });
+
+    const { error: insErr } = await supabase.from(table).insert(published);
+    if (insErr) throw new Error(`publishDraft insert ${table}: ${insErr.message}`);
+
+    if (drafts.length < CHUNK) break;
+    offset += CHUNK;
+  }
+}
+
 async function patchTablePublishedFromDraft(
   supabase: SupabaseClient,
   table: string,
