@@ -347,30 +347,50 @@ export async function completeProvision(
       });
     }
 
-    // 1. CMS seed (fast DB work — no publish dependency)
-    await emitPhase2Heartbeat(supabase, tenantId, actor, "cms_seed_start");
-    const cmsSeedStart = Date.now();
-    const idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
-    await seedTenantCmsContent(
-      tenantId,
-      slug,
-      {
+    // 1. CMS seed (idempotent — skip if already done on a previous attempt).
+    const { data: seedDoneRows } = await supabase
+      .from("provisioning_audit_log")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("action", "cms_seed_complete")
+      .limit(1);
+
+    let idMap: Awaited<ReturnType<typeof rebuildIdMapForTenant>> | undefined;
+
+    if (!seedDoneRows || seedDoneRows.length === 0) {
+      await emitPhase2Heartbeat(supabase, tenantId, actor, "cms_seed_start");
+      const cmsSeedStart = Date.now();
+      idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
+      await seedTenantCmsContent(
+        tenantId,
         slug,
-        business_name: tenant.business_name,
-        address: tenant.address,
-        phone: tenant.phone,
-        email: tenant.email,
-        domain: tenant.domain,
-        description: tenant.description,
-      },
-      idMap,
-      sourceTpl,
-    );
-    phase2TimingMs.cms_seed = Date.now() - cmsSeedStart;
+        {
+          slug,
+          business_name: tenant.business_name,
+          address: tenant.address,
+          phone: tenant.phone,
+          email: tenant.email,
+          domain: tenant.domain,
+          description: tenant.description,
+        },
+        idMap,
+        sourceTpl,
+      );
+      phase2TimingMs.cms_seed = Date.now() - cmsSeedStart;
+      await supabase.from("provisioning_audit_log").insert({
+        tenant_id: tenantId,
+        action: "cms_seed_complete",
+        actor,
+        details: { timing_ms: phase2TimingMs.cms_seed },
+      });
+    }
 
     // 2. Translations + patch null tenant_ids run concurrently (independent work).
     await emitPhase2Heartbeat(supabase, tenantId, actor, "translations_and_patch_start");
     const parallelStart = Date.now();
+    if (!idMap) {
+      idMap = await rebuildIdMapForTenant(supabase, tenantId, sourceTpl);
+    }
     const [, ] = await Promise.all([
       cloneTranslationsForTenant(supabase, tenantId, idMap, sourceTpl),
       patchNullTenantIds(supabase, tenantId),
