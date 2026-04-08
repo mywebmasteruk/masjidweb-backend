@@ -16,6 +16,21 @@ export function isUserAlreadyRegistered(err: unknown): boolean {
   );
 }
 
+/**
+ * True when inviteUserByEmail cannot run because this email is already in Supabase Auth
+ * (fully registered, or invited but not finished). In those cases we try generateLink(invite)
+ * first (finish password), then generateLink(magiclink).
+ */
+export function inviteUserByEmailFailedForExistingUser(err: unknown): boolean {
+  if (isUserAlreadyRegistered(err)) return true;
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("already invited") ||
+    msg.includes("already been invited") ||
+    msg.includes("has already been invited")
+  );
+}
+
 export type SendTenantAuthLinkResult =
   | {
       ok: true;
@@ -38,8 +53,10 @@ export type SendTenantAuthLinkResult =
 /**
  * Sends a tenant admin sign-in path on the tenant subdomain (not apex only).
  * New users: invite email → redirect …/ycode/accept-invite (set password).
- * Existing users: magic link → redirect …/ycode/api/auth/callback (server PKCE exchange; required
- * because email-opened links have no client code_verifier for /ycode?code= exchange).
+ * If invite email cannot be sent because the user already exists: try generateLink(invite) so
+ * someone who never finished password setup can still open accept-invite; if that is not
+ * available, generateLink(magiclink) for passwordless login. Callback URL for magic links:
+ * …/ycode/api/auth/callback (server PKCE exchange; required for email-opened links).
  */
 export async function sendTenantAuthLink(
   tenantId: string,
@@ -119,8 +136,35 @@ export async function sendTenantAuthLink(
       ...(actionLink ? { actionLink } : {}),
     };
   }
-  if (!isUserAlreadyRegistered(inviteErr)) {
+  if (!inviteUserByEmailFailedForExistingUser(inviteErr)) {
     throw inviteErr;
+  }
+
+  // Stuck “invited” users (no password yet): admin invite email won’t send again, but this link
+  // can still open accept-invite. Fully registered users usually get an error here → magic link.
+  const { data: inviteRecovery, error: inviteRecoveryErr } =
+    await supabase.auth.admin.generateLink({
+      type: "invite",
+      email: inviteEmail,
+      options: {
+        redirectTo: redirectInviteTo,
+        data: userMeta,
+      },
+    });
+
+  if (!inviteRecoveryErr && inviteRecovery?.properties?.action_link) {
+    return {
+      ok: true,
+      method: "invite",
+      email: inviteEmail,
+      coerced,
+      message:
+        "User already exists in Auth — we could not send another invite email. " +
+        "Copy the link below to finish password setup (accept-invite) if they never completed it. " +
+        "If that page says the link is invalid or they already have a password, click Login link again to get a magic link." +
+        (coerced ? ` Email: ${inviteEmail} (@${domainSuffix}).` : ""),
+      actionLink: inviteRecovery.properties.action_link,
+    };
   }
 
   const { data: linkData, error: linkErr } =
@@ -149,7 +193,7 @@ export async function sendTenantAuthLink(
     coerced,
     actionLink,
     message:
-      "This user already exists. Copy the magic link below (opens builder after sign-in). " +
+      "This user already exists with a completed account. Copy the magic link below (opens builder after sign-in). " +
       (coerced ? `Email used: ${inviteEmail} (coerced to @${domainSuffix}).` : ""),
   };
 }
