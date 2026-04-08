@@ -59,8 +59,12 @@ export async function sendTenantAuthLink(
   const slug = tenant.slug as string;
   const siteUrl = `https://${slug}.${domainSuffix}`;
   const redirectInviteTo = `${siteUrl}/ycode/accept-invite`;
-  /** Server route exchanges PKCE and sets cookies; add this pattern to Supabase Auth redirect URLs. */
-  const redirectMagicLinkTo = `${siteUrl}/ycode/api/auth/callback`;
+  /**
+   * Magic links must land on the same tenant origin as `siteUrl`. PKCE appends `?code=` to this URL;
+   * the builder exchanges it client-side (`useAuthStore`) on `/ycode`. Do not use the apex host or
+   * another tenant’s subdomain — `redirect_to` in the Supabase verify link is what controls that.
+   */
+  const redirectMagicLinkTo = `${siteUrl}/ycode`;
 
   const fromRegistry = tenant.email
     ? normalizeProvisioningEmail(String(tenant.email))
