@@ -59,7 +59,8 @@ export async function sendTenantAuthLink(
   const slug = tenant.slug as string;
   const siteUrl = `https://${slug}.${domainSuffix}`;
   const redirectInviteTo = `${siteUrl}/ycode/accept-invite`;
-  const redirectMagicLinkTo = `${siteUrl}/ycode`;
+  /** Server route exchanges PKCE and sets cookies; add this pattern to Supabase Auth redirect URLs. */
+  const redirectMagicLinkTo = `${siteUrl}/ycode/api/auth/callback`;
 
   const fromRegistry = tenant.email
     ? normalizeProvisioningEmail(String(tenant.email))
@@ -142,9 +143,7 @@ export async function sendTenantAuthLink(
     coerced,
     actionLink,
     message:
-      "This user already exists. Copy the magic link below — redirect is " +
-      redirectMagicLinkTo +
-      " (not accept-invite). " +
+      "This user already exists. Copy the magic link below (opens builder after sign-in). " +
       (coerced ? `Email used: ${inviteEmail} (coerced to @${domainSuffix}).` : ""),
   };
 }
