@@ -1049,7 +1049,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
             toast(
               "Magic link copied for " +
                 slug +
-                " — opens https://" +
+                " — after verify, you are sent to the builder at https://" +
                 slug +
                 "." +
                 domainSuffix +
@@ -1059,7 +1059,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
             );
           } else {
             window.prompt(
-              "Copy magic link (opens tenant builder; not accept-invite):",
+              "Copy magic link (verify then opens tenant builder; not accept-invite):",
               link,
             );
             toast(data.message || "Magic link shown in dialog.", true);

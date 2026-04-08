@@ -38,7 +38,8 @@ export type SendTenantAuthLinkResult =
 /**
  * Sends a tenant admin sign-in path on the tenant subdomain (not apex only).
  * New users: invite email → redirect …/ycode/accept-invite (set password).
- * Existing users: magic link → redirect …/ycode (passwordless login to builder).
+ * Existing users: magic link → redirect …/ycode/api/auth/callback (server PKCE exchange; required
+ * because email-opened links have no client code_verifier for /ycode?code= exchange).
  */
 export async function sendTenantAuthLink(
   tenantId: string,
@@ -60,11 +61,12 @@ export async function sendTenantAuthLink(
   const siteUrl = `https://${slug}.${domainSuffix}`;
   const redirectInviteTo = `${siteUrl}/ycode/accept-invite`;
   /**
-   * Magic links must land on the same tenant origin as `siteUrl`. PKCE appends `?code=` to this URL;
-   * the builder exchanges it client-side (`useAuthStore`) on `/ycode`. Do not use the apex host or
-   * another tenant’s subdomain — `redirect_to` in the Supabase verify link is what controls that.
+   * Same tenant origin as `siteUrl`. Must use the server callback route: magic links open in a
+   * fresh browser context with no PKCE code_verifier, so client-side `exchangeCodeForSession` on
+   * `/ycode?code=` fails and users stay on the login screen. `/ycode/api/auth/callback` exchanges
+   * the code and sets cookies (see Next.js route).
    */
-  const redirectMagicLinkTo = `${siteUrl}/ycode`;
+  const redirectMagicLinkTo = `${siteUrl}/ycode/api/auth/callback`;
 
   const fromRegistry = tenant.email
     ? normalizeProvisioningEmail(String(tenant.email))
