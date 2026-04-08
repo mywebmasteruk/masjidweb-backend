@@ -593,6 +593,8 @@ async function copyTemplateContentToTenant(
     }
   }
 
+  const CHUNK_SIZE = 200;
+
   if (allNewItemRows.length) {
     for (let i = 0; i < allNewItemRows.length; i += CHUNK_SIZE) {
       const chunk = allNewItemRows.slice(i, i + CHUNK_SIZE);
@@ -606,11 +608,7 @@ async function copyTemplateContentToTenant(
   }
 
   // Phase 2: fetch ALL source values in one query, build target rows, bulk-insert.
-  // Previously: one SELECT + one INSERT per item (76 × 2 = 152 calls → 2 calls total).
   const allSourceItemIds = batches.flatMap((b) => b.templateItemIds);
-
-  // Fetch source values in chunks to avoid URL length limits in REST API.
-  const CHUNK_SIZE = 200;
   const allSourceValues: { item_id: string; field_id: string; value: unknown }[] = [];
 
   for (let i = 0; i < allSourceItemIds.length; i += CHUNK_SIZE) {
