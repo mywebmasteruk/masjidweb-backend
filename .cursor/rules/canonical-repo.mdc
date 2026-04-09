@@ -7,4 +7,4 @@ alwaysApply: true
 
 - **This repository must have a single active working copy.** All edits, commits, and pushes happen in the **workspace root** the user opened in Cursor (the folder where `.git` / `git rev-parse --show-toplevel` points).
 - **Do not** assume duplicate code under `~/.cursor/worktrees/`, `/private/tmp/`, or other paths. Those were removed to avoid shipping the wrong tree. If you ever see multiple paths for the same repo, treat them as mistakes — work only in the current workspace.
-- **Ship via Git** on the production branch (`mw-admin-dash` for admin). Never “sync” two folders by copying files between them.
+- **Ship via Git** on **`main`**. Never “sync” two folders by copying files between them.

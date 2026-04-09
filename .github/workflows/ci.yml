@@ -5,9 +5,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master, mw-admin-dash]
+    branches: [main]
   pull_request:
-    branches: [main, master, mw-admin-dash]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
