@@ -147,7 +147,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
               <div class="field"><label>Custom domain</label><input name="domain" placeholder="optional — e.g. mynewmasjid.com" /></div>
             </div>
             <div class="field"><label>Description</label><textarea name="description" rows="2" placeholder="Short description of the organisation"></textarea></div>
-            <div class="flex" style="gap:.5rem;">
+            <div class="flex provision-form-actions" style="gap:.5rem;">
               <button type="submit" class="btn btn-primary" id="submitBtn" disabled={!defaultSourceTemplateId}>
                 <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
                 Provision tenant
@@ -408,10 +408,17 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     font-family: 'SF Mono', monospace;
   }
 
+  /* Keep actions above the Clients/Templates bar so automated clicks / scrollIntoView never hit the tab bar. */
+  .provision-form-actions {
+    position: relative;
+    z-index: 2;
+  }
   .tenant-tab-bar {
-    display: flex; gap: .35rem; margin-bottom: 1rem;
+    display: flex; gap: .35rem; margin-bottom: 1rem; margin-top: 1.25rem;
     padding: .25rem; background: var(--bg-surface); border-radius: var(--radius);
     border: 1px solid var(--border);
+    position: relative;
+    z-index: 1;
   }
   .tenant-tab {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
