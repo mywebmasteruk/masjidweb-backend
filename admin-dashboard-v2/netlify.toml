@@ -1,4 +1,4 @@
-# Triggers admin production deploy via GitHub Actions on push to main (see repo .github/workflows).
+# Triggers admin production deploy via GitHub Actions on push to main (see repo .github/workflows/deploy-admin-dashboard.yml).
 [build]
   command = "npm run build"
   publish = "dist"
