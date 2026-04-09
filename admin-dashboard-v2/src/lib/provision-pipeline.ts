@@ -302,7 +302,12 @@ export async function completeProvision(
   }
 
   if (tenant.status === "active") {
-    return { warnings: ["Tenant is already active — skipping."] };
+    return {
+      warnings: [
+        "Tenant is already active — phase 2 (clone, CMS seed, invite email) was not run again. " +
+          "No new Supabase invite was sent. If the admin never received mail, use “Login link” beside this tenant in the dashboard.",
+      ],
+    };
   }
 
   if (tenant.status !== "provisioning") {
@@ -439,9 +444,15 @@ export async function completeProvision(
           display_name: tenant.business_name,
         },
       });
+      warnings.push(
+        `Invite: Supabase accepted sending to ${inviteEmail}. Check that inbox and spam. ` +
+          `If nothing arrives within a few minutes, verify Supabase → Authentication → emails (custom SMTP / rate limits), ` +
+          `or use “Login link” in this dashboard — same access without mail.`,
+      );
       if (inviteCoerced && tenant.email && inviteEmail !== tenant.email) {
         warnings.push(
-          `Invite was sent to ${inviteEmail} (registry had non-@${domainSuffix} address).`,
+          `The form used a non-@${domainSuffix} address; the invite only goes to ${inviteEmail}. ` +
+            `You need a real mailbox or catch-all for *@${domainSuffix} to receive it in that inbox.`,
         );
       }
     } catch (inviteErr) {
