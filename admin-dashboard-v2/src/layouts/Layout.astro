@@ -194,8 +194,11 @@ const { title } = Astro.props;
       transition: max-height .35s ease, opacity .25s ease, padding .25s ease;
       padding-top: 0;
     }
+    /* Tall forms (template + grid + long helper copy) exceeded 960px; overflow:hidden clipped
+       the submit row so clicks hit the tenant tab bar below. */
     .form-reveal.open {
-      max-height: 960px; opacity: 1; padding-top: 1.25rem;
+      max-height: 5000px; opacity: 1; padding-top: 1.25rem;
+      overflow: visible;
       border-top: 1px solid var(--border); margin-top: 1rem;
       position: relative;
       z-index: 4;
