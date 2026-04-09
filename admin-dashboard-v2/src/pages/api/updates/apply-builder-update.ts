@@ -43,6 +43,8 @@ export const POST: APIRoute = async (context) => {
   }
 
   const productionBranch = githubProductionBranch();
+  /** Production Netlify branch is `main` — do not merge main→main (GitHub reports a bogus conflict). */
+  const singleBranchMain = productionBranch === "main";
   const steps: Record<string, unknown> = {};
 
   try {
@@ -67,18 +69,28 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
-    const merge = await mergeHeadIntoBase(
-      token,
-      repo,
-      productionBranch,
-      "main",
-      `Merge main into ${productionBranch} (MasjidWeb admin — apply builder update)`,
-    );
-    steps.mergeMainIntoProduction = merge;
-
+    let merge: Awaited<ReturnType<typeof mergeHeadIntoBase>>;
     let mergedViaAutoPr = false;
 
-    if (merge.status === "conflict") {
+    if (singleBranchMain) {
+      merge = {
+        status: "already_up_to_date",
+        message:
+          "Single-branch mode: production is main — no merge main→production step (upstream sync already updated main).",
+      };
+      steps.mergeMainIntoProduction = merge;
+    } else {
+      merge = await mergeHeadIntoBase(
+        token,
+        repo,
+        productionBranch,
+        "main",
+        `Merge main into ${productionBranch} (MasjidWeb admin — apply builder update)`,
+      );
+      steps.mergeMainIntoProduction = merge;
+    }
+
+    if (!singleBranchMain && merge.status === "conflict") {
       const pr = await ensureMergePR(
         token,
         repo,
@@ -224,8 +236,9 @@ export const POST: APIRoute = async (context) => {
     });
     steps.netlify = netlify;
 
-    const mergeNote =
-      merge.status === "already_up_to_date"
+    const mergeNote = singleBranchMain
+      ? "Upstream synced on main; "
+      : merge.status === "already_up_to_date"
         ? "Production branch already matched main; "
         : "Synced upstream, merged main into production branch; ";
 
