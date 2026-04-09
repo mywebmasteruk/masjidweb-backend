@@ -10,7 +10,7 @@ Use **one clone** of this repo locally. Multiple Git worktrees (for example unde
 - Sanity check: `git worktree list` should show **one** line for this repo (the path you use daily).
 - To remove an extra worktree from the machine that registered it: `git worktree remove <path> --force` (run from the main clone), then `git worktree prune`.
 
-**Branch:** Ship everything from **`main`** (admin dashboard, repo root, and the **`ycode-masjidweb`** submodule pointer). In GitHub → **Settings → General → Default branch**, select **`main`** (required once if the repo still defaulted to `mw-admin-dash`). Then remove the old branch: `git push origin --delete mw-admin-dash`. In Netlify, set each site’s **production branch** to **`main`**.
+**Branch:** Everything ships from **`main`** — this repo, the **`ycode-masjidweb`** submodule pointer, GitHub default branch, Netlify production branches, and CI.
 
 ## What this repo contains
 
