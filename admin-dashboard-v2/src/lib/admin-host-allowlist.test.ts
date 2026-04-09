@@ -11,7 +11,7 @@ describe("isDashboardAllowedHost", () => {
 
   it("allows Netlify deploy hosts", () => {
     expect(
-      isDashboardAllowedHost("mw-admin-dash--masjidweb-admin-v2.netlify.app", suffix),
+      isDashboardAllowedHost("main--masjidweb-admin-v2.netlify.app", suffix),
     ).toBe(true);
     expect(isDashboardAllowedHost("masjidweb-admin-v2.netlify.app", suffix)).toBe(
       true,

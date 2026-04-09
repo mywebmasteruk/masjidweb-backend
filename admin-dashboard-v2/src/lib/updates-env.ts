@@ -1,7 +1,17 @@
 /** Netlify / Git production line for the YCode fork (tenant builder). */
 export function githubProductionBranch(): string {
-  const normalizeLegacy = (branch: string): string =>
-    branch === "tenant-multi" ? "main" : branch;
+  /** Map removed / legacy branch names so stale Netlify env still resolves to `main`. */
+  const normalizeLegacy = (branch: string): string => {
+    const b = branch.trim();
+    if (
+      b === "tenant-multi" ||
+      b === "multitanant" ||
+      b === "mw-admin-dash"
+    ) {
+      return "main";
+    }
+    return b;
+  };
 
   const explicit = import.meta.env.GITHUB_PRODUCTION_BRANCH?.trim();
   if (explicit) return normalizeLegacy(explicit);

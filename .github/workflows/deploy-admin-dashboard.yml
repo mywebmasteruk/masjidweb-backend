@@ -6,7 +6,7 @@ name: Deploy admin dashboard to Netlify
 
 on:
   push:
-    branches: [main, master, mw-admin-dash]
+    branches: [main]
     paths:
       - "admin-dashboard-v2/**"
       - "netlify.toml"
