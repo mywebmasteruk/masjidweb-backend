@@ -1,0 +1,46 @@
+# Ensures both Netlify sites build production from GitHub `main` (API: PATCH site build_settings).
+# Uses the same NETLIFY_AUTH_TOKEN as deploy-admin-dashboard.yml (personal access token with Sites: write).
+#
+# Runs on manual dispatch, or when this workflow file changes on `main`.
+
+name: Netlify production branch → main
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/netlify-production-branch-main.yml"
+
+jobs:
+  set-production-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: PATCH sites (build_settings.branch = main)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
+            echo "NETLIFY_AUTH_TOKEN is not set in repository secrets."
+            exit 1
+          fi
+          payload='{"build_settings":{"branch":"main","allowed_branches":["main"],"skip_prs":null}}'
+          for id in \
+            11db9c91-9c73-48d4-a93b-88d37e62e1d8 \
+            26fd67aa-c9ed-4ab1-8332-ff484014c387
+          do
+            echo "PATCH https://api.netlify.com/api/v1/sites/$id"
+            code=$(curl -sS -o /tmp/nl-body.json -w "%{http_code}" -X PATCH \
+              "https://api.netlify.com/api/v1/sites/${id}" \
+              -H "Authorization: Bearer ${NETLIFY_AUTH_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "${payload}")
+            echo "HTTP ${code}"
+            head -c 4000 /tmp/nl-body.json || true
+            echo ""
+            if [ "${code}" -lt 200 ] || [ "${code}" -ge 300 ]; then
+              exit 1
+            fi
+          done
+          echo "OK: both sites updated to build from main."
