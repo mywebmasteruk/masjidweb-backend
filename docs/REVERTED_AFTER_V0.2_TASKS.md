@@ -1,6 +1,6 @@
 # Restored to v0.2 — redo checklist (and branch policy)
 
-The monorepo was reset to tag **`v0.2`** (commit `e3c9645`) to roll back provisioning/builder changes that did not resolve the empty-builder issue in production. Use this list to **re-apply ideas later** (prefer fresh PRs; SHAs are from history before the revert).
+The monorepo was reset to tag **`v0.2`** (commit `e3c9645`) to roll back provisioning/builder changes that did not resolve the empty-builder issue in production. A follow-up commit on **`main`** adds this doc and bumps **`ycode-masjidweb`** to `d714331` (same tree as tag `5fba475` plus **CI workflows on `main` only** — `tenant-multi` triggers removed). Use the table below to **re-apply ideas later** (prefer fresh PRs; SHAs are from history before the revert).
 
 ## Production branch policy (entire system → `main`)
 
