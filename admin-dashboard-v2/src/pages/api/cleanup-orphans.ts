@@ -73,12 +73,12 @@ export const POST: APIRoute = async (context) => {
   const rawUnassigned = import.meta.env.AUTH_CLEANUP_DELETE_UNASSIGNED;
   const deleteFullyUnassigned =
     rawUnassigned === "true" || rawUnassigned === "1" || String(rawUnassigned).toLowerCase() === "yes";
-  const rawPreserve = import.meta.env.AUTH_CLEANUP_PRESERVE_AUTH_EMAILS ?? "";
-  const preserveEmails = new Set(
+  const rawPreserve = String(import.meta.env.AUTH_CLEANUP_PRESERVE_AUTH_EMAILS ?? "");
+  const preserveEmails = new Set<string>(
     rawPreserve
       .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean),
+      .map((e: string) => e.trim().toLowerCase())
+      .filter((e): e is string => e.length > 0),
   );
 
   const auth = await deleteAuthUsersForMissingTenants(supabase, authWarnings, {
