@@ -1,5 +1,6 @@
 # Local Node.js toolchain (optional; not required for GitHub/Netlify)
 .tools/
+node_modules/
 
 # Cursor IDE workspace artifacts (debug logs, temp payloads, SQL seeds)
 .cursor/*.json
