@@ -352,6 +352,13 @@ export async function completeProvision(
         actor,
         details: { stage: "phase2_clone", timing_ms: phase2TimingMs },
       });
+
+      // Keep each invocation short on plans with strict function limits.
+      // The next call will continue from CMS seed (idempotent checkpoint).
+      warnings.push(
+        "Phase 2 progress: template clone complete; continuing setup in next pass.",
+      );
+      return { warnings };
     }
 
     // 1. CMS seed via SQL function (idempotent — skip if already done).
@@ -413,6 +420,12 @@ export async function completeProvision(
           method: "sql_rpc",
         },
       });
+
+      // Keep each invocation short; next pass handles translations/invite/activate.
+      warnings.push(
+        "Phase 2 progress: CMS seed complete; continuing setup in next pass.",
+      );
+      return { warnings };
     }
 
     // 2. Translations + patch null tenant_ids run concurrently (independent work).

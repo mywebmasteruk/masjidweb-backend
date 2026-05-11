@@ -538,9 +538,11 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     const pollTimeoutMs = 3 * 60 * 1000; // 3 minutes
     const pollStart = Date.now();
     let tenantActive = false;
+    let pollCount = 0;
 
     while (Date.now() - pollStart < pollTimeoutMs) {
       await sleep(pollIntervalMs);
+      pollCount += 1;
       try {
         const statusRes = await fetch(
           "/api/provision-status?tenantId=" + encodeURIComponent(tenantId),
@@ -553,6 +555,16 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         if (statusData?.status === "failed") {
           allWarnings.push("Completion: Tenant was marked failed during setup. Check Logs.");
           return { warnings: allWarnings };
+        }
+
+        // Keep nudging phase 2 forward while the tenant is still provisioning.
+        // Each invocation is idempotent and now checkpoints clone/seed progress.
+        if (statusData?.status === "provisioning" && pollCount % 2 === 0) {
+          fetch("/api/provision-complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tenantId }),
+          }).catch(() => {});
         }
       } catch {
         // Network hiccup — keep polling
