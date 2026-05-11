@@ -5,7 +5,7 @@
   # Keep base for Netlify monorepo autodetection, but make command/publish explicit
   # so builds still work when base resolution is flaky on some environments.
   base = "admin-dashboard-v2"
-  command = "cd admin-dashboard-v2 && npm run build"
+  command = "cd admin-dashboard-v2 && npm ci && npm run build"
   publish = "admin-dashboard-v2/dist"
 
 [build.environment]
