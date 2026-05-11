@@ -16,9 +16,11 @@ _mcp_*.json
 browser-verify-screenshots/
 
 # Dashboard app (never commit install/build output — CI builds on GitHub/Netlify)
+admin-dashboard/node_modules/
 admin-dashboard-v2/node_modules/
 admin-dashboard-v2/dist/
 admin-dashboard-v2/.netlify/
+.astro/
 admin-dashboard-v2/.astro/
 
 # YCode app

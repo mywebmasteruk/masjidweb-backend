@@ -12,7 +12,6 @@
 #
 # Optional:
 #   export SITE_URL='https://masjidweb.com'          # default Site URL (fallback)
-#   export TENANT_DOMAIN_SUFFIX='masjidweb.com'    # wildcard + /ycode paths use this suffix
 #   export DRY_RUN=1                                 # print PATCH body only, do not send
 #
 set -euo pipefail
@@ -21,8 +20,6 @@ set -euo pipefail
 : "${SUPABASE_PROJECT_REF:?Set SUPABASE_PROJECT_REF (e.g. jofgypmriaqphnsyxiks)}"
 
 SITE_URL="${SITE_URL:-https://masjidweb.com}"
-# Tenant sites + builder auth (must match redirect_to from admin Login link + invites)
-SUFFIX="${TENANT_DOMAIN_SUFFIX:-masjidweb.com}"
 API="https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth"
 HDR=(-H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" -H "Content-Type: application/json")
 
@@ -33,19 +30,14 @@ if ! current_json="$(curl -sS -f "$API" "${HDR[@]}")"; then
 fi
 
 # Merge uri_allow_list: existing comma-separated + required entries, dedupe
-# Wildcard covers all tenant subdomains; explicit paths help some edge cases / auditing.
-new_allow_list="$(echo "$current_json" | jq -r \
-  --arg sfx "$SUFFIX" '
+new_allow_list="$(echo "$current_json" | jq -r '
   def split_csv(s):
     if s == null or s == "" then []
     else (s | split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length > 0)))
     end;
   (split_csv(.uri_allow_list)) as $ex
   | [
-      "https://*." + $sfx + "/**",
-      "https://*." + $sfx + "/ycode/**",
-      "https://*." + $sfx + "/ycode/api/auth/callback",
-      "https://*." + $sfx + "/ycode/accept-invite"
+      "https://*.masjidweb.com/**"
     ] as $req
   | ($ex + $req | unique | join(","))
 ')"

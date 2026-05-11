@@ -1,7 +1,8 @@
-# Triggers admin production deploy via GitHub Actions on push to main (see repo .github/workflows/deploy-admin-dashboard.yml).
 [build]
   command = "npm run build"
   publish = "dist"
+  # Fixes local Netlify dev (`repositoryRoot` = this dir); root merge ignores nested `base` on CI.
+  base = "."
 
 # Default function timeout is 10s (Hobby) / 26s (Pro). Masjid1 sync may need a higher plan or async job.
 [functions]

@@ -10,7 +10,7 @@ Use **one clone** of this repo locally. Multiple Git worktrees (for example unde
 - Sanity check: `git worktree list` should show **one** line for this repo (the path you use daily).
 - To remove an extra worktree from the machine that registered it: `git worktree remove <path> --force` (run from the main clone), then `git worktree prune`.
 
-**Branch:** Everything ships from **`main`** — this repo, the **`ycode-masjidweb`** submodule pointer, GitHub default branch, Netlify production branches, and CI.
+**Branches:** Use **`main` only** for this monorepo and for the **`ycode-masjidweb`** builder submodule. Set GitHub’s default branch and Netlify production branch to **`main`** so clones, PRs, and deploys stay aligned.
 
 ## What this repo contains
 

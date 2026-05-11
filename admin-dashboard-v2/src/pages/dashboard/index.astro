@@ -117,6 +117,46 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           <span class="badge badge-gray" style="font-size:.7rem;">{clientTenants.length} clients · {demoTenants.length} demos</span>
         </div>
 
+        <div id="addForm" class="form-reveal open">
+          <form id="provisionForm">
+            {templateOptions && templateOptions.length > 0 ? (
+              <div class="field">
+                <label>Demo template *</label>
+                <select name="source_template_tenant_id" required>
+                  {templateOptions.map((tp, i) => (
+                    <option value={tp.id} selected={i === 0}>
+                      {tp.business_name} ({tp.slug}.{domainSuffix})
+                    </option>
+                  ))}
+                </select>
+                <p class="text-xs text-muted" style="margin-top:.35rem;">
+                  New client sites copy pages, CMS, and settings from this demo. Add more demos by creating another <span class="mono">template</span> row in the database (or we can add a &quot;New demo&quot; flow later).
+                </p>
+              </div>
+            ) : (
+              <div class="field" style="padding:.75rem;background:var(--warning-bg);border-radius:var(--radius);font-size:.85rem;">
+                No demo templates found. Set <span class="mono">tenant_kind = template</span> on at least one tenant in Supabase, then reload this page.
+              </div>
+            )}
+            <div class="grid-2">
+              <div class="field"><label>Business name *</label><input name="business_name" required placeholder="e.g. Al-Noor Masjid" /></div>
+              <div class="field"><label>Slug</label><input name="slug" placeholder="auto-generated from name" /></div>
+              <div class="field"><label>Admin email *</label><input type="email" name="email" required placeholder={`you@${domainSuffix}`} /><p class="text-xs text-muted" style="margin-top:.35rem;">Use an address at <span class="mono">@{domainSuffix}</span> (e.g. <span class="mono">admin@{domainSuffix}</span>) so the Supabase invite is delivered to your mail.</p></div>
+              <div class="field"><label>Phone</label><input name="phone" placeholder="+44 7700 000000" /></div>
+              <div class="field"><label>Address</label><input name="address" placeholder="123 High Street, London" /></div>
+              <div class="field"><label>Custom domain</label><input name="domain" placeholder="optional — e.g. mynewmasjid.com" /></div>
+            </div>
+            <div class="field"><label>Description</label><textarea name="description" rows="2" placeholder="Short description of the organisation"></textarea></div>
+            <div class="flex" style="gap:.5rem;">
+              <button type="submit" class="btn btn-primary" id="submitBtn" disabled={!defaultSourceTemplateId}>
+                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                Provision tenant
+              </button>
+              <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+            </div>
+          </form>
+        </div>
+
         <div class="tenant-tab-bar" role="tablist" aria-label="Tenant lists">
           <button
             type="button"
@@ -291,46 +331,6 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           </div>
         )}
         </div>
-
-        <div id="addForm" class="form-reveal">
-          <form id="provisionForm">
-            {templateOptions && templateOptions.length > 0 ? (
-              <div class="field">
-                <label>Demo template *</label>
-                <select name="source_template_tenant_id" required>
-                  {templateOptions.map((tp, i) => (
-                    <option value={tp.id} selected={i === 0}>
-                      {tp.business_name} ({tp.slug}.{domainSuffix})
-                    </option>
-                  ))}
-                </select>
-                <p class="text-xs text-muted" style="margin-top:.35rem;">
-                  New client sites copy pages, CMS, and settings from this demo. Add more demos by creating another <span class="mono">template</span> row in the database (or we can add a &quot;New demo&quot; flow later).
-                </p>
-              </div>
-            ) : (
-              <div class="field" style="padding:.75rem;background:var(--warning-bg);border-radius:var(--radius);font-size:.85rem;">
-                No demo templates found. Set <span class="mono">tenant_kind = template</span> on at least one tenant in Supabase, then reload this page.
-              </div>
-            )}
-            <div class="grid-2">
-              <div class="field"><label>Business name *</label><input name="business_name" required placeholder="e.g. Al-Noor Masjid" /></div>
-              <div class="field"><label>Slug</label><input name="slug" placeholder="auto-generated from name" /></div>
-              <div class="field"><label>Admin email *</label><input type="email" name="email" required placeholder={`you@${domainSuffix}`} /><p class="text-xs text-muted" style="margin-top:.35rem;">The Supabase invite is sent to an <span class="mono">@{domainSuffix}</span> address. Use a real mailbox you read (e.g. <span class="mono">admin@{domainSuffix}</span>) or Google Workspace / catch-all for <span class="mono">@{domainSuffix}</span>. If you enter Gmail etc., we still send the invite only to <span class="mono">{'{slug}'}</span><span class="mono">@{domainSuffix}</span> — you will not see it in Gmail unless that address forwards there.</p></div>
-              <div class="field"><label>Phone</label><input name="phone" placeholder="+44 7700 000000" /></div>
-              <div class="field"><label>Address</label><input name="address" placeholder="123 High Street, London" /></div>
-              <div class="field"><label>Custom domain</label><input name="domain" placeholder="optional — e.g. mynewmasjid.com" /></div>
-            </div>
-            <div class="field"><label>Description</label><textarea name="description" rows="2" placeholder="Short description of the organisation"></textarea></div>
-            <div class="flex provision-form-actions" style="gap:.5rem;">
-              <button type="submit" class="btn btn-primary" id="submitBtn" disabled={!defaultSourceTemplateId}>
-                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                Provision tenant
-              </button>
-              <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
-            </div>
-          </form>
-        </div>
       </div>
     </main>
   </div>
@@ -344,7 +344,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   .provision-overlay.hidden { display: none; }
   .provision-modal {
     background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 2rem; width: 90%; max-width: 480px;
+    border-radius: var(--radius-lg); padding: 2rem; width: 90%; max-width: 440px;
     box-shadow: 0 8px 32px rgba(0,0,0,.4); text-align: center;
   }
   .spinner {
@@ -359,69 +359,10 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   .result-url { display: inline-block; margin-top: .5rem; padding: .4rem .8rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); font-family: 'SF Mono', monospace; font-size: .8rem; color: var(--accent-hover); word-break: break-all; }
   .result-warnings { margin-top: .75rem; padding: .6rem .8rem; background: var(--warning-bg); border: 1px solid rgba(234,179,8,.2); border-radius: var(--radius); font-size: .78rem; color: var(--warning); text-align: left; }
 
-  .prov-steps { list-style: none; margin: 1.25rem 0 0; padding: 0; text-align: left; }
-  .prov-step {
-    display: flex; align-items: center; gap: .6rem;
-    padding: .45rem 0; font-size: .82rem; color: var(--text-muted);
-    border-bottom: 1px solid var(--border);
-    transition: color .2s, opacity .2s;
-  }
-  .prov-step:last-child { border-bottom: none; }
-  .prov-step .step-icon {
-    width: 22px; height: 22px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 50%; font-size: .7rem; font-weight: 700;
-    transition: background .25s, color .25s, box-shadow .25s;
-  }
-  .prov-step.pending .step-icon {
-    background: var(--bg-surface); border: 1.5px solid var(--border); color: var(--text-muted);
-  }
-  .prov-step.active .step-icon {
-    background: var(--accent-subtle); border: 1.5px solid var(--accent);
-    color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,.15);
-  }
-  .prov-step.active .step-icon::after {
-    content: ''; width: 8px; height: 8px;
-    border: 2px solid var(--accent); border-radius: 50%;
-    border-top-color: transparent; animation: spin .7s linear infinite;
-  }
-  .prov-step.done .step-icon {
-    background: var(--success-bg); border: 1.5px solid var(--success); color: var(--success);
-  }
-  .prov-step.done .step-icon::after {
-    content: '✓'; font-size: .7rem;
-  }
-  .prov-step.failed .step-icon {
-    background: var(--danger-bg); border: 1.5px solid var(--danger); color: var(--danger);
-  }
-  .prov-step.failed .step-icon::after {
-    content: '✕'; font-size: .7rem;
-  }
-  .prov-step.done { color: var(--text); }
-  .prov-step.active { color: var(--text); font-weight: 500; }
-  .prov-step .step-time {
-    margin-left: auto; font-size: .68rem; color: var(--text-muted);
-    font-family: 'SF Mono', monospace; white-space: nowrap;
-  }
-  .prov-elapsed {
-    margin-top: .75rem; font-size: .72rem; color: var(--text-muted);
-    font-family: 'SF Mono', monospace;
-  }
-
-  /* Provision form sits below the tenant table so submit is never overlapped by table cells. */
-  #addForm {
-    margin-top: 1.25rem;
-  }
-  .provision-form-actions {
-    position: relative;
-    z-index: 2;
-  }
   .tenant-tab-bar {
-    display: flex; gap: .35rem; margin-bottom: 1rem; margin-top: 0;
+    display: flex; gap: .35rem; margin-bottom: 1rem;
     padding: .25rem; background: var(--bg-surface); border-radius: var(--radius);
     border: 1px solid var(--border);
-    position: relative;
-    z-index: 1;
   }
   .tenant-tab {
     flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
@@ -443,34 +384,8 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     <div id="provisionSpinner" class="spinner"></div>
     <div id="provisionResult" class="hidden"></div>
     <p id="provisionStatus" style="font-size:.9rem;font-weight:500;">Provisioning tenant…</p>
-    <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">Setting up your new site — keep this tab open</p>
-    <ul id="provisionStepList" class="prov-steps hidden">
-      <li class="prov-step pending" data-step="tenant_created">
-        <span class="step-icon"></span> Creating tenant
-        <span class="step-time"></span>
-      </li>
-      <li class="prov-step pending" data-step="clone_complete">
-        <span class="step-icon"></span> Cloning template
-        <span class="step-time"></span>
-      </li>
-      <li class="prov-step pending" data-step="cms_seed_complete">
-        <span class="step-icon"></span> Seeding CMS content
-        <span class="step-time"></span>
-      </li>
-      <li class="prov-step pending" data-step="provision_complete">
-        <span class="step-icon"></span> Activating tenant
-        <span class="step-time"></span>
-      </li>
-      <li class="prov-step pending" data-step="provision_publish_step">
-        <span class="step-icon"></span> Publishing site
-        <span class="step-time"></span>
-      </li>
-      <li class="prov-step pending" data-step="ssl_ready">
-        <span class="step-icon"></span> SSL certificate ready
-        <span class="step-time"></span>
-      </li>
-    </ul>
-    <div id="provisionElapsed" class="prov-elapsed hidden"></div>
+    <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">One server step: clone, CMS, invite, publish (often 1–4 min — keep this tab open)</p>
+    <ol id="provisionSteps" class="text-xs text-muted hidden" style="margin:0.75rem 0 0;text-align:left;padding-left:1.25rem;line-height:1.5;"></ol>
   </div>
 </div>
 
@@ -484,49 +399,28 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     setTimeout(() => (el.style.display = "none"), 5000);
   }
 
-  let provisionStartTime = 0;
-  let elapsedTimer = null;
-
   function showOverlay() {
-    provisionStartTime = Date.now();
     const ov = document.getElementById("provisionOverlay");
     const sp = document.getElementById("provisionSpinner");
     const rs = document.getElementById("provisionResult");
     const st = document.getElementById("provisionStatus");
     const dt = document.getElementById("provisionDetail");
-    const stepList = document.getElementById("provisionStepList");
-    const elapsed = document.getElementById("provisionElapsed");
     ov.classList.remove("hidden");
     sp.style.display = "block";
     rs.classList.add("hidden");
     rs.innerHTML = "";
     st.textContent = "Provisioning tenant…";
-    dt.textContent = "Setting up your new site — keep this tab open";
+    dt.textContent =
+      "One server step: clone template, CMS seed, invite, activate, publish (1–4 min — keep this tab open).";
     dt.style.display = "block";
-    if (stepList) {
-      stepList.classList.remove("hidden");
-      stepList.querySelectorAll(".prov-step").forEach((el) => {
-        el.className = "prov-step pending";
-        el.querySelector(".step-time").textContent = "";
-      });
+    const stepsEl = document.getElementById("provisionSteps");
+    if (stepsEl) {
+      stepsEl.classList.add("hidden");
+      stepsEl.innerHTML = "";
     }
-    if (elapsed) {
-      elapsed.classList.remove("hidden");
-      elapsed.textContent = "0s elapsed";
-    }
-    if (elapsedTimer) clearInterval(elapsedTimer);
-    elapsedTimer = setInterval(() => {
-      const secs = Math.floor((Date.now() - provisionStartTime) / 1000);
-      if (elapsed) elapsed.textContent = secs + "s elapsed";
-    }, 1000);
-  }
-
-  function stopElapsedTimer() {
-    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
   }
 
   function hideProvisionOverlay() {
-    stopElapsedTimer();
     const ov = document.getElementById("provisionOverlay");
     const sp = document.getElementById("provisionSpinner");
     const rs = document.getElementById("provisionResult");
@@ -535,68 +429,6 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     sp.style.display = "block";
     rs.classList.add("hidden");
     rs.innerHTML = "";
-  }
-
-  /**
-   * Update the step list UI. `completedSteps` is the `steps` array from
-   * provision-status, plus an optional `ssl_ready` boolean.
-   */
-  function updateStepList(steps, sslReady) {
-    const stepList = document.getElementById("provisionStepList");
-    if (!stepList) return;
-    stepList.classList.remove("hidden");
-
-    const allStepEls = stepList.querySelectorAll(".prov-step");
-    let foundActiveYet = false;
-
-    for (const el of allStepEls) {
-      const stepName = el.getAttribute("data-step");
-
-      if (stepName === "ssl_ready") {
-        if (sslReady) {
-          el.className = "prov-step done";
-          el.querySelector(".step-time").textContent = "live";
-        } else {
-          const allServerDone = steps.every((s) => s.completed);
-          el.className = allServerDone ? "prov-step active" : "prov-step pending";
-          el.querySelector(".step-time").textContent = "";
-        }
-        continue;
-      }
-
-      const stepData = steps.find((s) => s.name === stepName);
-      if (!stepData) continue;
-
-      if (stepData.completed) {
-        el.className = "prov-step done";
-        if (stepData.completedAt) {
-          const d = new Date(stepData.completedAt);
-          el.querySelector(".step-time").textContent =
-            d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        }
-      } else if (!foundActiveYet) {
-        const prevIdx = steps.indexOf(stepData) - 1;
-        const prevDone = prevIdx < 0 || steps[prevIdx].completed;
-        if (prevDone) {
-          el.className = "prov-step active";
-          foundActiveYet = true;
-        } else {
-          el.className = "prov-step pending";
-        }
-      } else {
-        el.className = "prov-step pending";
-      }
-    }
-  }
-
-  /** Mark the "Creating tenant" step done immediately (phase 1 just succeeded). */
-  function markPhase1Done() {
-    const el = document.querySelector('[data-step="tenant_created"]');
-    if (el) {
-      el.className = "prov-step done";
-      el.querySelector(".step-time").textContent =
-        new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    }
   }
 
   function sleep(ms) {
@@ -682,75 +514,61 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
-   * Fire /api/provision-complete, poll status with realtime step updates,
-   * wait for publish, then wait for SSL certificate to be ready.
+   * Fire /api/provision-complete and immediately start polling /api/provision-status.
+   *
+   * The Netlify Lambda for provision-complete takes 60-120 s and will gateway-
+   * timeout the HTTP response, but it KEEPS RUNNING in the background.  We don't
+   * wait for its response — we poll the lightweight status endpoint every 5 s
+   * until the tenant reaches "active" status, then proceed to publish.
    *
    * @returns {{ warnings: string[] }}
    */
   async function runCompleteAndPublish(tenantId) {
     const allWarnings = [];
-    const pollIntervalMs = 3000;
-    const retryIntervalMs = 35000;
-    const maxRetries = 5;
-    const overallTimeoutMs = 5 * 60 * 1000;
-    const sslTimeoutMs = 90 * 1000;
-    const overallStart = Date.now();
 
-    function fireComplete() {
-      fetch("/api/provision-complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenantId }),
-      }).catch(() => {});
-    }
+    // Fire phase 2 (don't await the response — it will gateway-timeout).
+    fetch("/api/provision-complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenantId }),
+    }).catch(() => {/* gateway timeouts are expected and ignored */});
 
-    async function pollStatus() {
+    // Poll /api/provision-status every 5 s for up to 3 minutes.
+    const pollIntervalMs = 5000;
+    const pollTimeoutMs = 3 * 60 * 1000; // 3 minutes
+    const pollStart = Date.now();
+    let tenantActive = false;
+
+    while (Date.now() - pollStart < pollTimeoutMs) {
+      await sleep(pollIntervalMs);
       try {
         const statusRes = await fetch(
           "/api/provision-status?tenantId=" + encodeURIComponent(tenantId),
         );
-        return statusRes.ok ? await statusRes.json() : null;
+        const statusData = statusRes.ok ? await statusRes.json() : null;
+        if (statusData?.active) {
+          tenantActive = true;
+          break;
+        }
+        if (statusData?.status === "failed") {
+          allWarnings.push("Completion: Tenant was marked failed during setup. Check Logs.");
+          return { warnings: allWarnings };
+        }
       } catch {
-        return null;
-      }
-    }
-
-    fireComplete();
-    let lastFireTime = Date.now();
-    let retryCount = 0;
-    let tenantActive = false;
-
-    // Phase 2: poll until active
-    while (Date.now() - overallStart < overallTimeoutMs) {
-      await sleep(pollIntervalMs);
-      const statusData = await pollStatus();
-      if (statusData?.steps) {
-        updateStepList(statusData.steps, false);
-      }
-      if (statusData?.active) {
-        tenantActive = true;
-        break;
-      }
-      if (statusData?.status === "failed") {
-        allWarnings.push("Completion: Tenant was marked failed during setup. Check Logs.");
-        return { warnings: allWarnings };
-      }
-      if (Date.now() - lastFireTime >= retryIntervalMs && retryCount < maxRetries) {
-        retryCount++;
-        fireComplete();
-        lastFireTime = Date.now();
+        // Network hiccup — keep polling
       }
     }
 
     if (!tenantActive) {
       allWarnings.push(
-        "Completion: Setup is taking longer than expected (> 5 min). " +
+        "Completion: Setup is taking longer than expected (> 3 min). " +
           "Check the tenant list — if it shows active the CMS is ready; use Continue setup if still provisioning.",
       );
       return { warnings: allWarnings };
     }
 
-    // Phase 3: publish
+    // Phase 3 — YCode publish. Trigger it, then poll status until the publish
+    // step reports completion (or failure) so we don't show "provisioned" too early.
     fetch("/api/provision-publish-tenant", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -758,64 +576,42 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     }).catch(() => {});
 
     const publishPollStart = Date.now();
-    const publishPollTimeoutMs = 2 * 60 * 1000;
-    let publishDone = false;
+    const publishPollTimeoutMs = 2 * 60 * 1000; // 2 minutes
     while (Date.now() - publishPollStart < publishPollTimeoutMs) {
       await sleep(pollIntervalMs);
-      const statusData = await pollStatus();
-      if (statusData?.steps) {
-        updateStepList(statusData.steps, statusData.sslReady === true);
-      }
-      if (statusData?.publishCompleted) {
-        publishDone = true;
-        break;
-      }
-      if (statusData?.publishFailed) {
-        allWarnings.push("Publish: Auto-publish failed. Use Continue setup or Publish in the builder.");
-        return { warnings: allWarnings };
-      }
-    }
-
-    if (!publishDone) {
-      allWarnings.push("Publish: Still finishing in background (>2 min). Open the site and refresh, or use Continue setup.");
-      return { warnings: allWarnings };
-    }
-
-    // Phase 4: wait for SSL
-    const dtEl = document.getElementById("provisionDetail");
-    if (dtEl) dtEl.textContent = "Waiting for SSL certificate…";
-    const sslStart = Date.now();
-    while (Date.now() - sslStart < sslTimeoutMs) {
-      await sleep(pollIntervalMs);
-      const statusData = await pollStatus();
-      if (statusData?.steps) {
-        updateStepList(statusData.steps, statusData.sslReady === true);
-      }
-      if (statusData?.sslReady) {
-        return { warnings: allWarnings };
+      try {
+        const statusRes = await fetch(
+          "/api/provision-status?tenantId=" + encodeURIComponent(tenantId),
+        );
+        const statusData = statusRes.ok ? await statusRes.json() : null;
+        if (statusData?.publishCompleted) {
+          return { warnings: allWarnings };
+        }
+        if (statusData?.publishFailed) {
+          allWarnings.push(
+            "Publish: Auto-publish failed. Use Continue setup or Publish in the builder.",
+          );
+          return { warnings: allWarnings };
+        }
+      } catch {
+        // Network hiccup — keep polling
       }
     }
 
-    allWarnings.push("SSL: Certificate may still be provisioning (takes up to 2 min for new subdomains). The site will work once Netlify issues the cert.");
+    allWarnings.push(
+      "Publish: Still finishing in background (>2 min). Open the site in a new tab and refresh once, or use Continue setup.",
+    );
     return { warnings: allWarnings };
   }
 
   function showResult(success, title, detail, url, warnings) {
-    stopElapsedTimer();
     const ov = document.getElementById("provisionOverlay");
     const sp = document.getElementById("provisionSpinner");
     const rs = document.getElementById("provisionResult");
     const st = document.getElementById("provisionStatus");
     const dt = document.getElementById("provisionDetail");
-    const stepList = document.getElementById("provisionStepList");
-    const elapsedEl = document.getElementById("provisionElapsed");
     if (ov) ov.classList.remove("hidden");
     sp.style.display = "none";
-    if (stepList) stepList.classList.add("hidden");
-    if (elapsedEl) {
-      const secs = Math.floor((Date.now() - provisionStartTime) / 1000);
-      elapsedEl.textContent = "Completed in " + secs + "s";
-    }
 
     let html = '<div class="result-icon ' + (success ? 'success' : 'error') + '">';
     if (success) {
@@ -926,14 +722,29 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         "/ycode/accept-invite (same subdomain as the site). " +
         "If the live homepage looks empty, check Warnings — you may need Publish in the builder once.";
 
+      // Phase 2 + publish: separate API calls so each stays within Netlify limits.
+      // Skip for already_active (tenant is live, nothing to complete).
       if (data.needsCompletion && data.tenantId) {
         const stEl = document.getElementById("provisionStatus");
         const dtEl = document.getElementById("provisionDetail");
+        const stepsEl = document.getElementById("provisionSteps");
         if (stEl) stEl.textContent = "Finishing setup…";
-        if (dtEl) dtEl.textContent = "Keep this tab open — progress updates in realtime";
-        markPhase1Done();
+        if (dtEl) {
+          dtEl.textContent =
+            "CMS clone, seed, and publish running in background — polling for completion (up to 3 min). Keep this tab open.";
+        }
+        if (stepsEl) {
+          stepsEl.classList.remove("hidden");
+          stepsEl.innerHTML =
+            "<li style=\"margin:.2rem 0\"><strong>Done</strong> — domain, template clone</li>" +
+            "<li style=\"margin:.2rem 0\"><strong>In progress</strong> — CMS, invite, publish</li>";
+        }
+        toast(
+          "Site copy ready — running CMS seed, invite, and publish (1–3 minutes)…",
+          true,
+        );
         try {
-          await sleep(2000);
+          await sleep(3500);
           const { warnings: w2 } = await runCompleteAndPublish(data.tenantId);
           allWarnings.push(...w2);
         } catch (err2) {
@@ -1059,7 +870,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
             toast(
               "Magic link copied for " +
                 slug +
-                " — after verify, you are sent to the builder at https://" +
+                " — opens https://" +
                 slug +
                 "." +
                 domainSuffix +
@@ -1069,7 +880,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
             );
           } else {
             window.prompt(
-              "Copy magic link (verify then opens tenant builder; not accept-invite):",
+              "Copy magic link (opens tenant builder; not accept-invite):",
               link,
             );
             toast(data.message || "Magic link shown in dialog.", true);

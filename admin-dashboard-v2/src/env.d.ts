@@ -17,7 +17,7 @@ interface ImportMetaEnv {
   readonly GITHUB_TOKEN?: string;
   readonly GITHUB_REPO?: string;
   readonly GITHUB_SYNC_BRANCH?: string;
-  /** Branch whose package.json semver is compared to ycode/ycode releases (e.g. main). Overrides default main when unset. */
+  /** Branch whose package.json semver is compared to ycode/ycode releases (default `main`). */
   readonly GITHUB_PRODUCTION_BRANCH?: string;
   /** Comma-separated PR base branches for sync PR list; first entry also used as production package ref fallback. */
   readonly GITHUB_SYNC_PR_BASES?: string;
