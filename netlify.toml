@@ -3,7 +3,10 @@
 
 [build]
   base = "admin-dashboard-v2"
-  command = "npm ci && npm run build"
+  # Works in both cases:
+  # 1) Netlify honors base and runs in admin-dashboard-v2 (package.json exists)
+  # 2) Netlify runs from repo root (fallback branch builds/copies admin output)
+  command = "if [ -f package.json ]; then npm ci && npm run build; else cd admin-dashboard-v2 && npm ci && npm run build && cd .. && rm -rf dist .netlify/functions && mkdir -p .netlify && cp -R admin-dashboard-v2/dist dist && cp -R admin-dashboard-v2/.netlify/functions .netlify/functions; fi"
   publish = "dist"
 
 [build.environment]
