@@ -77,7 +77,7 @@ async function copyDraftToPublishedForTable(
     if (!drafts?.length) break;
 
     const published = drafts.map((row: Record<string, unknown>) => {
-      const copy = { ...row, is_published: true };
+      const copy: Record<string, unknown> = { ...row, is_published: true };
       delete copy.content_hash;
       if (TABLES_NEEDING_NEW_UUID_COL.has(table) && "uuid" in copy) {
         copy.uuid = crypto.randomUUID();
