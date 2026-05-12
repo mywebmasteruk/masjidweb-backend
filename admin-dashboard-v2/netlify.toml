@@ -1,7 +1,5 @@
 [build]
   command = "npm run build"
   publish = "dist"
-  # Fixes local Netlify dev (`repositoryRoot` = this dir); root merge ignores nested `base` on CI.
-  base = "."
 
 # Keep functions within Netlify's default timeout; long provisioning steps are checkpointed in app code.
