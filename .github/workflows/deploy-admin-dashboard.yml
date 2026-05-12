@@ -38,9 +38,16 @@ jobs:
       - name: Install and build
         run: npm ci && npm run build
 
-      # SSR bundle lives under .netlify/ + static in dist/ — do not use --dir=dist alone.
+      # Build once in CI, then upload the generated static assets and Astro SSR function.
       - name: Deploy to Netlify (production)
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx --yes netlify-cli deploy --prod --site="$NETLIFY_SITE_ID"
+        run: >-
+          npx --yes netlify-cli deploy
+          --prod
+          --no-build
+          --dir dist
+          --functions .netlify/functions
+          --site="$NETLIFY_SITE_ID"
+          --auth="$NETLIFY_AUTH_TOKEN"
