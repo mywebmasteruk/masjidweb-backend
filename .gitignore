@@ -17,6 +17,7 @@ _mcp_*.json
 browser-verify-screenshots/
 
 # Dashboard app (never commit install/build output — CI builds on GitHub/Netlify)
+dist/
 admin-dashboard/node_modules/
 admin-dashboard-v2/node_modules/
 admin-dashboard-v2/dist/

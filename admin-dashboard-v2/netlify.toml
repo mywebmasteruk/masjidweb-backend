@@ -4,7 +4,4 @@
   # Fixes local Netlify dev (`repositoryRoot` = this dir); root merge ignores nested `base` on CI.
   base = "."
 
-# Default function timeout is 10s (Hobby) / 26s (Pro). Masjid1 sync may need a higher plan or async job.
-[functions]
-  [functions."*"]
-    timeout = "300s"
+# Keep functions within Netlify's default timeout; long provisioning steps are checkpointed in app code.
