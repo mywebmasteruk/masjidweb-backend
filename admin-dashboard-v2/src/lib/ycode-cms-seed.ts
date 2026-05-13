@@ -105,6 +105,13 @@ export function filterCmsSourceItemsWithContent<T extends { id: string }>(
   });
 }
 
+export function filterTemplateFieldsToMappedCollections<T extends { collection_id: string }>(
+  fields: T[],
+  idMap?: IdMap,
+): T[] {
+  return idMap ? fields.filter((field) => idMap.has(field.collection_id)) : fields;
+}
+
 /** Tenants CMS collection id on the source template (draft, else published). */
 async function resolveTenantsCollectionIdForTemplate(
   supabase: ReturnType<typeof getServiceSupabase>,
@@ -337,10 +344,18 @@ async function copyTemplateContentToTenant(
     (await resolveTenantsCollectionIdForTemplate(supabase, src)) ??
     ORIG_TENANTS_COLLECTION_ID;
 
-  const [templateTidFields, templateSlugFields] = await Promise.all([
+  const [templateTidFieldsRaw, templateSlugFieldsRaw] = await Promise.all([
     selectTemplateFieldsByKey(supabase, "tenant_id", src),
     selectTemplateFieldsByKey(supabase, "tenant_slug", src),
   ]);
+  const templateTidFields = filterTemplateFieldsToMappedCollections(
+    templateTidFieldsRaw,
+    idMap,
+  );
+  const templateSlugFields = filterTemplateFieldsToMappedCollections(
+    templateSlugFieldsRaw,
+    idMap,
+  );
 
   const slugFieldByTemplateCollection = Object.fromEntries(
     templateSlugFields.map((f) => [f.collection_id, f.id]),
@@ -498,7 +513,10 @@ async function copyTemplateContentToTenant(
 
   const supplementalCollIds = new Set<string>();
   for (const r of itemRowsSrc ?? []) {
-    supplementalCollIds.add(r.collection_id as string);
+    const collectionId = r.collection_id as string;
+    if (!idMap || idMap.has(collectionId)) {
+      supplementalCollIds.add(collectionId);
+    }
   }
   if (templateDraftCollectionIds.size > 0) {
     const collList = [...templateDraftCollectionIds];

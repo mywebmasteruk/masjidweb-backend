@@ -167,6 +167,125 @@ async function appendCloneIntegrityWarnings(
   }
 }
 
+type CmsSeedCleanupStats = {
+  orphanValuesDeleted: number;
+  orphanItemsDeleted: number;
+};
+
+async function listIds<T extends { id: string }>(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  table: string,
+  tenantId: string,
+): Promise<Set<string>> {
+  const pageSize = 1000;
+  const ids = new Set<string>();
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`${table} id scan failed: ${error.message}`);
+    const rows = (data ?? []) as T[];
+    for (const row of rows) ids.add(row.id);
+    if (rows.length < pageSize) break;
+  }
+  return ids;
+}
+
+async function listCmsItems(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  tenantId: string,
+): Promise<{ id: string; collection_id: string }[]> {
+  const pageSize = 1000;
+  const items: { id: string; collection_id: string }[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("collection_items")
+      .select("id, collection_id")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`collection_items scan failed: ${error.message}`);
+    const rows = (data ?? []) as { id: string; collection_id: string }[];
+    items.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return items;
+}
+
+async function listCmsValues(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  tenantId: string,
+): Promise<{ id: string; item_id: string; field_id: string }[]> {
+  const pageSize = 1000;
+  const values: { id: string; item_id: string; field_id: string }[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("collection_item_values")
+      .select("id, item_id, field_id")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .range(from, from + pageSize - 1);
+    if (error) {
+      throw new Error(`collection_item_values scan failed: ${error.message}`);
+    }
+    const rows = (data ?? []) as { id: string; item_id: string; field_id: string }[];
+    values.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return values;
+}
+
+async function deleteInChunks(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  table: string,
+  ids: string[],
+): Promise<void> {
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const { error } = await supabase.from(table).delete().in("id", chunk);
+    if (error) throw new Error(`${table} cleanup failed: ${error.message}`);
+  }
+}
+
+async function cleanupInvalidCmsSeedRows(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  tenantId: string,
+): Promise<CmsSeedCleanupStats> {
+  const [collectionIds, fieldIds, items] = await Promise.all([
+    listIds<{ id: string }>(supabase, "collections", tenantId),
+    listIds<{ id: string }>(supabase, "collection_fields", tenantId),
+    listCmsItems(supabase, tenantId),
+  ]);
+
+  const invalidItemIds = items
+    .filter((item) => !collectionIds.has(item.collection_id))
+    .map((item) => item.id);
+  const validItemIds = new Set(
+    items.filter((item) => collectionIds.has(item.collection_id)).map((item) => item.id),
+  );
+
+  const values = await listCmsValues(supabase, tenantId);
+  const invalidValueIds = values
+    .filter(
+      (value) =>
+        !validItemIds.has(value.item_id) ||
+        invalidItemIds.includes(value.item_id) ||
+        !fieldIds.has(value.field_id),
+    )
+    .map((value) => value.id);
+
+  await deleteInChunks(supabase, "collection_item_values", invalidValueIds);
+  await deleteInChunks(supabase, "collection_items", invalidItemIds);
+
+  return {
+    orphanValuesDeleted: invalidValueIds.length,
+    orphanItemsDeleted: invalidItemIds.length,
+  };
+}
+
 /**
  * Phase 1 — fast path (< 8 s on free Netlify).
  * Validates, inserts registry row, adds domain alias, clones template.
@@ -437,6 +556,13 @@ export async function completeProvision(
         throw new Error(`clone_cms_for_tenant RPC failed: ${rpcErr.message}`);
       }
 
+      const cleanupStats = await cleanupInvalidCmsSeedRows(supabase, tenantId);
+      if (cleanupStats.orphanItemsDeleted || cleanupStats.orphanValuesDeleted) {
+        warnings.push(
+          `CMS seed cleanup removed ${cleanupStats.orphanItemsDeleted} orphan items and ${cleanupStats.orphanValuesDeleted} orphan values from hidden template collections.`,
+        );
+      }
+
       // Seed the Tenants collection item with tenant business details.
       // The SQL RPC already cloned generic CMS items; this inserts the
       // per-tenant "Tenants" row with the business name / address / etc.
@@ -464,6 +590,7 @@ export async function completeProvision(
         details: {
           timing_ms: phase2TimingMs.cms_seed,
           rpc_result: rpcResult,
+          cleanup: cleanupStats,
           method: "sql_rpc",
         },
       });
