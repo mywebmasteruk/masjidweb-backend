@@ -117,7 +117,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           <span class="badge badge-gray" style="font-size:.7rem;">{clientTenants.length} clients · {demoTenants.length} demos</span>
         </div>
 
-        <div id="addForm" class="form-reveal">
+        <div id="addForm" class="form-reveal" hidden>
           <form id="provisionForm">
             {templateOptions && templateOptions.length > 0 ? (
               <div class="field">
@@ -664,11 +664,13 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
 
   const addForm = document.getElementById("addForm");
   document.getElementById("toggleFormBtn").addEventListener("click", () => {
+    addForm.hidden = false;
     addForm.classList.add("open");
     addForm.querySelector("input")?.focus();
   });
   document.getElementById("cancelBtn").addEventListener("click", () => {
     addForm.classList.remove("open");
+    addForm.hidden = true;
   });
 
   (function initTenantTabs() {
@@ -727,6 +729,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       if (data.warnings) allWarnings.push(...data.warnings);
 
       addForm.classList.remove("open");
+      addForm.hidden = true;
       const siteHttps = "https://" + data.slug + "." + domainSuffix;
       const inviteExplain =
         "The welcome email’s sign-up link should use: " +
