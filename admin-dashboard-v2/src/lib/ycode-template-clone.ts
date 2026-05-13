@@ -433,42 +433,22 @@ export async function fetchTemplateVersionRows(
  * Returns `templateCollIdToCanonical`: every template collection id maps to the one
  * canonical id we keep per distinct `name` (prefers an id that still has a draft row).
  */
-async function buildTemplateCollectionIdAliases(
-  sb: ReturnType<typeof getServiceSupabase>,
-  templateTenantId: string,
-): Promise<{
+export function pickCanonicalTemplateCollectionRows(
+  draftRows: Record<string, unknown>[],
+  publishedRows: Record<string, unknown>[],
+): {
   templateCollIdToCanonical: Map<string, string>;
   canonicalRows: Record<string, unknown>[];
-}> {
-  const [draft, published] = await Promise.all([
-    sb
-      .from("collections")
-      .select("*")
-      .eq("tenant_id", templateTenantId)
-      .eq("is_published", false)
-      .is("deleted_at", null),
-    sb
-      .from("collections")
-      .select("*")
-      .eq("tenant_id", templateTenantId)
-      .eq("is_published", true)
-      .is("deleted_at", null),
-  ]);
-
-  if (draft.error) {
-    throw new Error(`collections draft read: ${draft.error.message}`);
-  }
-  if (published.error) {
-    throw new Error(`collections published read: ${published.error.message}`);
-  }
-
+} {
   const draftById = new Map(
-    (draft.data ?? []).map((r: { id: string }) => [r.id, r as Record<string, unknown>]),
+    draftRows.map((r) => [String(r.id), r]),
   );
   const pubById = new Map(
-    (published.data ?? []).map((r: { id: string }) => [r.id, r as Record<string, unknown>]),
+    publishedRows.map((r) => [String(r.id), r]),
   );
-  const ids = new Set([...draftById.keys(), ...pubById.keys()]);
+  const ids = draftById.size > 0
+    ? new Set(draftById.keys())
+    : new Set([...draftById.keys(), ...pubById.keys()]);
 
   const idToMerged = new Map<string, Record<string, unknown>>();
   for (const id of ids) {
@@ -514,6 +494,41 @@ async function buildTemplateCollectionIdAliases(
   }
 
   return { templateCollIdToCanonical, canonicalRows };
+}
+
+async function buildTemplateCollectionIdAliases(
+  sb: ReturnType<typeof getServiceSupabase>,
+  templateTenantId: string,
+): Promise<{
+  templateCollIdToCanonical: Map<string, string>;
+  canonicalRows: Record<string, unknown>[];
+}> {
+  const [draft, published] = await Promise.all([
+    sb
+      .from("collections")
+      .select("*")
+      .eq("tenant_id", templateTenantId)
+      .eq("is_published", false)
+      .is("deleted_at", null),
+    sb
+      .from("collections")
+      .select("*")
+      .eq("tenant_id", templateTenantId)
+      .eq("is_published", true)
+      .is("deleted_at", null),
+  ]);
+
+  if (draft.error) {
+    throw new Error(`collections draft read: ${draft.error.message}`);
+  }
+  if (published.error) {
+    throw new Error(`collections published read: ${published.error.message}`);
+  }
+
+  return pickCanonicalTemplateCollectionRows(
+    (draft.data ?? []) as Record<string, unknown>[],
+    (published.data ?? []) as Record<string, unknown>[],
+  );
 }
 
 async function cloneCollectionsNameDeduped(

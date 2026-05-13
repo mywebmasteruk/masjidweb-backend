@@ -74,6 +74,37 @@ function remapCmsReferenceValue(
   return raw;
 }
 
+const NON_CONTENT_CMS_FIELD_KEYS = new Set([
+  "id",
+  "status",
+  "tenant_id",
+  "tenant_slug",
+  "created",
+  "created_at",
+  "updated_at",
+]);
+
+function isMeaningfulCmsValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  const text = String(value).trim();
+  return text.length > 0 && text !== "-";
+}
+
+export function filterCmsSourceItemsWithContent<T extends { id: string }>(
+  items: T[],
+  valuesByItem: Map<string, { field_id: string; value: unknown }[]>,
+  fieldKeyById: Map<string, string>,
+): T[] {
+  return items.filter((item) => {
+    const values = valuesByItem.get(item.id) ?? [];
+    return values.some((value) => {
+      const key = fieldKeyById.get(value.field_id);
+      if (!key || NON_CONTENT_CMS_FIELD_KEYS.has(key)) return false;
+      return isMeaningfulCmsValue(value.value);
+    });
+  });
+}
+
 /** Tenants CMS collection id on the source template (draft, else published). */
 async function resolveTenantsCollectionIdForTemplate(
   supabase: ReturnType<typeof getServiceSupabase>,
@@ -335,6 +366,7 @@ async function copyTemplateContentToTenant(
     newSlugFieldId?: string;
     templateItemsPublished: boolean;
     fieldTypeById: Map<string, string>;
+    fieldKeyById: Map<string, string>;
   };
 
   const batches: CmsCloneBatch[] = [];
@@ -433,7 +465,7 @@ async function copyTemplateContentToTenant(
 
     const { data: collFieldMeta, error: fMetaErr } = await supabase
       .from("collection_fields")
-      .select("id, type")
+      .select("id, key, type")
       .eq("collection_id", newCollectionId)
       .eq("tenant_id", tenantId)
       .eq("is_published", false)
@@ -441,6 +473,9 @@ async function copyTemplateContentToTenant(
     if (fMetaErr) throw new Error(fMetaErr.message);
     const fieldTypeById = new Map(
       (collFieldMeta ?? []).map((f) => [String(f.id), String(f.type)]),
+    );
+    const fieldKeyById = new Map(
+      (collFieldMeta ?? []).map((f) => [String(f.id), String(f.key)]),
     );
 
     batches.push({
@@ -450,6 +485,7 @@ async function copyTemplateContentToTenant(
       newSlugFieldId,
       templateItemsPublished,
       fieldTypeById,
+      fieldKeyById,
     });
   }
 
@@ -540,7 +576,7 @@ async function copyTemplateContentToTenant(
 
     const { data: collFieldMeta2, error: fMetaErr2 } = await supabase
       .from("collection_fields")
-      .select("id, type")
+      .select("id, key, type")
       .eq("collection_id", newCollectionId)
       .eq("tenant_id", tenantId)
       .eq("is_published", false)
@@ -548,6 +584,9 @@ async function copyTemplateContentToTenant(
     if (fMetaErr2) throw new Error(fMetaErr2.message);
     const fieldTypeById2 = new Map(
       (collFieldMeta2 ?? []).map((f) => [String(f.id), String(f.type)]),
+    );
+    const fieldKeyById2 = new Map(
+      (collFieldMeta2 ?? []).map((f) => [String(f.id), String(f.key)]),
     );
 
     batches.push({
@@ -557,14 +596,50 @@ async function copyTemplateContentToTenant(
       newSlugFieldId,
       templateItemsPublished,
       fieldTypeById: fieldTypeById2,
+      fieldKeyById: fieldKeyById2,
     });
   }
 
   const itemIdMap = idMap ?? new Map<string, string>();
   const now = new Date().toISOString();
 
-  // Phase 1: build id map for all items across all collections, then bulk-insert.
-  // Previously inserted one row per item (76 calls → 1 call).
+  const CHUNK_SIZE = 200;
+
+  const allSourceItemIds = batches.flatMap((b) => b.templateItemIds);
+  const allSourceValues: { item_id: string; field_id: string; value: unknown }[] = [];
+
+  for (let i = 0; i < allSourceItemIds.length; i += CHUNK_SIZE) {
+    const chunk = allSourceItemIds.slice(i, i + CHUNK_SIZE);
+    const { data: chunkVals } = await supabase
+      .from("collection_item_values")
+      .select("item_id, field_id, value")
+      .in("item_id", chunk)
+      .is("deleted_at", null);
+    if (chunkVals) allSourceValues.push(...chunkVals);
+  }
+
+  const sourceValuesByItem = new Map<string, { field_id: string; value: unknown }[]>();
+  for (const v of allSourceValues) {
+    const key = String(v.item_id);
+    if (!sourceValuesByItem.has(key)) sourceValuesByItem.set(key, []);
+    sourceValuesByItem.get(key)!.push({ field_id: String(v.field_id), value: v.value });
+  }
+
+  for (const b of batches) {
+    b.templateItemIds = filterCmsSourceItemsWithContent(
+      b.templateItemIds.map((id) => ({ id })),
+      sourceValuesByItem,
+      new Map(
+        [...b.fieldKeyById].flatMap(([targetFieldId, key]) => {
+          const sourceFieldIds = [...(idMap ?? new Map<string, string>()).entries()]
+            .filter(([, mappedId]) => mappedId === targetFieldId)
+            .map(([sourceId]) => sourceId);
+          return [[targetFieldId, key], ...sourceFieldIds.map((sourceId) => [sourceId, key] as [string, string])];
+        }),
+      ),
+    ).map((item) => item.id);
+  }
+
   const allNewItemRows: {
     id: string;
     collection_id: string;
@@ -593,8 +668,6 @@ async function copyTemplateContentToTenant(
     }
   }
 
-  const CHUNK_SIZE = 200;
-
   if (allNewItemRows.length) {
     for (let i = 0; i < allNewItemRows.length; i += CHUNK_SIZE) {
       const chunk = allNewItemRows.slice(i, i + CHUNK_SIZE);
@@ -605,28 +678,6 @@ async function copyTemplateContentToTenant(
         throw new Error(`Failed to bulk-insert collection_items: ${itemBulkErr.message}`);
       }
     }
-  }
-
-  // Phase 2: fetch ALL source values in one query, build target rows, bulk-insert.
-  const allSourceItemIds = batches.flatMap((b) => b.templateItemIds);
-  const allSourceValues: { item_id: string; field_id: string; value: unknown }[] = [];
-
-  for (let i = 0; i < allSourceItemIds.length; i += CHUNK_SIZE) {
-    const chunk = allSourceItemIds.slice(i, i + CHUNK_SIZE);
-    const { data: chunkVals } = await supabase
-      .from("collection_item_values")
-      .select("item_id, field_id, value")
-      .in("item_id", chunk)
-      .is("deleted_at", null);
-    if (chunkVals) allSourceValues.push(...chunkVals);
-  }
-
-  // Group fetched values by item_id.
-  const sourceValuesByItem = new Map<string, { field_id: string; value: unknown }[]>();
-  for (const v of allSourceValues) {
-    const key = String(v.item_id);
-    if (!sourceValuesByItem.has(key)) sourceValuesByItem.set(key, []);
-    sourceValuesByItem.get(key)!.push({ field_id: String(v.field_id), value: v.value });
   }
 
   // Build all target rows in memory.

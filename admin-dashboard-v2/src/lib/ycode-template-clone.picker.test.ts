@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   jsonPayloadWeight,
+  pickCanonicalTemplateCollectionRows,
   pickNewerTemplateRow,
   pickRicherLayersTemplateRow,
 } from "./ycode-template-clone";
@@ -52,5 +53,22 @@ describe("jsonPayloadWeight", () => {
     const o: Record<string, unknown> = {};
     o.self = o;
     expect(jsonPayloadWeight(o)).toBe(0);
+  });
+});
+
+describe("pickCanonicalTemplateCollectionRows", () => {
+  it("keeps only draft-backed collections when the template has visible draft collections", () => {
+    const draft = [
+      { id: "bookings", name: "Bookings", is_published: false },
+    ];
+    const published = [
+      { id: "bookings", name: "Bookings", is_published: true },
+      { id: "announcements-stale", name: "Announcements", is_published: true },
+    ];
+
+    const result = pickCanonicalTemplateCollectionRows(draft, published);
+
+    expect(result.canonicalRows.map((row) => row.id)).toEqual(["bookings"]);
+    expect(result.templateCollIdToCanonical.get("announcements-stale")).toBeUndefined();
   });
 });
