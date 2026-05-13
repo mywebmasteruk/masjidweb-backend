@@ -201,11 +201,10 @@ export async function cloneTemplateForTenant(
         templateId,
         pickNewerTemplateRow,
       );
-      return data.filter((raw) => {
-        const cid = raw.collection_id as string;
-        const canon = templateCollIdToCanonical.get(cid);
-        return canon === undefined || canon === cid;
-      });
+      return filterTemplateCollectionFieldsToCanonicalCollections(
+        data,
+        templateCollIdToCanonical,
+      );
     },
   );
 
@@ -528,6 +527,31 @@ async function buildTemplateCollectionIdAliases(
   return pickCanonicalTemplateCollectionRows(
     (draft.data ?? []) as Record<string, unknown>[],
     (published.data ?? []) as Record<string, unknown>[],
+  );
+}
+
+function pointsAtCanonicalCollection(
+  collectionId: unknown,
+  templateCollIdToCanonical: Map<string, string>,
+): boolean {
+  if (collectionId === null || collectionId === undefined || collectionId === "") {
+    return true;
+  }
+  const id = String(collectionId);
+  return templateCollIdToCanonical.get(id) === id;
+}
+
+export function filterTemplateCollectionFieldsToCanonicalCollections<T extends Record<string, unknown>>(
+  fields: T[],
+  templateCollIdToCanonical: Map<string, string>,
+): T[] {
+  return fields.filter(
+    (raw) =>
+      pointsAtCanonicalCollection(raw.collection_id, templateCollIdToCanonical) &&
+      pointsAtCanonicalCollection(
+        raw.reference_collection_id,
+        templateCollIdToCanonical,
+      ),
   );
 }
 

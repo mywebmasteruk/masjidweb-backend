@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   jsonPayloadWeight,
+  filterTemplateCollectionFieldsToCanonicalCollections,
   pickCanonicalTemplateCollectionRows,
   pickNewerTemplateRow,
   pickRicherLayersTemplateRow,
@@ -70,5 +71,43 @@ describe("pickCanonicalTemplateCollectionRows", () => {
 
     expect(result.canonicalRows.map((row) => row.id)).toEqual(["bookings"]);
     expect(result.templateCollIdToCanonical.get("announcements-stale")).toBeUndefined();
+  });
+});
+
+describe("filterTemplateCollectionFieldsToCanonicalCollections", () => {
+  it("drops fields for skipped published-only collections", () => {
+    const fields = [
+      { id: "bookings-name", collection_id: "bookings" },
+      { id: "announcements-title", collection_id: "announcements-stale" },
+      { id: "global", collection_id: null },
+    ];
+    const aliases = new Map([["bookings", "bookings"]]);
+
+    const result = filterTemplateCollectionFieldsToCanonicalCollections(fields, aliases);
+
+    expect(result.map((row) => row.id)).toEqual(["bookings-name", "global"]);
+  });
+
+  it("drops reference fields that point at skipped published-only collections", () => {
+    const fields = [
+      {
+        id: "bookings-reference",
+        collection_id: "bookings",
+        reference_collection_id: "announcements-stale",
+      },
+      {
+        id: "bookings-valid-reference",
+        collection_id: "bookings",
+        reference_collection_id: "speakers",
+      },
+    ];
+    const aliases = new Map([
+      ["bookings", "bookings"],
+      ["speakers", "speakers"],
+    ]);
+
+    const result = filterTemplateCollectionFieldsToCanonicalCollections(fields, aliases);
+
+    expect(result.map((row) => row.id)).toEqual(["bookings-valid-reference"]);
   });
 });
