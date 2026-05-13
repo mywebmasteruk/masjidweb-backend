@@ -384,7 +384,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     <div id="provisionSpinner" class="spinner"></div>
     <div id="provisionResult" class="hidden"></div>
     <p id="provisionStatus" style="font-size:.9rem;font-weight:500;">Provisioning tenant…</p>
-    <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">One server step: clone, CMS, invite, publish (often 1–4 min — keep this tab open)</p>
+    <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">Multi-step setup: create tenant, clone template, seed CMS, invite, publish (often 1–4 min — keep this tab open)</p>
     <ol id="provisionSteps" class="text-xs text-muted hidden" style="margin:0.75rem 0 0;text-align:left;padding-left:1.25rem;line-height:1.5;"></ol>
   </div>
 </div>
@@ -411,7 +411,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     rs.innerHTML = "";
     st.textContent = "Provisioning tenant…";
     dt.textContent =
-      "One server step: clone template, CMS seed, invite, activate, publish (1–4 min — keep this tab open).";
+      "Step 1 creates the tenant and domain; Step 2 clones the template, seeds CMS, invites, activates, and publishes (1–4 min — keep this tab open).";
     dt.style.display = "block";
     const stepsEl = document.getElementById("provisionSteps");
     if (stepsEl) {
@@ -477,7 +477,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   }
 
   /**
-   * Phase 1 — registry + domain alias + template clone.
+   * Phase 1 — registry row + domain alias.
    * Fast enough to stay under Netlify function limits. Retries on 5xx/504.
    */
   async function fetchProvisionPhase1WithRetry(body) {
@@ -704,7 +704,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     const body = Object.fromEntries(fd.entries());
     const allWarnings = [];
     try {
-      // Phase 1: registry + domain alias + template clone (fast, under Netlify limit)
+      // Phase 1: registry + domain alias (fast, under Netlify limit)
       const { res, data } = await fetchProvisionPhase1WithRetry(body);
       if (!data) {
         showResult(
@@ -751,11 +751,11 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         if (stepsEl) {
           stepsEl.classList.remove("hidden");
           stepsEl.innerHTML =
-            "<li style=\"margin:.2rem 0\"><strong>Done</strong> — domain, template clone</li>" +
-            "<li style=\"margin:.2rem 0\"><strong>In progress</strong> — CMS, invite, publish</li>";
+            "<li style=\"margin:.2rem 0\"><strong>Done</strong> — tenant row and domain alias</li>" +
+            "<li style=\"margin:.2rem 0\"><strong>In progress</strong> — template clone, CMS seed, invite, publish</li>";
         }
         toast(
-          "Site copy ready — running CMS seed, invite, and publish (1–3 minutes)…",
+          "Tenant created — cloning template, seeding CMS, inviting admin, and publishing (1–3 minutes)…",
           true,
         );
         try {

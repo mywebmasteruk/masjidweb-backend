@@ -30,6 +30,7 @@ import {
 } from "./provision-email-policy";
 import { isUserAlreadyRegistered } from "./send-tenant-auth-link";
 import { reclaimClientTenantForSlugReuse } from "./provision-tenant-reclaim";
+import { updateProvisionAuthMetadataForUser } from "./provision-auth-metadata";
 import {
   acquirePhase2LeaderOrWait,
   emitPhase2Heartbeat,
@@ -84,6 +85,38 @@ async function countDraftRows(
     throw new Error(`${table} count failed: ${error.message}`);
   }
   return count ?? 0;
+}
+
+export async function assertNoPartialCloneResidue(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  tenantId: string,
+): Promise<void> {
+  const tables = [
+    "asset_folders",
+    "assets",
+    "color_variables",
+    "page_folders",
+    "collections",
+    "collection_fields",
+    "pages",
+    "fonts",
+    "layer_styles",
+    "components",
+    "page_layers",
+    "locales",
+    "settings",
+  ] as const;
+  const counts = await Promise.all(
+    tables.map(async (table) => [table, await countDraftRows(supabase, tenantId, table)] as const),
+  );
+  const residue = counts.filter(([, count]) => count > 0);
+  if (residue.length > 0) {
+    throw new Error(
+      `Partial clone residue found without clone_complete checkpoint: ${residue
+        .map(([table, count]) => `${table}=${count}`)
+        .join(", ")}. Manual cleanup or explicit tenant reclaim is required before retrying clone.`,
+    );
+  }
 }
 
 /**
@@ -340,18 +373,22 @@ export async function completeProvision(
     let idMap: Awaited<ReturnType<typeof rebuildIdMapForTenant>> | undefined;
 
     if (!cloneDoneRows || cloneDoneRows.length === 0) {
+      await assertNoPartialCloneResidue(supabase, tenantId);
       const cloneStart = Date.now();
       await cloneTemplateForTenant(tenantId, sourceTpl);
       phase2TimingMs.clone = Date.now() - cloneStart;
       const cloneCheckStart = Date.now();
       await appendCloneIntegrityWarnings(supabase, tenantId, warnings);
       phase2TimingMs.clone_check = Date.now() - cloneCheckStart;
-      await supabase.from("provisioning_audit_log").insert({
+      const { error: cloneAuditErr } = await supabase.from("provisioning_audit_log").insert({
         tenant_id: tenantId,
         action: "clone_complete",
         actor,
         details: { stage: "phase2_clone", timing_ms: phase2TimingMs },
       });
+      if (cloneAuditErr) {
+        throw new Error(`Clone checkpoint audit failed: ${cloneAuditErr.message}`);
+      }
 
       // Keep each invocation short on plans with strict function limits.
       // The next call will continue from CMS seed (idempotent checkpoint).
@@ -410,7 +447,7 @@ export async function completeProvision(
       );
 
       phase2TimingMs.cms_seed = Date.now() - cmsSeedStart;
-      await supabase.from("provisioning_audit_log").insert({
+      const { error: seedAuditErr } = await supabase.from("provisioning_audit_log").insert({
         tenant_id: tenantId,
         action: "cms_seed_complete",
         actor,
@@ -420,6 +457,9 @@ export async function completeProvision(
           method: "sql_rpc",
         },
       });
+      if (seedAuditErr) {
+        throw new Error(`CMS seed checkpoint audit failed: ${seedAuditErr.message}`);
+      }
 
       // Keep each invocation short; next pass handles translations/invite/activate.
       warnings.push(
@@ -449,7 +489,7 @@ export async function completeProvision(
       coerceTenantAdminEmailToSuffix(inviteFromRegistry, slug, domainSuffix);
     const inviteStart = Date.now();
     try {
-      await supabase.auth.admin.inviteUserByEmail(inviteEmail, {
+      const { data: inviteData } = await supabase.auth.admin.inviteUserByEmail(inviteEmail, {
         redirectTo: `https://${slug}.${domainSuffix}/ycode/accept-invite`,
         data: {
           tenant_id: tenantId,
@@ -457,6 +497,13 @@ export async function completeProvision(
           display_name: tenant.business_name,
         },
       });
+      if (inviteData.user) {
+        await updateProvisionAuthMetadataForUser(supabase, inviteData.user, {
+          tenantId,
+          tenantSlug: slug,
+          displayName: tenant.business_name as string,
+        });
+      }
       warnings.push(
         `Invite: Supabase accepted sending to ${inviteEmail}. Check that inbox and spam. ` +
           `If nothing arrives within a few minutes, verify Supabase → Authentication → emails (custom SMTP / rate limits), ` +
@@ -482,13 +529,16 @@ export async function completeProvision(
 
     // 4. Mark active.
     const activateStart = Date.now();
-    await supabase
+    const { error: activateErr } = await supabase
       .from("tenant_registry")
       .update({ status: "active", updated_at: new Date().toISOString() })
       .eq("id", tenantId);
+    if (activateErr) {
+      throw new Error(`Tenant activation failed: ${activateErr.message}`);
+    }
     phase2TimingMs.activate = Date.now() - activateStart;
 
-    await supabase.from("provisioning_audit_log").insert({
+    const { error: auditErr } = await supabase.from("provisioning_audit_log").insert({
       tenant_id: tenantId,
       action: "provision_complete",
       actor,
@@ -499,6 +549,9 @@ export async function completeProvision(
         phase2_timing_ms: phase2TimingMs,
       },
     });
+    if (auditErr) {
+      throw new Error(`Provision completion audit failed: ${auditErr.message}`);
+    }
 
     return { warnings };
   } catch (e) {
@@ -557,8 +610,8 @@ export async function finishProvisionAndPublish(
  *   phase 2 + publish as normal (no duplicate row).
  * - `active` → returns it with `needsCompletion: false` so the dashboard shows success
  *   immediately.
- * - `failed` / `deactivated` → reclaims (removes) the old row, then runs a fresh
- *   {@link startProvision}.
+ * - `failed` → reclaims (removes) the old row, then runs a fresh {@link startProvision}.
+ * - `deactivated` → blocks automatic reuse so historical tenant data is not destroyed.
  * - `template` kind → throws a clear validation error.
  * - New slug → delegates to {@link startProvision}.
  */
@@ -614,9 +667,9 @@ export async function startProvisionIdempotent(
       };
     }
 
-    if (existing.status === "failed" || existing.status === "deactivated") {
+    if (existing.status === "failed") {
       const reclaimWarnings: string[] = [
-        `Removed the previous ${existing.status} tenant for this slug so a clean provision can run.`,
+        "Removed the previous failed tenant for this slug so a clean provision can run.",
       ];
       await reclaimClientTenantForSlugReuse(
         supabase,
@@ -629,6 +682,12 @@ export async function startProvisionIdempotent(
         outcome: "recreated_after_failure",
         warnings: [...reclaimWarnings, ...fresh.warnings],
       };
+    }
+
+    if (existing.status === "deactivated") {
+      throw new ProvisionValidationError(
+        `Slug "${slug}" belongs to a deactivated tenant. Reactivate or explicitly delete that tenant before reusing this slug.`,
+      );
     }
 
     throw new ProvisionValidationError(
@@ -661,7 +720,8 @@ function resolveProvisionSlug(raw: unknown): string {
  * **Idempotent behaviour (best-effort “no false failures”):**
  * - `provisioning` — resume with {@link finishProvisionAndPublish} (same as before).
  * - `active` — succeed with `already_active`, refresh publish in the background when possible.
- * - `failed` / `deactivated` — reclaim slug (alias + scoped data + registry row), then provision fresh.
+ * - `failed` — reclaim slug (alias + scoped data + registry row), then provision fresh.
+ * - `deactivated` — block automatic reuse so historical tenant data is not destroyed.
  * - Concurrent duplicate insert — short delay + retry by re-reading slug (resume / already_active / throw).
  * Template rows with the same slug still block with a clear validation error.
  */
@@ -690,11 +750,12 @@ export function isDuplicateSlugProvisionError(e: unknown): boolean {
 /**
  * Phase 2b — publish all drafts for the tenant.
  *
- * Primary path: SQL function `publish_tenant_drafts` (runs entirely inside
- * Postgres — fast and reliable, no HTTP round-trips).
+ * Data path: SQL function `publish_tenant_drafts` (runs entirely inside
+ * Postgres — fast and reliable).
  *
- * Fallback: webhook POST /ycode/api/publish (used when RPC fails or for
- * CSS-generation side-effects the SQL path cannot handle).
+ * Finalization path: webhook POST /ycode/api/publish. This still runs after
+ * SQL succeeds because the builder publish endpoint performs CSS generation,
+ * cache clearing, and `published_at` side effects that SQL alone cannot do.
  */
 export async function publishTenantAfterProvision(
   tenantId: string,
@@ -735,50 +796,53 @@ export async function publishTenantAfterProvision(
       warnings.push(`SQL publish failed (will try webhook): ${pubErr.message}`);
     } else {
       sqlPublishOk = true;
-      await supabase.from("provisioning_audit_log").insert({
+      const { error: publishAuditErr } = await supabase.from("provisioning_audit_log").insert({
         tenant_id: tenantId,
         action: "provision_publish_step",
         actor,
         details: { method: "sql_rpc", result: pubResult, warnings },
       });
+      if (publishAuditErr) {
+        warnings.push(`SQL publish audit warning: ${publishAuditErr.message}`);
+      }
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     warnings.push(`SQL publish exception (will try webhook): ${msg}`);
   }
 
-  // Fallback: webhook publish (handles CSS generation + cache clear)
-  if (!sqlPublishOk) {
-    const publishHook = await triggerPostProvisionPublish(
-      slug,
-      domainSuffix,
-      warnings,
-    );
-    if (publishHook.ok) {
-      try {
-        await patchNullTenantIds(supabase, tenantId);
-      } catch (patchErr) {
-        const msg = patchErr instanceof Error ? patchErr.message : String(patchErr);
-        warnings.push(`Post-publish tenant_id patch (non-fatal): ${msg}`);
-      }
+  const publishHook = await triggerPostProvisionPublish(
+    slug,
+    domainSuffix,
+    warnings,
+  );
+  if (publishHook.ok) {
+    try {
+      await patchNullTenantIds(supabase, tenantId);
+    } catch (patchErr) {
+      const msg = patchErr instanceof Error ? patchErr.message : String(patchErr);
+      warnings.push(`Post-publish tenant_id patch (non-fatal): ${msg}`);
     }
-    if (!publishHook.ok) {
-      if (publishHook.configError) {
-        throw new ProvisionPublishConfigError(
-          "Provisioning cannot finish until PROVISIONING_WEBHOOK_SECRET (16+ chars) is set to the same value on this dashboard and the YCode Netlify site.",
-        );
-      }
-      await supabase.from("provisioning_audit_log").insert({
-        tenant_id: tenantId,
-        action: "provision_publish_failed",
-        actor,
-        details: { message: publishHook.message },
-      });
-      throw new Error(
-        publishHook.message ||
-          "YCode publish did not succeed — retry or open the builder and click Publish.",
+  }
+  if (!publishHook.ok) {
+    if (publishHook.configError) {
+      throw new ProvisionPublishConfigError(
+        "Provisioning cannot finish until PROVISIONING_WEBHOOK_SECRET (16+ chars) is set to the same value on this dashboard and the YCode Netlify site.",
       );
     }
+    await supabase.from("provisioning_audit_log").insert({
+      tenant_id: tenantId,
+      action: "provision_publish_failed",
+      actor,
+      details: {
+        message: publishHook.message,
+        sql_publish_ok: sqlPublishOk,
+      },
+    });
+    throw new Error(
+      publishHook.message ||
+        "YCode publish did not succeed — retry or open the builder and click Publish.",
+    );
   }
 
   try {
@@ -919,9 +983,9 @@ async function runProvisionTenantFullFlowResolved(
       };
     }
 
-    if (existing.status === "failed" || existing.status === "deactivated") {
+    if (existing.status === "failed") {
       const reclaimWarnings: string[] = [
-        `Removed the previous ${existing.status} tenant for this slug so a clean provision can run.`,
+        "Removed the previous failed tenant for this slug so a clean provision can run.",
       ];
       await reclaimClientTenantForSlugReuse(
         supabase,
@@ -936,6 +1000,12 @@ async function runProvisionTenantFullFlowResolved(
         reclaimWarnings,
         "recreated_after_failure",
         depth,
+      );
+    }
+
+    if (existing.status === "deactivated") {
+      throw new ProvisionValidationError(
+        `Slug "${slug}" belongs to a deactivated tenant. Reactivate or explicitly delete that tenant before reusing this slug.`,
       );
     }
 

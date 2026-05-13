@@ -1,6 +1,7 @@
 import { getServiceSupabase } from "./supabase-server";
 import { coerceTenantAdminEmailToSuffix } from "./provision-email";
 import { normalizeProvisioningEmail } from "./provision-email-policy";
+import { updateProvisionAuthMetadataForUser } from "./provision-auth-metadata";
 
 function getDomainSuffix(): string {
   return import.meta.env.TENANT_DOMAIN_SUFFIX || "masjidweb.com";
@@ -94,13 +95,22 @@ export async function sendTenantAuthLink(
     domainSuffix,
   );
 
+  const displayName = tenant.business_name as string;
   const userMeta = {
     tenant_id: tenantId,
     tenant_slug: slug,
-    display_name: tenant.business_name as string,
+    display_name: displayName,
+  };
+  const ensureTrustedAuthMetadata = async (user: unknown): Promise<void> => {
+    if (!user || typeof user !== "object" || !("id" in user)) return;
+    await updateProvisionAuthMetadataForUser(supabase, user as never, {
+      tenantId,
+      tenantSlug: slug,
+      displayName,
+    });
   };
 
-  const { error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(
+  const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(
     inviteEmail,
     {
       redirectTo: redirectInviteTo,
@@ -108,6 +118,7 @@ export async function sendTenantAuthLink(
     },
   );
   if (!inviteErr) {
+    await ensureTrustedAuthMetadata(inviteData.user);
     let actionLink: string | undefined;
     const { data: inviteGen, error: inviteGenErr } =
       await supabase.auth.admin.generateLink({
@@ -153,6 +164,7 @@ export async function sendTenantAuthLink(
     });
 
   if (!inviteRecoveryErr && inviteRecovery?.properties?.action_link) {
+    await ensureTrustedAuthMetadata(inviteRecovery.user);
     return {
       ok: true,
       method: "invite",
@@ -185,6 +197,7 @@ export async function sendTenantAuthLink(
   if (!actionLink) {
     throw new Error("Supabase did not return an action link.");
   }
+  await ensureTrustedAuthMetadata(linkData.user);
 
   return {
     ok: true,

@@ -42,12 +42,17 @@ function normalizeUuid(raw: unknown): string | null {
   return UUID_RE.test(s) ? s : null;
 }
 
-/** Merge metadata sources the way admin list endpoints do (latest wins). */
-function effectiveMetadata(user: User): Record<string, unknown> {
-  const raw = (user as { raw_user_meta_data?: Record<string, unknown> }).raw_user_meta_data ?? {};
-  const app = (user.app_metadata ?? {}) as Record<string, unknown>;
-  const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
-  return { ...raw, ...app, ...meta };
+export function effectiveAuthUserMetadataForCleanup(
+  user: Pick<User, "app_metadata" | "user_metadata"> & {
+    raw_app_meta_data?: Record<string, unknown>;
+    raw_user_meta_data?: Record<string, unknown>;
+  },
+): Record<string, unknown> {
+  const legacyUser = user.raw_user_meta_data ?? {};
+  const legacyApp = user.raw_app_meta_data ?? {};
+  const userMeta = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const appMeta = (user.app_metadata ?? {}) as Record<string, unknown>;
+  return { ...legacyUser, ...userMeta, ...legacyApp, ...appMeta };
 }
 
 function tenantIdFromEffective(meta: Record<string, unknown>): string | null {
@@ -100,7 +105,7 @@ async function deleteAuthUsersForTenant(
 
   const users = await listAllAuthUsers(supabase, warnings);
   for (const u of users) {
-    const meta = effectiveMetadata(u);
+    const meta = effectiveAuthUserMetadataForCleanup(u);
     const tid = tenantIdFromEffective(meta);
     if (tid !== want) continue;
     const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
@@ -166,7 +171,7 @@ export async function deleteAuthUsersForMissingTenants(
   const preserve = options?.preserveEmails ?? new Set<string>();
 
   for (const u of users) {
-    const meta = effectiveMetadata(u);
+    const meta = effectiveAuthUserMetadataForCleanup(u);
     const tid = tenantIdFromEffective(meta);
     const slug = tenantSlugFromEffective(meta);
 
