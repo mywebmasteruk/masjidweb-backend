@@ -70,17 +70,24 @@ function getDomainSuffix(): string {
   return readServerEnv("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
 }
 
-async function countDraftRows(
+type CloneResidueFilter = "draft_published" | "tenant_only";
+
+async function countTenantCloneRows(
   supabase: ReturnType<typeof getServiceSupabase>,
   tenantId: string,
   table: string,
+  filter: CloneResidueFilter,
 ): Promise<number> {
-  const { count, error } = await supabase
+  let query = supabase
     .from(table)
     .select("*", { count: "exact", head: true })
-    .eq("tenant_id", tenantId)
-    .eq("is_published", false)
-    .is("deleted_at", null);
+    .eq("tenant_id", tenantId);
+
+  if (filter === "draft_published") {
+    query = query.eq("is_published", false).is("deleted_at", null);
+  }
+
+  const { count, error } = await query;
   if (error) {
     throw new Error(`${table} count failed: ${error.message}`);
   }
@@ -92,22 +99,25 @@ export async function assertNoPartialCloneResidue(
   tenantId: string,
 ): Promise<void> {
   const tables = [
-    "asset_folders",
-    "assets",
-    "color_variables",
-    "page_folders",
-    "collections",
-    "collection_fields",
-    "pages",
-    "fonts",
-    "layer_styles",
-    "components",
-    "page_layers",
-    "locales",
-    "settings",
-  ] as const;
+    ["asset_folders", "draft_published"],
+    ["assets", "draft_published"],
+    ["color_variables", "tenant_only"],
+    ["page_folders", "draft_published"],
+    ["collections", "draft_published"],
+    ["collection_fields", "draft_published"],
+    ["pages", "draft_published"],
+    ["fonts", "draft_published"],
+    ["layer_styles", "draft_published"],
+    ["components", "draft_published"],
+    ["page_layers", "draft_published"],
+    ["locales", "draft_published"],
+    ["settings", "tenant_only"],
+  ] as const satisfies readonly (readonly [string, CloneResidueFilter])[];
   const counts = await Promise.all(
-    tables.map(async (table) => [table, await countDraftRows(supabase, tenantId, table)] as const),
+    tables.map(async ([table, filter]) => [
+      table,
+      await countTenantCloneRows(supabase, tenantId, table, filter),
+    ] as const),
   );
   const residue = counts.filter(([, count]) => count > 0);
   if (residue.length > 0) {
@@ -130,9 +140,9 @@ async function appendCloneIntegrityWarnings(
 ): Promise<void> {
   try {
     const [pages, layers, collections] = await Promise.all([
-      countDraftRows(supabase, tenantId, "pages"),
-      countDraftRows(supabase, tenantId, "page_layers"),
-      countDraftRows(supabase, tenantId, "collections"),
+      countTenantCloneRows(supabase, tenantId, "pages", "draft_published"),
+      countTenantCloneRows(supabase, tenantId, "page_layers", "draft_published"),
+      countTenantCloneRows(supabase, tenantId, "collections", "draft_published"),
     ]);
 
     if (pages === 0) {
