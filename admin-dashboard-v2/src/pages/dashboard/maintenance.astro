@@ -23,10 +23,6 @@ const cleanupDeletesUnassigned =
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           Logs
         </a>
-        <a href="/dashboard/updates" class="sidebar-link">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-          Updates
-        </a>
         <a href="/dashboard/maintenance" class="sidebar-link active">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           Maintenance
@@ -43,7 +39,75 @@ const cleanupDeletesUnassigned =
     <main class="main">
       <div style="margin-bottom:1.5rem;">
         <h1>Maintenance</h1>
-        <p class="page-desc" style="margin-bottom:0;">Run safe platform cleanup jobs after deleting tenants or fixing provisioning data.</p>
+        <p class="page-desc" style="margin-bottom:0;">Run safe platform updates, rollbacks, and cleanup jobs from one place.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>YCode core updates</h2>
+          <button id="checkUpdatesBtn" class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Check for updates
+          </button>
+        </div>
+
+        <div id="statusArea" style="margin-bottom:1rem;">
+          <div class="status-placeholder">
+            <p class="text-sm text-muted">Click "Check for updates" to see if new YCode versions are available.</p>
+          </div>
+        </div>
+
+        <div id="semverWarning" class="hidden" style="margin-bottom:1rem;padding:1rem;background:rgba(234,179,8,.08);border-radius:var(--radius);border:1px solid rgba(234,179,8,.35);">
+          <div class="flex" style="align-items:flex-start;gap:.5rem;">
+            <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--warning)" stroke-width="2.5" style="flex-shrink:0;margin-top:2px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <div>
+              <span class="text-sm" style="color:var(--warning);font-weight:600;">Core update available</span>
+              <p class="text-xs text-muted" style="margin:.35rem 0 0;">
+                Latest <span class="mono">ycode/ycode</span> release is <strong id="semverLatestLabel">—</strong>. Published production build reports <strong id="semverForkLabel">—</strong> <span id="semverContextLabel"></span>.
+              </p>
+              <p class="text-xs text-muted" style="margin:.5rem 0 0;">Click <strong>Apply YCode update</strong> below to start the update.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="upToDate" class="hidden" style="padding:1rem;background:var(--success-bg);border-radius:var(--radius);border:1px solid rgba(34,197,94,.2);">
+          <div class="flex" style="flex-direction:column;gap:.35rem;">
+            <div class="flex" style="align-items:center;gap:.5rem;">
+              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--success)" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              <span class="text-sm" style="color:var(--success);font-weight:600;">No YCode release newer than your published builder</span>
+            </div>
+            <p id="upToDateDetail" class="text-xs text-muted" style="margin:0;"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Builder from admin</h2>
+        </div>
+        <p class="text-xs text-muted" style="margin:-0.5rem 0 1rem;">
+          Click <strong>Apply YCode update</strong> to update core automatically. If a deploy breaks tenant sites, click <strong>Restore previous live build</strong>.
+        </p>
+        <div class="flex" style="flex-wrap:wrap;gap:.75rem;align-items:center;margin-bottom:.75rem;">
+          <label class="text-xs text-muted" style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;">
+            <input type="checkbox" id="applyUpdateClearCache" />
+            Clear Netlify build cache
+          </label>
+        </div>
+        <div class="flex" style="flex-wrap:wrap;gap:.75rem;">
+          <button type="button" id="applyBuilderUpdateBtn" class="btn btn-primary">Apply YCode update</button>
+          <button type="button" id="restorePreviousDeployBtn" class="btn btn-ghost">Restore previous live build</button>
+        </div>
+        <div id="applyUpdateResult" class="hidden text-xs" style="margin-top:.75rem;padding:.75rem;border-radius:var(--radius);border:1px solid var(--border);"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Recent update history</h2>
+        </div>
+        <div id="historyArea" class="history-wrap">
+          <p class="text-sm text-muted" style="margin:0;">Checking recent updates...</p>
+        </div>
       </div>
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;align-items:start;">
@@ -83,6 +147,34 @@ const cleanupDeletesUnassigned =
 
   <div id="toast" style="display:none;position:fixed;right:1rem;bottom:1rem;z-index:9999;padding:.9rem 1.1rem;border-radius:var(--radius);box-shadow:var(--shadow-lg);font-size:.9rem;"></div>
 
+  <style>
+    .status-placeholder { padding: .75rem 0; }
+    .history-wrap { overflow-x: auto; }
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .8rem;
+    }
+    .history-table th,
+    .history-table td {
+      text-align: left;
+      padding: .55rem .4rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .history-table th { color: var(--muted); font-weight: 600; }
+    .history-badge-live {
+      display: inline-block;
+      padding: .1rem .4rem;
+      border-radius: 999px;
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid rgba(34,197,94,.22);
+      font-size: .72rem;
+      font-weight: 600;
+    }
+  </style>
+
   <script define:vars={{ cleanupDeletesUnassigned }}>
     function toast(msg, ok) {
       const el = document.getElementById("toast");
@@ -93,9 +185,249 @@ const cleanupDeletesUnassigned =
       setTimeout(() => (el.style.display = "none"), 5000);
     }
 
+    async function api(path, opts) {
+      const res = await fetch(path, opts);
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { ok: false, error: text || "Bad response (" + res.status + ")" };
+      }
+    }
+
     document.getElementById("logoutBtn")?.addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login";
+    });
+
+    function formatHistoryDate(value) {
+      if (!value) return "—";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return "—";
+      return d.toLocaleString();
+    }
+
+    function renderUpdateHistory(rows) {
+      const area = document.getElementById("historyArea");
+      if (!area) return;
+
+      if (!rows || rows.length === 0) {
+        area.innerHTML = '<p class="text-sm text-muted" style="margin:0;">No update history yet.</p>';
+        return;
+      }
+
+      const htmlRows = rows
+        .map((row) => {
+          const commit = row.commitRef ? String(row.commitRef).slice(0, 7) : "—";
+          const version = row.version || "—";
+          const state = row.status === "live"
+            ? '<span class="history-badge-live">Live</span>'
+            : "Previous";
+          const branch = row.branch || "—";
+          const link = row.deployUrl
+            ? '<a href="' + String(row.deployUrl) + '" target="_blank" rel="noopener noreferrer">View</a>'
+            : "—";
+          return (
+            "<tr>" +
+            "<td>" + formatHistoryDate(row.date) + "</td>" +
+            "<td>" + version + "</td>" +
+            "<td>" + state + "</td>" +
+            "<td class=\"mono\">" + commit + "</td>" +
+            "<td>" + branch + "</td>" +
+            "<td>" + link + "</td>" +
+            "</tr>"
+          );
+        })
+        .join("");
+
+      area.innerHTML =
+        "<table class=\"history-table\">" +
+        "<thead><tr><th>Date</th><th>Version</th><th>Status</th><th>Commit</th><th>Branch</th><th>Deploy</th></tr></thead>" +
+        "<tbody>" +
+        htmlRows +
+        "</tbody>" +
+        "</table>";
+    }
+
+    async function runUpdateCheck() {
+      const btn = document.getElementById("checkUpdatesBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span style="opacity:.6">Checking...</span>';
+      }
+
+      const data = await api("/api/updates/status");
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Check for updates';
+      }
+
+      const statusArea = document.getElementById("statusArea");
+      if (!statusArea) return;
+
+      if (data.ok !== true) {
+        const semverWarning = document.getElementById("semverWarning");
+        if (semverWarning) semverWarning.classList.add("hidden");
+        const errMsg =
+          typeof data.error === "string"
+            ? data.error
+            : data.error
+              ? JSON.stringify(data.error)
+              : "Could not load update status";
+        statusArea.innerHTML =
+          '<div class="text-sm" style="padding:.75rem;background:rgba(239,68,68,.12);border-radius:var(--radius);border:1px solid rgba(239,68,68,.25);">' +
+          '<strong style="color:var(--danger);">Updates unavailable</strong><p class="text-muted" style="margin:.35rem 0 0;">' +
+          errMsg +
+          "</p>" +
+          "<p class=\"text-xs text-muted\" style=\"margin:.5rem 0 0;\">Set <span class=\"mono\">GITHUB_TOKEN</span> and <span class=\"mono\">GITHUB_REPO</span> in Netlify (see <span class=\"mono\">.env.example</span>), redeploy, then try again.</p>" +
+          "</div>";
+        toast(errMsg, false);
+        renderUpdateHistory([]);
+        return;
+      }
+
+      statusArea.innerHTML =
+        '<p class="text-sm text-muted">This compares the latest YCode release with the live builder version used by tenant sites.</p>';
+
+      const semverWarning = document.getElementById("semverWarning");
+      const semverLatestLabel = document.getElementById("semverLatestLabel");
+      const semverForkLabel = document.getElementById("semverForkLabel");
+      const semverContextLabel = document.getElementById("semverContextLabel");
+      const upToDate = document.getElementById("upToDate");
+      const upToDateDetail = document.getElementById("upToDateDetail");
+
+      if (data.releaseAheadOfForkPackage && semverWarning && semverLatestLabel && semverForkLabel) {
+        semverLatestLabel.textContent = data.latestReleaseVersion || "—";
+        const deployedVersion = data.deployedPackageVersion;
+        semverForkLabel.textContent = deployedVersion || data.forkPackageVersion || "—";
+        if (semverContextLabel) {
+          if (data.deployCommitRef && deployedVersion) {
+            const short = String(data.deployCommitRef).slice(0, 7);
+            const branch = data.deployBranch ? ", branch " + data.deployBranch : "";
+            semverContextLabel.textContent = "(from Netlify production commit " + short + branch + ").";
+          } else {
+            semverContextLabel.textContent = "";
+          }
+        }
+        semverWarning.classList.remove("hidden");
+      } else if (semverWarning) {
+        semverWarning.classList.add("hidden");
+      }
+
+      if (data.releaseAheadOfForkPackage) {
+        upToDate?.classList.add("hidden");
+      } else {
+        upToDate?.classList.remove("hidden");
+        if (upToDateDetail) {
+          upToDateDetail.textContent = data.deployedPackageVersion
+            ? "Live builder is already on the latest core version."
+            : "No newer core release detected for the live builder.";
+        }
+      }
+
+      renderUpdateHistory(Array.isArray(data.updateHistory) ? data.updateHistory : []);
+    }
+
+    function setApplyUpdateResult(message, ok, opts = {}) {
+      const el = document.getElementById("applyUpdateResult");
+      if (!el) return;
+
+      const lines = [];
+      if (opts.requiresTechAction === true) {
+        lines.push(opts.adminMessage ? String(opts.adminMessage) : "Update paused for technical review.");
+        lines.push("No action needed from platform admin.");
+      } else if (opts.prUrl) {
+        const label = opts.prNumber ? "Open conflict PR #" + opts.prNumber : "Open conflict PR";
+        lines.push("Update paused: one merge conflict needs a one-time fix.");
+        lines.push("Step 1: Open the conflict PR.");
+        lines.push('<a href="' + String(opts.prUrl) + '" target="_blank" rel="noopener noreferrer">' + label + "</a>");
+        lines.push("Step 2: Resolve conflicts and merge that PR on GitHub.");
+        lines.push("Step 3: Return here and click Apply YCode update again.");
+      } else {
+        if (message) lines.push(String(message));
+        if (opts.hint) lines.push(String(opts.hint));
+      }
+
+      if (opts.compareUrl && !opts.prUrl) {
+        lines.push('<a href="' + String(opts.compareUrl) + '" target="_blank" rel="noopener noreferrer">Open compare view</a>');
+      }
+
+      el.innerHTML = lines.join("<br />");
+      el.classList.remove("hidden");
+      if (ok) {
+        el.style.background = "var(--success-bg)";
+        el.style.borderColor = "rgba(34,197,94,.2)";
+        el.style.color = "var(--success)";
+      } else {
+        el.style.background = "rgba(239,68,68,.1)";
+        el.style.borderColor = "rgba(239,68,68,.35)";
+        el.style.color = "var(--danger)";
+      }
+    }
+
+    async function postApplyBuilderUpdate(clearCache) {
+      const data = await api("/api/updates/apply-builder-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clearNetlifyCache: clearCache === true }),
+      });
+
+      if (data.ok === true) {
+        setApplyUpdateResult(data.message || "Update pipeline completed.", true);
+        toast(data.message || "Update pipeline completed.", true);
+        setTimeout(runUpdateCheck, 3000);
+        return;
+      }
+
+      if (data.partial === true) {
+        setApplyUpdateResult(data.message || "Git updated.", true, { hint: data.warning });
+        toast(data.message || "Git updated.", true);
+        if (data.warning) toast(String(data.warning), false);
+        setTimeout(runUpdateCheck, 3000);
+        return;
+      }
+
+      const msg = typeof data.error === "string" ? data.error : data.message || "Apply update failed";
+      setApplyUpdateResult(msg, false, {
+        hint: typeof data.hint === "string" ? data.hint : undefined,
+        adminMessage: typeof data.adminMessage === "string" ? data.adminMessage : undefined,
+        requiresTechAction: data.requiresTechAction === true,
+        compareUrl: typeof data.compareUrl === "string" ? data.compareUrl : undefined,
+        prUrl: typeof data.prUrl === "string" ? data.prUrl : undefined,
+        prNumber: typeof data.prNumber === "number" ? data.prNumber : undefined,
+      });
+      toast(msg, false);
+    }
+
+    document.getElementById("checkUpdatesBtn")?.addEventListener("click", runUpdateCheck);
+    runUpdateCheck();
+
+    const applyBuilderBtn = document.getElementById("applyBuilderUpdateBtn");
+    applyBuilderBtn?.addEventListener("click", async () => {
+      const clear = document.getElementById("applyUpdateClearCache")?.checked === true;
+      if (!confirm("Start YCode core update now?")) return;
+      applyBuilderBtn.disabled = true;
+      applyBuilderBtn.textContent = "Running…";
+      await postApplyBuilderUpdate(clear);
+      applyBuilderBtn.disabled = false;
+      applyBuilderBtn.textContent = "Apply YCode update";
+    });
+
+    const restorePrevBtn = document.getElementById("restorePreviousDeployBtn");
+    restorePrevBtn?.addEventListener("click", async () => {
+      if (!confirm("Restore previous live build now? This changes the live tenant builder immediately.")) return;
+      restorePrevBtn.disabled = true;
+      restorePrevBtn.textContent = "Restoring…";
+      const res = await api("/api/updates/rollback-previous", { method: "POST" });
+      if (res.ok) {
+        setApplyUpdateResult(res.message || "Restored previous deploy.", true);
+        toast(res.message || "Restored previous deploy.", true);
+        setTimeout(runUpdateCheck, 2000);
+      } else {
+        toast(res.error || res.message || "Could not restore", false);
+      }
+      restorePrevBtn.disabled = false;
+      restorePrevBtn.textContent = "Restore previous live build";
     });
 
     const cleanupOrphansBtn = document.getElementById("cleanupOrphansBtn");
