@@ -145,6 +145,18 @@ const cleanupDeletesUnassigned =
     </main>
   </div>
 
+  <div id="historyModal" class="history-modal hidden" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+    <div class="history-modal-backdrop" data-history-modal-close></div>
+    <div class="history-modal-panel">
+      <div class="card-header" style="margin-bottom:.75rem;">
+        <h2 id="historyModalTitle">Update details</h2>
+        <button type="button" class="btn btn-ghost btn-sm" data-history-modal-close>Close</button>
+      </div>
+      <div id="historyModalBody" class="text-sm text-muted" style="line-height:1.65;"></div>
+      <div id="historyModalActions" class="flex hidden" style="gap:.75rem;justify-content:flex-end;margin-top:1rem;"></div>
+    </div>
+  </div>
+
   <div id="toast" style="display:none;position:fixed;right:1rem;bottom:1rem;z-index:9999;padding:.9rem 1.1rem;border-radius:var(--radius);box-shadow:var(--shadow-lg);font-size:.9rem;"></div>
 
   <style>
@@ -173,6 +185,51 @@ const cleanupDeletesUnassigned =
       font-size: .72rem;
       font-weight: 600;
     }
+    .history-actions { position: relative; display: inline-block; }
+    .history-actions-menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + .25rem);
+      min-width: 170px;
+      padding: .35rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      box-shadow: var(--shadow-lg);
+      z-index: 20;
+    }
+    .history-actions-menu.hidden { display: none; }
+    .history-actions-menu button,
+    .history-actions-menu a {
+      display: block;
+      width: 100%;
+      padding: .5rem .65rem;
+      border: 0;
+      border-radius: calc(var(--radius) - 4px);
+      background: transparent;
+      color: var(--text);
+      text-align: left;
+      text-decoration: none;
+      font: inherit;
+      font-size: .8rem;
+      cursor: pointer;
+    }
+    .history-actions-menu button:hover,
+    .history-actions-menu a:hover { background: var(--surface); }
+    .history-actions-menu .danger { color: var(--danger); }
+    .history-modal.hidden { display: none; }
+    .history-modal { position: fixed; inset: 0; z-index: 10000; }
+    .history-modal-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, .48); }
+    .history-modal-panel {
+      position: relative;
+      width: min(560px, calc(100vw - 2rem));
+      margin: 10vh auto 0;
+      padding: 1.25rem;
+      border-radius: var(--radius-lg, 16px);
+      border: 1px solid var(--border);
+      background: var(--card);
+      box-shadow: var(--shadow-lg);
+    }
   </style>
 
   <script define:vars={{ cleanupDeletesUnassigned }}>
@@ -200,6 +257,70 @@ const cleanupDeletesUnassigned =
       window.location.href = "/login";
     });
 
+    document.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+
+      const menuButton = target.closest("[data-history-menu]");
+      if (menuButton instanceof HTMLElement) {
+        const index = menuButton.getAttribute("data-history-menu");
+        const menu = index ? document.getElementById("historyMenu" + index) : null;
+        const willOpen = menu?.classList.contains("hidden");
+        closeHistoryMenus();
+        if (menu && willOpen) menu.classList.remove("hidden");
+        return;
+      }
+
+      const changelogButton = target.closest("[data-history-changelog]");
+      if (changelogButton instanceof HTMLElement) {
+        const row = latestHistoryRows[Number(changelogButton.getAttribute("data-history-changelog"))];
+        closeHistoryMenus();
+        if (row) showChangelog(row);
+        return;
+      }
+
+      const restoreButton = target.closest("[data-history-restore]");
+      if (restoreButton instanceof HTMLElement) {
+        const row = latestHistoryRows[Number(restoreButton.getAttribute("data-history-restore"))];
+        closeHistoryMenus();
+        if (row) showRestoreWarning(row);
+        return;
+      }
+
+      const confirmRestoreButton = target.closest("[data-confirm-history-restore]");
+      if (confirmRestoreButton instanceof HTMLElement) {
+        const deployId = confirmRestoreButton.getAttribute("data-confirm-history-restore");
+        if (deployId) {
+          confirmRestoreButton.setAttribute("disabled", "true");
+          confirmRestoreButton.textContent = "Restoring...";
+          await restoreHistoryBuild(deployId);
+        }
+        return;
+      }
+
+      if (target.closest("[data-history-modal-close]")) {
+        closeHistoryModal();
+        return;
+      }
+
+      if (!target.closest(".history-actions")) closeHistoryMenus();
+    });
+
+    let latestHistoryRows = [];
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replaceAll("`", "&#096;");
+    }
+
     function formatHistoryDate(value) {
       if (!value) return "—";
       const d = new Date(value);
@@ -216,28 +337,38 @@ const cleanupDeletesUnassigned =
         return;
       }
 
+      latestHistoryRows = rows;
       const htmlRows = rows
-        .map((row) => {
+        .map((row, index) => {
           const commit = row.commitRef ? String(row.commitRef).slice(0, 7) : "—";
           const version = row.version || "—";
           const state = row.status === "live"
             ? '<span class="history-badge-live">Live</span>'
             : "Previous";
           const restoreNote = row.republished
-            ? '<div class="text-xs text-muted" style="margin-top:.25rem;">Restored/republished from build created ' + formatHistoryDate(row.originalDeployDate) + "</div>"
+            ? '<div class="text-xs text-muted" style="margin-top:.25rem;">Restored/republished from build created ' + escapeHtml(formatHistoryDate(row.originalDeployDate)) + "</div>"
             : "";
           const branch = row.branch || "—";
-          const link = row.deployUrl
-            ? '<a href="' + String(row.deployUrl) + '" target="_blank" rel="noopener noreferrer">View</a>'
-            : "—";
+          const previewAction = row.deployUrl
+            ? '<a href="' + escapeAttr(row.deployUrl) + '" target="_blank" rel="noopener noreferrer">Open build preview</a>'
+            : "";
+          const restoreAction = row.status === "live"
+            ? ""
+            : '<button type="button" class="danger" data-history-restore="' + index + '">Restore this build</button>';
           return (
             "<tr>" +
-            "<td>" + formatHistoryDate(row.date) + restoreNote + "</td>" +
-            "<td>" + version + "</td>" +
+            "<td>" + escapeHtml(formatHistoryDate(row.date)) + restoreNote + "</td>" +
+            "<td>" + escapeHtml(version) + "</td>" +
             "<td>" + state + "</td>" +
-            "<td class=\"mono\">" + commit + "</td>" +
-            "<td>" + branch + "</td>" +
-            "<td>" + link + "</td>" +
+            "<td class=\"mono\">" + escapeHtml(commit) + "</td>" +
+            "<td>" + escapeHtml(branch) + "</td>" +
+            '<td><div class="history-actions">' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-history-menu="' + index + '">Actions</button>' +
+            '<div class="history-actions-menu hidden" id="historyMenu' + index + '">' +
+            previewAction +
+            '<button type="button" data-history-changelog="' + index + '">Changelog</button>' +
+            restoreAction +
+            "</div></div></td>" +
             "</tr>"
           );
         })
@@ -245,11 +376,79 @@ const cleanupDeletesUnassigned =
 
       area.innerHTML =
         "<table class=\"history-table\">" +
-        "<thead><tr><th>Date</th><th>Version</th><th>Status</th><th>Commit</th><th>Branch</th><th>Deploy</th></tr></thead>" +
+        "<thead><tr><th>Date</th><th>Version</th><th>Status</th><th>Commit</th><th>Branch</th><th>Actions</th></tr></thead>" +
         "<tbody>" +
         htmlRows +
         "</tbody>" +
         "</table>";
+    }
+
+    function closeHistoryMenus() {
+      document.querySelectorAll(".history-actions-menu").forEach((menu) => menu.classList.add("hidden"));
+    }
+
+    function closeHistoryModal() {
+      document.getElementById("historyModal")?.classList.add("hidden");
+      const actions = document.getElementById("historyModalActions");
+      if (actions) {
+        actions.classList.add("hidden");
+        actions.innerHTML = "";
+      }
+    }
+
+    function showHistoryModal(title, bodyHtml, actionsHtml) {
+      const modal = document.getElementById("historyModal");
+      const modalTitle = document.getElementById("historyModalTitle");
+      const body = document.getElementById("historyModalBody");
+      const actions = document.getElementById("historyModalActions");
+      if (!modal || !modalTitle || !body || !actions) return;
+      modalTitle.textContent = title;
+      body.innerHTML = bodyHtml;
+      actions.innerHTML = actionsHtml || "";
+      actions.classList.toggle("hidden", !actionsHtml);
+      modal.classList.remove("hidden");
+    }
+
+    function showChangelog(row) {
+      const items = Array.isArray(row.changelog) && row.changelog.length > 0
+        ? row.changelog
+        : ["This build updated the builder code."];
+      const details = [
+        "<p style=\"margin-top:0;\"><strong>What changed in this build?</strong></p>",
+        "<ul>" + items.map((item) => "<li>" + escapeHtml(item) + "</li>").join("") + "</ul>",
+        '<p class="text-xs text-muted">Build: <span class="mono">' + escapeHtml(row.commitRef ? String(row.commitRef).slice(0, 7) : row.id) + "</span></p>",
+      ].join("");
+      showHistoryModal("Changelog", details, "");
+    }
+
+    function showRestoreWarning(row) {
+      const buildLabel = row.commitRef ? String(row.commitRef).slice(0, 7) : row.id;
+      const body = [
+        '<p style="margin-top:0;color:var(--danger);font-weight:600;">You are about to restore a previous builder build.</p>',
+        "<p>This will switch the live MasjidWeb builder to the selected build. Tenant sites may start serving this version shortly after confirmation.</p>",
+        '<p><strong>Selected build:</strong> <span class="mono">' + escapeHtml(buildLabel) + "</span></p>",
+        "<p><strong>Published:</strong> " + escapeHtml(formatHistoryDate(row.date)) + "</p>",
+        "<p>Please only continue if the latest build is broken or you intentionally want to roll back.</p>",
+      ].join("");
+      const actions =
+        '<button type="button" class="btn btn-ghost" data-history-modal-close>Cancel</button>' +
+        '<button type="button" class="btn btn-primary" data-confirm-history-restore="' + escapeAttr(row.id) + '">Yes, restore this build</button>';
+      showHistoryModal("Restore previous build?", body, actions);
+    }
+
+    async function restoreHistoryBuild(deployId) {
+      const data = await api("/api/updates/rollback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deployId }),
+      });
+      if (data.ok) {
+        toast(data.message || "Build restored.", true);
+        closeHistoryModal();
+        await runUpdateCheck();
+      } else {
+        toast(data.error || data.message || "Could not restore build", false);
+      }
     }
 
     async function runUpdateCheck() {

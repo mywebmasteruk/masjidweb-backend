@@ -11,6 +11,7 @@ import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 import { githubProductionBranch } from "../../../lib/updates-env";
 
 type UpdateHistoryRow = {
+  id: string;
   date: string | null;
   originalDeployDate: string | null;
   version: string | null;
@@ -18,6 +19,8 @@ type UpdateHistoryRow = {
   branch: string | null;
   commitRef: string | null;
   deployUrl: string;
+  title: string | null;
+  changelog: string[];
   republished: boolean;
 };
 
@@ -27,6 +30,26 @@ function wasRepublished(createdAt: string | null, publishedAt: string | null): b
   const published = new Date(publishedAt).getTime();
   if (Number.isNaN(created) || Number.isNaN(published)) return false;
   return published - created > 5 * 60 * 1000;
+}
+
+function plainEnglishChangelog(title: string | null, republished: boolean): string[] {
+  const firstLine = title?.split("\n").map((line) => line.trim()).find(Boolean) ?? null;
+  const normalized = firstLine
+    ?.replace(/^(feat|fix|chore|docs|refactor|test|build|ci|perf)(\([^)]+\))?:\s*/i, "")
+    .replace(/^Merge\s+/i, "Merged ");
+
+  const items: string[] = [];
+  if (normalized) {
+    items.push(normalized.charAt(0).toUpperCase() + normalized.slice(1));
+  } else {
+    items.push("This build updated the builder code.");
+  }
+
+  if (republished) {
+    items.push("This build was restored or republished after it was originally created.");
+  }
+
+  return items;
 }
 
 export const GET: APIRoute = async (context) => {
@@ -86,7 +109,9 @@ export const GET: APIRoute = async (context) => {
                 version = null;
               }
             }
+            const republished = wasRepublished(d.createdAt ?? null, d.publishedAt ?? null);
             return {
+              id: d.id,
               date: d.publishedAt ?? d.createdAt ?? null,
               originalDeployDate: d.createdAt ?? null,
               version,
@@ -94,7 +119,9 @@ export const GET: APIRoute = async (context) => {
               branch: d.branch,
               commitRef: d.commitRef,
               deployUrl: d.deployUrl,
-              republished: wasRepublished(d.createdAt ?? null, d.publishedAt ?? null),
+              title: d.title,
+              changelog: plainEnglishChangelog(d.title, republished),
+              republished,
             };
           }),
         );

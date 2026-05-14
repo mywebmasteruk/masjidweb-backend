@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
-import { publishDeploy } from "../../../lib/netlify-deploys";
+import { listRecentDeploys, publishDeploy } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 
 export const POST: APIRoute = async (context) => {
@@ -36,8 +36,26 @@ export const POST: APIRoute = async (context) => {
   }
 
   try {
+    const deploys = await listRecentDeploys(token, siteId, 25);
+    const current = deploys.find((d) => d.isCurrent);
+    const target = deploys.find((d) => d.id === deployId);
+
+    if (!target || target.state !== "ready") {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Selected build is not a recent ready deploy." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (current?.branch && target.branch !== current.branch) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Selected build is not from the current production branch." }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     const result = await publishDeploy(token, siteId, deployId);
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify({ ...result, restoredDeployId: target.id }), {
       status: result.ok ? 200 : 500,
       headers: { "Content-Type": "application/json" },
     });
