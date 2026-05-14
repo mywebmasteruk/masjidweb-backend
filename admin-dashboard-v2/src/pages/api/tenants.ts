@@ -2,14 +2,81 @@ import type { APIRoute } from "astro";
 import { z } from "zod";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { getServiceSupabase } from "../../lib/supabase-server";
+import { cleanupOrphanDomainAliases } from "../../lib/netlify-domain-reconcile";
 import { removeDomainAlias } from "../../lib/netlify-domains";
 import { readServerEnv } from "../../lib/server-env";
-import { deleteTenantScopedData } from "../../lib/tenant-delete-data";
+import {
+  deleteAuthUsersForMissingTenants,
+  deleteTenantScopedData,
+} from "../../lib/tenant-delete-data";
 
 const patchTenantSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(["deactivated", "active"]),
 });
+
+function envFlagEnabled(value: unknown): boolean {
+  return value === "true" || value === "1" || String(value ?? "").toLowerCase() === "yes";
+}
+
+function authCleanupOptions() {
+  const rawPreserve = String(import.meta.env.AUTH_CLEANUP_PRESERVE_AUTH_EMAILS ?? "");
+  return {
+    deleteFullyUnassigned: envFlagEnabled(import.meta.env.AUTH_CLEANUP_DELETE_UNASSIGNED),
+    preserveEmails: new Set(
+      rawPreserve
+        .split(",")
+        .map((e: string) => e.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  };
+}
+
+async function cleanupAfterTenantDelete(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  warnings: string[],
+): Promise<{ orphanRowsRemoved: number; orphanSubdomainsRemoved?: number; authUsersRemoved: number; authUsersRepaired: number; authUsersRemovedUnassigned: number }> {
+  let orphanRowsRemoved = 0;
+  const { data: removedRows, error: cleanupRowsError } = await supabase.rpc("cleanup_orphan_tenant_rows");
+  if (cleanupRowsError) {
+    warnings.push(`Orphan row cleanup: ${cleanupRowsError.message}`);
+  } else if (Array.isArray(removedRows)) {
+    orphanRowsRemoved = removedRows.reduce(
+      (sum, row) => sum + (Number(row.removed) || 0),
+      0,
+    );
+  }
+
+  const auth = await deleteAuthUsersForMissingTenants(supabase, warnings, authCleanupOptions());
+
+  let orphanSubdomainsRemoved: number | undefined;
+  const netlifyToken = readServerEnv("NETLIFY_AUTH_TOKEN");
+  const siteId = readServerEnv("NETLIFY_SITE_ID");
+  const domainSuffix = readServerEnv("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
+  if (netlifyToken && siteId) {
+    try {
+      const result = await cleanupOrphanDomainAliases({
+        supabase,
+        netlifyToken,
+        siteId,
+        domainSuffix,
+      });
+      orphanSubdomainsRemoved = result.removedAliases.length;
+    } catch (err) {
+      warnings.push(
+        `Orphan subdomain cleanup: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  return {
+    orphanRowsRemoved,
+    orphanSubdomainsRemoved,
+    authUsersRemoved: auth.removed,
+    authUsersRepaired: auth.repaired,
+    authUsersRemovedUnassigned: auth.removedUnassigned,
+  };
+}
 
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -164,8 +231,14 @@ export const DELETE: APIRoute = async (context) => {
     });
   }
 
+  const cleanup = await cleanupAfterTenantDelete(supabase, warnings);
+
   return new Response(
-    JSON.stringify({ ok: true, warnings: warnings.length ? warnings : undefined }),
+    JSON.stringify({
+      ok: true,
+      cleanup,
+      warnings: warnings.length ? warnings : undefined,
+    }),
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
 };
