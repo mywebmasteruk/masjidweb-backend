@@ -66,8 +66,12 @@ export async function listRecentDeploys(
 export function findPreviousReadyDeploy(deploys: DeployInfo[]): DeployInfo | undefined {
   const curIdx = deploys.findIndex((d) => d.isCurrent);
   if (curIdx < 0) return undefined;
+
+  const current = deploys[curIdx];
   for (let i = curIdx + 1; i < deploys.length; i++) {
-    if (deploys[i].state === "ready") return deploys[i];
+    if (deploys[i].state === "ready" && deploys[i].branch === current.branch) {
+      return deploys[i];
+    }
   }
   return undefined;
 }
