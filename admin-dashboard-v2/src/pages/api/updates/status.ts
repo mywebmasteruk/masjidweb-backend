@@ -12,12 +12,22 @@ import { githubProductionBranch } from "../../../lib/updates-env";
 
 type UpdateHistoryRow = {
   date: string | null;
+  originalDeployDate: string | null;
   version: string | null;
   status: "live" | "previous";
   branch: string | null;
   commitRef: string | null;
   deployUrl: string;
+  republished: boolean;
 };
+
+function wasRepublished(createdAt: string | null, publishedAt: string | null): boolean {
+  if (!createdAt || !publishedAt) return false;
+  const created = new Date(createdAt).getTime();
+  const published = new Date(publishedAt).getTime();
+  if (Number.isNaN(created) || Number.isNaN(published)) return false;
+  return published - created > 5 * 60 * 1000;
+}
 
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -78,11 +88,13 @@ export const GET: APIRoute = async (context) => {
             }
             return {
               date: d.publishedAt ?? d.createdAt ?? null,
+              originalDeployDate: d.createdAt ?? null,
               version,
               status: d.isCurrent ? "live" : "previous",
               branch: d.branch,
               commitRef: d.commitRef,
               deployUrl: d.deployUrl,
+              republished: wasRepublished(d.createdAt ?? null, d.publishedAt ?? null),
             };
           }),
         );

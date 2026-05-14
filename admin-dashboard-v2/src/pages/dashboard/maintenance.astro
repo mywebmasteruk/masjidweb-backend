@@ -223,13 +223,16 @@ const cleanupDeletesUnassigned =
           const state = row.status === "live"
             ? '<span class="history-badge-live">Live</span>'
             : "Previous";
+          const restoreNote = row.republished
+            ? '<div class="text-xs text-muted" style="margin-top:.25rem;">Restored/republished from build created ' + formatHistoryDate(row.originalDeployDate) + "</div>"
+            : "";
           const branch = row.branch || "—";
           const link = row.deployUrl
             ? '<a href="' + String(row.deployUrl) + '" target="_blank" rel="noopener noreferrer">View</a>'
             : "—";
           return (
             "<tr>" +
-            "<td>" + formatHistoryDate(row.date) + "</td>" +
+            "<td>" + formatHistoryDate(row.date) + restoreNote + "</td>" +
             "<td>" + version + "</td>" +
             "<td>" + state + "</td>" +
             "<td class=\"mono\">" + commit + "</td>" +
