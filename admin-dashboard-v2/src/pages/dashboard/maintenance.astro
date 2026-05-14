@@ -106,7 +106,7 @@ const cleanupDeletesUnassigned =
           <h2>Recent update history</h2>
         </div>
         <div id="historyArea" class="history-wrap">
-          <p class="text-sm text-muted" style="margin:0;">Checking recent updates...</p>
+          <p class="text-sm text-muted" style="margin:0;">Click "Check for updates" to load recent update history.</p>
         </div>
       </div>
 
@@ -400,7 +400,6 @@ const cleanupDeletesUnassigned =
     }
 
     document.getElementById("checkUpdatesBtn")?.addEventListener("click", runUpdateCheck);
-    runUpdateCheck();
 
     const applyBuilderBtn = document.getElementById("applyBuilderUpdateBtn");
     applyBuilderBtn?.addEventListener("click", async () => {
