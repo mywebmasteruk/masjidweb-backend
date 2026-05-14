@@ -75,6 +75,9 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
         <button type="button" id="cleanupOrphansBtn" class="btn btn-ghost btn-sm" title="Remove CMS rows whose tenant no longer exists">
           Cleanup orphan rows
         </button>
+        <button type="button" id="cleanupDomainAliasesBtn" class="btn btn-ghost btn-sm" title="Remove Netlify tenant subdomains whose tenant no longer exists">
+          Cleanup orphan subdomains
+        </button>
         <button id="toggleFormBtn" class="btn btn-primary">
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
           New tenant
@@ -1018,6 +1021,48 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       toast(err.message || "Cleanup failed", false);
     } finally {
       cleanupOrphansBtn.disabled = false;
+    }
+  });
+
+  const cleanupDomainAliasesBtn = document.getElementById("cleanupDomainAliasesBtn");
+  cleanupDomainAliasesBtn?.addEventListener("click", async () => {
+    cleanupDomainAliasesBtn.disabled = true;
+    try {
+      const previewRes = await fetch("/api/cleanup-domain-aliases");
+      const preview = await previewRes.json();
+      if (!preview.ok) {
+        toast(preview.error || "Subdomain preview failed", false);
+        return;
+      }
+
+      const aliases = Array.isArray(preview.orphanAliases) ? preview.orphanAliases : [];
+      if (aliases.length === 0) {
+        toast("No orphan subdomains found", true);
+        return;
+      }
+
+      const list = aliases.slice(0, 20).join("\n");
+      const more = aliases.length > 20 ? "\n...and " + (aliases.length - 20) + " more" : "";
+      if (!confirm("Remove these orphan Netlify tenant subdomains?\n\n" + list + more)) return;
+
+      const cleanupRes = await fetch("/api/cleanup-domain-aliases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aliases }),
+      });
+      const cleanup = await cleanupRes.json();
+      if (cleanup.ok) {
+        const removedAliases = Array.isArray(cleanup.removed) ? cleanup.removed : [];
+        const skippedAliases = Array.isArray(cleanup.skipped) ? cleanup.skipped : [];
+        const skipped = skippedAliases.length ? "; skipped: " + skippedAliases.length : "";
+        toast("Subdomain cleanup done: removed " + removedAliases.length + skipped, true);
+      } else {
+        toast(cleanup.error || "Subdomain cleanup failed", false);
+      }
+    } catch (err) {
+      toast(err.message || "Subdomain cleanup failed", false);
+    } finally {
+      cleanupDomainAliasesBtn.disabled = false;
     }
   });
 

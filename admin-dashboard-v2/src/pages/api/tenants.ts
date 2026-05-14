@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isAuthorized } from "../../lib/auth-helpers";
 import { getServiceSupabase } from "../../lib/supabase-server";
 import { removeDomainAlias } from "../../lib/netlify-domains";
+import { readServerEnv } from "../../lib/server-env";
 import { deleteTenantScopedData } from "../../lib/tenant-delete-data";
 
 const patchTenantSchema = z.object({
@@ -136,15 +137,17 @@ export const DELETE: APIRoute = async (context) => {
   }
 
   const warnings: string[] = [];
-  const netlifyToken = import.meta.env.NETLIFY_AUTH_TOKEN as string | undefined;
-  const siteId = import.meta.env.NETLIFY_SITE_ID as string | undefined;
-  const domainSuffix = import.meta.env.TENANT_DOMAIN_SUFFIX || "masjidweb.com";
+  const netlifyToken = readServerEnv("NETLIFY_AUTH_TOKEN");
+  const siteId = readServerEnv("NETLIFY_SITE_ID");
+  const domainSuffix = readServerEnv("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
 
   if (netlifyToken && siteId && tenant.slug) {
+    const hostname = `${tenant.slug}.${domainSuffix}`;
     try {
-      await removeDomainAlias(netlifyToken, siteId, `${tenant.slug}.${domainSuffix}`);
+      await removeDomainAlias(netlifyToken, siteId, hostname);
     } catch (err) {
-      warnings.push(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      warnings.push(`Subdomain cleanup pending for ${hostname}: ${message}`);
     }
   }
 

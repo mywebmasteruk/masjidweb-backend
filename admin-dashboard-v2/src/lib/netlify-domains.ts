@@ -20,7 +20,7 @@ interface SiteInfo {
   custom_domain: string | null;
 }
 
-async function getSiteAliases(
+export async function listDomainAliases(
   token: string,
   siteId: string,
 ): Promise<string[]> {
@@ -39,7 +39,7 @@ export async function addDomainAlias(
   siteId: string,
   hostname: string,
 ): Promise<void> {
-  const existing = await getSiteAliases(token, siteId);
+  const existing = await listDomainAliases(token, siteId);
   const lower = hostname.toLowerCase();
 
   if (existing.some((a) => a.toLowerCase() === lower)) {
@@ -59,19 +59,19 @@ export async function addDomainAlias(
   }
 }
 
-export async function removeDomainAlias(
+export async function removeDomainAliases(
   token: string,
   siteId: string,
-  hostname: string,
-): Promise<void> {
-  const existing = await getSiteAliases(token, siteId);
-  const lower = hostname.toLowerCase();
-  const filtered = existing.filter((a) => a.toLowerCase() !== lower);
+  hostnames: string[],
+): Promise<string[]> {
+  const existing = await listDomainAliases(token, siteId);
+  const removeSet = new Set(hostnames.map((h) => h.toLowerCase()));
+  if (removeSet.size === 0) return [];
 
-  if (filtered.length === existing.length) {
-    return; // alias wasn't present
-  }
+  const removed = existing.filter((a) => removeSet.has(a.toLowerCase()));
+  if (removed.length === 0) return [];
 
+  const filtered = existing.filter((a) => !removeSet.has(a.toLowerCase()));
   const res = await fetch(`${API}/sites/${siteId}`, {
     method: "PATCH",
     headers: authHeaders(token),
@@ -80,6 +80,16 @@ export async function removeDomainAlias(
 
   if (!res.ok && res.status !== 404) {
     const text = await res.text();
-    throw new Error(`Netlify remove domain alias failed: ${res.status} ${text}`);
+    throw new Error(`Netlify remove domain aliases failed: ${res.status} ${text}`);
   }
+
+  return removed;
+}
+
+export async function removeDomainAlias(
+  token: string,
+  siteId: string,
+  hostname: string,
+): Promise<void> {
+  await removeDomainAliases(token, siteId, [hostname]);
 }
