@@ -51,6 +51,17 @@ export type SendTenantAuthLinkResult =
       message: string;
     };
 
+export function buildTenantAuthRedirectUrls(siteUrl: string): {
+  invite: string;
+  magicLink: string;
+} {
+  const acceptInviteUrl = `${siteUrl}/ycode/accept-invite`;
+  return {
+    invite: acceptInviteUrl,
+    magicLink: acceptInviteUrl,
+  };
+}
+
 /**
  * Sends a tenant admin sign-in path on the tenant subdomain (not apex only).
  * New users: invite email → redirect …/ycode/accept-invite (set password).
@@ -77,14 +88,9 @@ export async function sendTenantAuthLink(
 
   const slug = tenant.slug as string;
   const siteUrl = `https://${slug}.${domainSuffix}`;
-  const redirectInviteTo = `${siteUrl}/ycode/accept-invite`;
-  /**
-   * Same tenant origin as `siteUrl`. Must use the server callback route: magic links open in a
-   * fresh browser context with no PKCE code_verifier, so client-side `exchangeCodeForSession` on
-   * `/ycode?code=` fails and users stay on the login screen. `/ycode/api/auth/callback` exchanges
-   * the code and sets cookies (see Next.js route).
-   */
-  const redirectMagicLinkTo = `${siteUrl}/ycode/api/auth/callback`;
+  const redirectUrls = buildTenantAuthRedirectUrls(siteUrl);
+  const redirectInviteTo = redirectUrls.invite;
+  const redirectMagicLinkTo = redirectUrls.magicLink;
 
   const fromRegistry = tenant.email
     ? normalizeProvisioningEmail(String(tenant.email))
