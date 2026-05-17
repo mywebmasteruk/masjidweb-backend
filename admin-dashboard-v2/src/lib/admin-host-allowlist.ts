@@ -9,7 +9,7 @@ export function isDashboardAllowedHost(
   tenantDomainSuffix: string,
 ): boolean {
   const host = (hostHeader?.split(":")[0] ?? "").toLowerCase().trim();
-  if (!host) return true;
+  if (!host) return false;
 
   const suffix = tenantDomainSuffix.toLowerCase().replace(/^\./, "");
 

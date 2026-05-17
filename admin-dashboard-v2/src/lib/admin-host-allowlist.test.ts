@@ -27,4 +27,9 @@ describe("isDashboardAllowedHost", () => {
     expect(isDashboardAllowedHost("masjidemo1.masjidweb.com", suffix)).toBe(false);
     expect(isDashboardAllowedHost("foo-bar.masjidweb.com", suffix)).toBe(false);
   });
+
+  it("rejects missing host headers", () => {
+    expect(isDashboardAllowedHost(null, suffix)).toBe(false);
+    expect(isDashboardAllowedHost("", suffix)).toBe(false);
+  });
 });

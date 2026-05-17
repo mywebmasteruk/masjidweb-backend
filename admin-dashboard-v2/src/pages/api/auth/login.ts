@@ -1,8 +1,22 @@
 import type { APIRoute } from "astro";
+import { isAdminPasswordMatch } from "../../../lib/admin-password";
+import { adminLoginRateLimiter, getLoginClientKey } from "../../../lib/login-rate-limit";
 import { createSessionToken, serializeSessionCookie } from "../../../lib/session";
 
 export const POST: APIRoute = async ({ request }) => {
   try {
+    const clientKey = getLoginClientKey(request);
+    const limit = adminLoginRateLimiter.check(clientKey);
+    if (!limit.allowed) {
+      return new Response(JSON.stringify({ ok: false, error: "Too many login attempts" }), {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(limit.retryAfterSeconds),
+        },
+      });
+    }
+
     const contentType = request.headers.get("content-type") ?? "";
     let password = "";
     if (contentType.includes("application/json")) {
@@ -14,7 +28,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const expected = import.meta.env.DASHBOARD_ADMIN_PASSWORD;
-    if (!expected || password !== expected) {
+    if (!isAdminPasswordMatch(expected, password)) {
       return new Response(JSON.stringify({ ok: false, error: "Invalid password" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -28,6 +42,8 @@ export const POST: APIRoute = async ({ request }) => {
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
+
+    adminLoginRateLimiter.reset(clientKey);
 
     const token = await createSessionToken();
     return new Response(JSON.stringify({ ok: true }), {
