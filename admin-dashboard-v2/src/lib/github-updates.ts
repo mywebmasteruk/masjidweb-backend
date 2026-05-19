@@ -294,6 +294,8 @@ export interface SyncPR {
   base: string;
   state: string;
   createdAt: string;
+  isDraft: boolean;
+  labels: string[];
   /** false = branch has merge conflicts with base */
   mergeable: boolean | null;
   /** GitHub: clean | unstable | dirty | blocked | unknown */
@@ -328,6 +330,8 @@ export async function listSyncPRs(
       title: string;
       base: { ref: string };
       state: string;
+      draft?: boolean;
+      labels?: { name?: string }[];
       created_at: string;
       mergeable: boolean | null;
       mergeable_state?: string | null;
@@ -359,6 +363,8 @@ export async function listSyncPRs(
         base: pr.base.ref,
         state: pr.state,
         createdAt: pr.created_at,
+        isDraft: pr.draft === true,
+        labels: (pr.labels ?? []).map((label) => label.name).filter((label): label is string => Boolean(label)),
         mergeable,
         mergeableState,
         ciStatus: ci,

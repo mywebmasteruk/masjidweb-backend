@@ -5,6 +5,7 @@ import {
   fetchPackageJsonVersion,
   getReleaseSemverVsFork,
   getUpdateStatus,
+  listSyncPRs,
 } from "../../../lib/github-updates";
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
@@ -71,9 +72,11 @@ export const GET: APIRoute = async (context) => {
   }
 
   try {
-    const [status, semver] = await Promise.all([
+    const productionBranch = githubProductionBranch();
+    const [status, semver, syncPRs] = await Promise.all([
       getUpdateStatus(token, repo),
-      getReleaseSemverVsFork(token, repo, githubProductionBranch()),
+      getReleaseSemverVsFork(token, repo, productionBranch),
+      listSyncPRs(token, repo, [productionBranch]),
     ]);
 
     let deployedPackageVersion: string | null = null;
@@ -147,6 +150,27 @@ export const GET: APIRoute = async (context) => {
         compareVersions(semver.forkPackageVersion, deployedPackageVersion) > 0,
     );
 
+    const safeUpdatePr = syncPRs
+      .filter((pr) =>
+        pr.labels.includes("safe-ycode-update") ||
+        pr.title.toLowerCase().includes("ycode") ||
+        pr.title.toLowerCase().includes("safe update"),
+      )
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null;
+
+    const activeSafeUpdate = safeUpdatePr
+      ? {
+          number: safeUpdatePr.number,
+          title: safeUpdatePr.title,
+          url: safeUpdatePr.htmlUrl,
+          isDraft: safeUpdatePr.isDraft,
+          mergeable: safeUpdatePr.mergeable,
+          mergeableState: safeUpdatePr.mergeableState,
+          ciStatus: safeUpdatePr.ciStatus,
+          labels: safeUpdatePr.labels,
+        }
+      : null;
+
     const payload = {
       ok: true,
       ...status,
@@ -156,6 +180,7 @@ export const GET: APIRoute = async (context) => {
       deployCommitRef,
       deployBranch,
       gitAheadOfDeployed,
+      activeSafeUpdate,
       updateHistory,
     };
 
