@@ -39,7 +39,7 @@ const cleanupDeletesUnassigned =
     <main class="main">
       <div style="margin-bottom:1.5rem;">
         <h1>Maintenance</h1>
-        <p class="page-desc" style="margin-bottom:0;">Run safe platform updates, rollbacks, and cleanup jobs from one place.</p>
+        <p class="page-desc" style="margin-bottom:0;">Prepare safe platform updates, rollbacks, and cleanup jobs from one place.</p>
       </div>
 
       <div class="card">
@@ -53,7 +53,7 @@ const cleanupDeletesUnassigned =
 
         <div id="statusArea" style="margin-bottom:1rem;">
           <div class="status-placeholder">
-            <p class="text-sm text-muted">Click "Check for updates" to see if new YCode versions are available.</p>
+            <p class="text-sm text-muted">Checking for safe YCode updates...</p>
           </div>
         </div>
 
@@ -65,7 +65,7 @@ const cleanupDeletesUnassigned =
               <p class="text-xs text-muted" style="margin:.35rem 0 0;">
                 Latest <span class="mono">ycode/ycode</span> release is <strong id="semverLatestLabel">—</strong>. Published production build reports <strong id="semverForkLabel">—</strong> <span id="semverContextLabel"></span>.
               </p>
-              <p class="text-xs text-muted" style="margin:.5rem 0 0;">Click <strong>Apply YCode update</strong> below to start the update.</p>
+              <p class="text-xs text-muted" style="margin:.5rem 0 0;">Click <strong>Prepare safe update</strong> below to create a reviewed update. Production will not change immediately.</p>
             </div>
           </div>
         </div>
@@ -86,16 +86,10 @@ const cleanupDeletesUnassigned =
           <h2>Builder from admin</h2>
         </div>
         <p class="text-xs text-muted" style="margin:-0.5rem 0 1rem;">
-          Click <strong>Apply YCode update</strong> to update core automatically. If a deploy breaks tenant sites, click <strong>Restore previous live build</strong>.
+          Click <strong>Prepare safe update</strong> to start the reviewed update process. Production only changes after the safe update is reviewed and merged.
         </p>
-        <div class="flex" style="flex-wrap:wrap;gap:.75rem;align-items:center;margin-bottom:.75rem;">
-          <label class="text-xs text-muted" style="display:inline-flex;align-items:center;gap:.35rem;cursor:pointer;">
-            <input type="checkbox" id="applyUpdateClearCache" />
-            Clear Netlify build cache
-          </label>
-        </div>
         <div class="flex" style="flex-wrap:wrap;gap:.75rem;">
-          <button type="button" id="applyBuilderUpdateBtn" class="btn btn-primary">Apply YCode update</button>
+          <button type="button" id="applyBuilderUpdateBtn" class="btn btn-primary">Prepare safe update</button>
           <button type="button" id="restorePreviousDeployBtn" class="btn btn-ghost">Restore previous live build</button>
         </div>
         <div id="applyUpdateResult" class="hidden text-xs" style="margin-top:.75rem;padding:.75rem;border-radius:var(--radius);border:1px solid var(--border);"></div>
@@ -106,7 +100,7 @@ const cleanupDeletesUnassigned =
           <h2>Recent update history</h2>
         </div>
         <div id="historyArea" class="history-wrap">
-          <p class="text-sm text-muted" style="margin:0;">Click "Check for updates" to load recent update history.</p>
+          <p class="text-sm text-muted" style="margin:0;">Recent live builder deploys load with the update check.</p>
         </div>
       </div>
 
@@ -551,29 +545,38 @@ const cleanupDeletesUnassigned =
       const statusArea = document.getElementById("statusArea");
       if (!statusArea) return;
 
+      const adminState = data.adminState || {
+        title: data.ok === true && data.releaseAheadOfForkPackage ? "Update available" : data.ok === true ? "Up to date" : "Update status unavailable",
+        description: data.ok === true && data.releaseAheadOfForkPackage
+          ? "A safe YCode update can be prepared. Production will not change immediately."
+          : data.ok === true
+            ? "The live builder is already using the latest known YCode core version."
+            : "The admin dashboard could not read update status. Live tenant sites are unchanged.",
+        actionLabel: "Prepare safe update",
+        canPrepare: data.ok === true && data.releaseAheadOfForkPackage === true,
+      };
+      const applyButton = document.getElementById("applyBuilderUpdateBtn");
+      if (applyButton) {
+        applyButton.textContent = adminState.actionLabel;
+        applyButton.disabled = !adminState.canPrepare;
+      }
+
       if (data.ok !== true) {
         const semverWarning = document.getElementById("semverWarning");
         if (semverWarning) semverWarning.classList.add("hidden");
-        const errMsg =
-          typeof data.error === "string"
-            ? data.error
-            : data.error
-              ? JSON.stringify(data.error)
-              : "Could not load update status";
         statusArea.innerHTML =
           '<div class="text-sm" style="padding:.75rem;background:rgba(239,68,68,.12);border-radius:var(--radius);border:1px solid rgba(239,68,68,.25);">' +
-          '<strong style="color:var(--danger);">Updates unavailable</strong><p class="text-muted" style="margin:.35rem 0 0;">' +
-          errMsg +
+          '<strong style="color:var(--danger);">' + escapeHtml(adminState.title) + '</strong><p class="text-muted" style="margin:.35rem 0 0;">' +
+          escapeHtml(adminState.description) +
           "</p>" +
-          "<p class=\"text-xs text-muted\" style=\"margin:.5rem 0 0;\">Set <span class=\"mono\">GITHUB_TOKEN</span> and <span class=\"mono\">GITHUB_REPO</span> in Netlify (see <span class=\"mono\">.env.example</span>), redeploy, then try again.</p>" +
           "</div>";
-        toast(errMsg, false);
+        toast(adminState.description, false);
         renderUpdateHistory([]);
         return;
       }
 
       statusArea.innerHTML =
-        '<p class="text-sm text-muted">This compares the latest YCode release with the live builder version used by tenant sites.</p>';
+        '<p class="text-sm text-muted"><strong>' + escapeHtml(adminState.title) + '.</strong> ' + escapeHtml(adminState.description) + '</p>';
 
       const semverWarning = document.getElementById("semverWarning");
       const semverLatestLabel = document.getElementById("semverLatestLabel");
@@ -651,37 +654,25 @@ const cleanupDeletesUnassigned =
       }
     }
 
-    async function postApplyBuilderUpdate(clearCache) {
-      const data = await api("/api/updates/apply-builder-update", {
+    async function postPrepareSafeUpdate() {
+      const data = await api("/api/updates/prepare-safe-update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clearNetlifyCache: clearCache === true }),
       });
 
       if (data.ok === true) {
-        setApplyUpdateResult(data.message || "Update pipeline completed.", true);
-        toast(data.message || "Update pipeline completed.", true);
+        setApplyUpdateResult(data.message || "Safe update preparation has started. Production has not changed.", true);
+        toast(data.message || "Safe update preparation has started.", true);
         setTimeout(runUpdateCheck, 3000);
         return;
       }
 
-      if (data.partial === true) {
-        setApplyUpdateResult(data.message || "Git updated.", true, { hint: data.warning });
-        toast(data.message || "Git updated.", true);
-        if (data.warning) toast(String(data.warning), false);
-        setTimeout(runUpdateCheck, 3000);
-        return;
-      }
-
-      const msg = typeof data.error === "string" ? data.error : data.message || "Apply update failed";
-      setApplyUpdateResult(msg, false, {
-        hint: typeof data.hint === "string" ? data.hint : undefined,
-        adminMessage: typeof data.adminMessage === "string" ? data.adminMessage : undefined,
-        requiresTechAction: data.requiresTechAction === true,
-        compareUrl: typeof data.compareUrl === "string" ? data.compareUrl : undefined,
-        prUrl: typeof data.prUrl === "string" ? data.prUrl : undefined,
-        prNumber: typeof data.prNumber === "number" ? data.prNumber : undefined,
-      });
+      const msg = typeof data.message === "string"
+        ? data.message
+        : typeof data.error === "string"
+          ? data.error
+          : "Could not prepare safe update";
+      setApplyUpdateResult(msg, false);
       toast(msg, false);
     }
 
@@ -689,13 +680,12 @@ const cleanupDeletesUnassigned =
 
     const applyBuilderBtn = document.getElementById("applyBuilderUpdateBtn");
     applyBuilderBtn?.addEventListener("click", async () => {
-      const clear = document.getElementById("applyUpdateClearCache")?.checked === true;
-      if (!confirm("Start YCode core update now?")) return;
+      if (!confirm("Prepare a safe YCode update now? Production will not change immediately.")) return;
       applyBuilderBtn.disabled = true;
-      applyBuilderBtn.textContent = "Running…";
-      await postApplyBuilderUpdate(clear);
+      applyBuilderBtn.textContent = "Preparing…";
+      await postPrepareSafeUpdate();
       applyBuilderBtn.disabled = false;
-      applyBuilderBtn.textContent = "Apply YCode update";
+      applyBuilderBtn.textContent = "Prepare safe update";
     });
 
     const restorePrevBtn = document.getElementById("restorePreviousDeployBtn");
@@ -757,6 +747,8 @@ const cleanupDeletesUnassigned =
         cleanupOrphansBtn.disabled = false;
       }
     });
+
+    runUpdateCheck();
 
     const cleanupDomainAliasesBtn = document.getElementById("cleanupDomainAliasesBtn");
     const domainCleanupResult = document.getElementById("domainCleanupResult");

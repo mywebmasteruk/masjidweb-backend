@@ -8,6 +8,7 @@ import {
 } from "../../../lib/github-updates";
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
+import { describeAdminUpdateState } from "../../../lib/update-admin-copy";
 import { githubProductionBranch } from "../../../lib/updates-env";
 
 type UpdateHistoryRow = {
@@ -146,17 +147,22 @@ export const GET: APIRoute = async (context) => {
         compareVersions(semver.forkPackageVersion, deployedPackageVersion) > 0,
     );
 
+    const payload = {
+      ok: true,
+      ...status,
+      ...semver,
+      releaseAheadOfForkPackage,
+      deployedPackageVersion,
+      deployCommitRef,
+      deployBranch,
+      gitAheadOfDeployed,
+      updateHistory,
+    };
+
     return new Response(
       JSON.stringify({
-        ok: true,
-        ...status,
-        ...semver,
-        releaseAheadOfForkPackage,
-        deployedPackageVersion,
-        deployCommitRef,
-        deployBranch,
-        gitAheadOfDeployed,
-        updateHistory,
+        ...payload,
+        adminState: describeAdminUpdateState(payload),
       }),
       {
         headers: { "Content-Type": "application/json" },
