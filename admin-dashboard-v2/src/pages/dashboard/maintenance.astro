@@ -582,6 +582,7 @@ const cleanupDeletesUnassigned =
         productionStatus: "Production unchanged",
         actionLabel: "Prepare safe update",
         nextActionText: "Refresh status or ask AI/operator to inspect the update dashboard.",
+        agentPrompt: null,
         canPrepare: data.ok === true && data.releaseAheadOfForkPackage === true,
         canApprove: false,
         prUrl: null,
@@ -725,13 +726,13 @@ const cleanupDeletesUnassigned =
         return;
       }
 
-      if (state.status === "blocked_needs_resolution") {
-        const request = state.nextActionText || "Resolve safe update PR";
+      if (state.status === "blocked_needs_resolution" || state.status === "checks_failed") {
+        const prompt = state.agentPrompt || state.nextActionText || "Resolve the MasjidWeb safe core update.";
         try {
-          await navigator.clipboard.writeText(request);
-          toast("Copied request: " + request, true);
+          await navigator.clipboard.writeText(prompt);
+          toast("Copied AI repair prompt. Paste it into Cursor or your AI agent.", true);
         } catch {
-          setApplyUpdateResult("Copy this request: " + request, true);
+          setApplyUpdateResult("Copy this AI repair prompt and paste it into Cursor or your AI agent:<br /><br />" + escapeHtml(prompt).replaceAll("\n", "<br />"), true);
         }
         return;
       }

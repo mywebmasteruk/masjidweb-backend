@@ -44,6 +44,7 @@ export type AdminUpdateCopy = {
   productionStatus: ProductionStatus;
   actionLabel: string;
   nextActionText: string;
+  agentPrompt: string | null;
   canPrepare: boolean;
   canApprove: boolean;
   prNumber: number | null;
@@ -61,6 +62,34 @@ function isConflictState(input: AdminSafeUpdateSummary): boolean {
       ),
     )
   );
+}
+
+function buildAgentPrompt(input: AdminSafeUpdateSummary, reason: string): string {
+  return [
+    "MasjidWeb safe core update needs technical resolution.",
+    "",
+    "Context:",
+    "- The platform admin clicked Prepare safe update in the MasjidWeb admin dashboard.",
+    "- Production must remain protected. Do not deploy directly.",
+    "- Keep changes minimal and avoid Ycode core files unless absolutely necessary.",
+    `- Safe update PR: #${input.number}`,
+    `- PR URL: ${input.url}`,
+    `- Blocker: ${reason}`,
+    `- PR title: ${input.title}`,
+    `- Draft: ${input.isDraft ? "yes" : "no"}`,
+    `- Mergeable: ${input.mergeable === null ? "unknown" : input.mergeable ? "yes" : "no"}`,
+    `- Merge state: ${input.mergeableState || "unknown"}`,
+    `- Checks: ${input.ciStatus}`,
+    input.labels.length > 0 ? `- Labels: ${input.labels.join(", ")}` : "- Labels: none",
+    "",
+    "Task:",
+    `Resolve safe update PR #${input.number} so it can become safe for admin approval. Inspect the PR, fix conflicts or failed checks, keep the update safe, run appropriate tests/build, and report back with what changed and whether the admin can approve it.`,
+    "",
+    "Safety rules:",
+    "- Do not merge or deploy unless the platform admin explicitly asks.",
+    "- Do not modify unrelated code.",
+    "- If unsure, stop and explain what blocks the update.",
+  ].join("\n");
 }
 
 function withPr(
@@ -91,6 +120,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       nextActionText: setupMissing
         ? "Configure the admin update token and repository settings."
         : "Refresh status or ask AI/operator to inspect the update dashboard.",
+      agentPrompt: null,
       canPrepare: false,
       canApprove: false,
       prNumber: null,
@@ -107,6 +137,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       productionStatus: "Deploy pending",
       actionLabel: "Check live builder",
       nextActionText: "Wait for the production deploy to finish, then check the live builder.",
+      agentPrompt: null,
       canPrepare: false,
       canApprove: false,
       prNumber: null,
@@ -123,8 +154,9 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The update found conflicts in MasjidWeb-customized areas. Production is safe and unchanged. Do not approve this update yet.",
         productionStatus: "Production unchanged",
-        actionLabel: "Copy request for AI/operator",
-        nextActionText: `Resolve safe update PR #${active.number}`,
+        actionLabel: "Copy AI repair prompt",
+        nextActionText: `Copy a ready-to-send prompt for an AI agent to resolve safe update PR #${active.number}.`,
+        agentPrompt: buildAgentPrompt(active, "Draft, conflict, or tenant-sensitive update needs review"),
         canPrepare: false,
         canApprove: false,
       });
@@ -137,8 +169,9 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The prepared update has checks failed. Production is safe and unchanged. Do not approve this update yet.",
         productionStatus: "Production unchanged",
-        actionLabel: "Open technical report",
-        nextActionText: `Ask AI/operator to fix failed checks on safe update PR #${active.number}`,
+        actionLabel: "Copy AI repair prompt",
+        nextActionText: `Copy a ready-to-send prompt for an AI agent to fix failed checks on safe update PR #${active.number}.`,
+        agentPrompt: buildAgentPrompt(active, "Safety checks failed"),
         canPrepare: false,
         canApprove: false,
       });
@@ -153,6 +186,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         productionStatus: "Production unchanged",
         actionLabel: "Open PR to approve update",
         nextActionText: `Open safe update PR #${active.number} and approve it only if the summary looks correct.`,
+        agentPrompt: null,
         canPrepare: false,
         canApprove: true,
       });
@@ -166,6 +200,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       productionStatus: "Production unchanged",
       actionLabel: "Refresh status",
       nextActionText: "Wait a minute, then refresh status.",
+      agentPrompt: null,
       canPrepare: false,
       canApprove: false,
     });
@@ -181,6 +216,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       productionStatus: "Production unchanged",
       actionLabel: "Prepare safe update",
       nextActionText: "Prepare a reviewed update. Production will not change immediately.",
+      agentPrompt: null,
       canPrepare: true,
       canApprove: false,
       prNumber: null,
@@ -195,6 +231,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
     productionStatus: "Live update complete",
     actionLabel: "No action needed",
     nextActionText: "No update action is needed right now.",
+    agentPrompt: null,
     canPrepare: false,
     canApprove: false,
     prNumber: null,

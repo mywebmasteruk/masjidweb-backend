@@ -68,8 +68,11 @@ describe("describeAdminUpdateState", () => {
     expect(result.canPrepare).toBe(false);
     expect(result.canApprove).toBe(false);
     expect(result.productionStatus).toBe("Production unchanged");
-    expect(result.actionLabel).toBe("Copy request for AI/operator");
-    expect(result.nextActionText).toBe("Resolve safe update PR #1");
+    expect(result.actionLabel).toBe("Copy AI repair prompt");
+    expect(result.nextActionText).toContain("AI agent");
+    expect(result.agentPrompt).toContain("MasjidWeb safe core update needs technical resolution");
+    expect(result.agentPrompt).toContain("Safe update PR: #1");
+    expect(result.agentPrompt).toContain("Do not merge or deploy unless the platform admin explicitly asks");
     expect(result.description).toContain("Do not approve this update yet");
   });
 
@@ -90,7 +93,9 @@ describe("describeAdminUpdateState", () => {
 
     expect(result.status).toBe("checks_failed");
     expect(result.canApprove).toBe(false);
-    expect(result.actionLabel).toBe("Open technical report");
+    expect(result.actionLabel).toBe("Copy AI repair prompt");
+    expect(result.agentPrompt).toContain("Safety checks failed");
+    expect(result.agentPrompt).toContain("Safe update PR: #2");
     expect(result.description).toContain("checks failed");
   });
 
