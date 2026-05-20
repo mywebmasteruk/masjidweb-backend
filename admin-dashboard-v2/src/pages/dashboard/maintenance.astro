@@ -938,7 +938,7 @@ const cleanupDeletesUnassigned =
       const loading = window.aiRepairLoading ? " is-loading" : "";
       return (
         '<div class="mw-ai-repair-panel">' +
-        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Runs on OpenRouter in this dashboard. You still apply changes in GitHub — nothing is merged or deployed automatically.</p>' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Starts automated repair on GitHub: a frontier OpenRouter model resolves merge conflicts on the PR branch, commits, and runs a build. Production is not merged until you approve.</p>' +
         '<div class="mw-ai-repair-actions">' +
         '<button type="button" id="runAiRepairBtn" class="btn btn-primary btn-sm">Run AI repair</button>' +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
@@ -977,27 +977,28 @@ const cleanupDeletesUnassigned =
 
     async function runAiRepair() {
       const state = window.currentAdminUpdateState || {};
-      const prompt =
-        state.agentPrompt ||
-        state.nextActionText ||
-        "Resolve the MasjidWeb safe core update.";
+      const prNumber = typeof state.prNumber === "number" ? state.prNumber : null;
+      if (!prNumber) {
+        toast("No active safe-update PR to repair.", false);
+        return;
+      }
       const runBtn = document.getElementById("runAiRepairBtn");
       const resultEl = document.getElementById("aiRepairResult");
       if (runBtn) {
         runBtn.disabled = true;
-        runBtn.textContent = "Running…";
+        runBtn.textContent = "Starting…";
       }
       window.aiRepairLoading = true;
       if (resultEl) {
         resultEl.classList.remove("hidden");
         resultEl.classList.add("is-loading");
-        resultEl.innerHTML = "<pre>Thinking…</pre>";
+        resultEl.innerHTML = "<pre>Dispatching GitHub Actions repair…</pre>";
       }
 
       const res = await api("/api/updates/ai-repair", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prNumber }),
       });
 
       window.aiRepairLoading = false;
@@ -1011,24 +1012,39 @@ const cleanupDeletesUnassigned =
       resultEl.classList.remove("is-loading");
       resultEl.classList.remove("hidden");
 
-      if (res.ok === true && typeof res.reply === "string") {
-        window.lastAiRepairReply = res.reply;
-        window.lastAiRepairModel = typeof res.model === "string" ? res.model : "";
-        const meta =
-          '<p class="mw-ai-repair-meta text-xs text-muted">' +
-          escapeHtml(res.disclaimer || "Guidance only — apply changes yourself.") +
-          (res.model ? " · " + escapeHtml(res.model) : "") +
-          "</p>";
-        resultEl.innerHTML = meta + "<pre>" + escapeHtml(res.reply) + "</pre>";
-        toast("AI repair response ready.", true);
+      if (res.ok === true) {
+        const message =
+          typeof res.message === "string"
+            ? res.message
+            : "Automated AI repair started on GitHub.";
+        window.lastAiRepairReply = message;
+        window.lastAiRepairModel = "";
+        const workflowLink =
+          typeof res.workflowUrl === "string"
+            ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
+              escapeHtml(res.workflowUrl) +
+              '" target="_blank" rel="noopener noreferrer">View workflow runs</a></p>'
+            : "";
+        const disclaimer =
+          typeof res.disclaimer === "string"
+            ? '<p class="mw-ai-repair-meta text-xs text-muted">' + escapeHtml(res.disclaimer) + "</p>"
+            : "";
+        resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
+        toast("AI repair started on GitHub.", true);
         return;
       }
 
       const err =
         typeof res.error === "string"
           ? res.error
-          : "AI repair failed. Check OPENROUTER_API_KEY on Netlify.";
-      resultEl.innerHTML = "<pre>" + escapeHtml(err) + "</pre>";
+          : "AI repair failed. Ensure OPENROUTER_API_KEY is set on the builder repo and the workflow is on main.";
+      const workflowLink =
+        typeof res.workflowUrl === "string"
+          ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
+            escapeHtml(res.workflowUrl) +
+            '" target="_blank" rel="noopener noreferrer">Workflow</a></p>'
+          : "";
+      resultEl.innerHTML = workflowLink + "<pre>" + escapeHtml(err) + "</pre>";
       toast(err, false);
     }
 
