@@ -1,6 +1,6 @@
-# Push to GitHub → this workflow builds in CI → Netlify production deploy (no manual drag-and-drop).
-# One-time: GitHub repo → Settings → Secrets → NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID (e.g. masjidweb-admin-v2 site UUID).
-# Netlify MCP cannot link Git; this workflow is the supported automation path.
+# Push to GitHub → this workflow builds in CI → Netlify production deploy.
+# Required secrets: NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID (masjidweb-admin-v2).
+# Do not deploy production from a laptop except emergencies — use this workflow.
 
 name: Deploy admin dashboard to Netlify
 
@@ -28,6 +28,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify Netlify deploy secrets
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          set -euo pipefail
+          missing=0
+          if [ -z "${NETLIFY_AUTH_TOKEN}" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN is missing. Add it under GitHub → Settings → Secrets and variables → Actions."
+            missing=1
+          fi
+          if [ -z "${NETLIFY_SITE_ID}" ]; then
+            echo "::error::NETLIFY_SITE_ID is missing. Add the masjidweb-admin-v2 site UUID under repository Actions secrets."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Netlify deploy secrets are present."
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -38,16 +58,60 @@ jobs:
       - name: Install and build
         run: npm ci && npm run build
 
-      # Build once in CI, then upload the generated static assets and Astro SSR function.
       - name: Deploy to Netlify (production)
+        id: netlify_deploy
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: >-
-          npx --yes netlify-cli deploy
-          --prod
-          --no-build
-          --dir dist
-          --functions .netlify/functions
-          --site="$NETLIFY_SITE_ID"
-          --auth="$NETLIFY_AUTH_TOKEN"
+        run: |
+          set -euo pipefail
+          LOG="$(mktemp)"
+          npx --yes netlify-cli deploy \
+            --prod \
+            --no-build \
+            --dir dist \
+            --functions .netlify/functions \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" 2>&1 | tee "$LOG"
+          DEPLOY_URL="$(grep -Eo 'https://[a-z0-9-]+--[^ ]+\.netlify\.app' "$LOG" | tail -1 || true)"
+          PRODUCTION_URL="$(grep -Eo 'https://admin\.masjidweb\.com' "$LOG" | tail -1 || true)"
+          if [ -z "$PRODUCTION_URL" ]; then
+            PRODUCTION_URL="https://admin.masjidweb.com"
+          fi
+          echo "deploy_log=$LOG" >> "$GITHUB_OUTPUT"
+          echo "deploy_url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "production_url=${PRODUCTION_URL}" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Write deploy confirmation summary
+        if: success()
+        env:
+          DEPLOY_URL: ${{ steps.netlify_deploy.outputs.deploy_url }}
+          PRODUCTION_URL: ${{ steps.netlify_deploy.outputs.production_url }}
+        run: |
+          {
+            echo "## Admin dashboard deploy succeeded"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Production | ${PRODUCTION_URL} |"
+            echo "| Netlify deploy URL | ${DEPLOY_URL:-_(not captured)_} |"
+            echo "| Workflow | ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} |"
+            echo ""
+            echo "Agents and humans should treat this workflow run as **deploy confirmation**. Verify UI in the browser after this job is green."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write deploy failure summary
+        if: failure()
+        run: |
+          {
+            echo "## Admin dashboard deploy failed"
+            echo ""
+            echo "Production was **not** updated by this run."
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "Common fix: set \`NETLIFY_AUTH_TOKEN\` and \`NETLIFY_SITE_ID\` in repository Actions secrets."
+          } >> "$GITHUB_STEP_SUMMARY"

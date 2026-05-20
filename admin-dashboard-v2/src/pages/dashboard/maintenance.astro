@@ -167,11 +167,19 @@ const cleanupDeletesUnassigned =
     }
     .mw-stepper-list {
       display: flex;
+      flex-wrap: nowrap;
       align-items: flex-start;
+      justify-content: space-between;
       list-style: none;
       margin: 0;
       padding: 0;
       width: 100%;
+      gap: 0;
+    }
+    .mw-stepper-list > li {
+      list-style: none;
+      margin: 0;
+      padding: 0;
     }
     .mw-stepper-step {
       flex: 0 0 auto;
@@ -179,19 +187,19 @@ const cleanupDeletesUnassigned =
       flex-direction: column;
       align-items: center;
       gap: .55rem;
-      min-width: 3.75rem;
-      max-width: 5.5rem;
+      min-width: 4.25rem;
+      max-width: 6rem;
       text-align: center;
     }
     .mw-stepper-connector {
-      flex: 1 1 auto;
+      flex: 1 1 0;
+      display: block;
       align-self: center;
       height: 3px;
-      margin: 1.05rem .25rem 0;
+      margin: 1.05rem .15rem 0;
       border-radius: 999px;
       background: rgba(148, 163, 184, .22);
-      list-style: none;
-      min-width: .5rem;
+      min-width: 1.25rem;
     }
     .mw-stepper-connector.is-filled {
       background: var(--success);
