@@ -709,10 +709,12 @@ const cleanupDeletesUnassigned =
         '<p class="text-sm" style="margin:0;font-weight:650;color:var(--text);">Step 4 — Preview as ' +
         escapeHtml(preview.tenantLabel) +
         " (PR code)</p>" +
-        '<p class="text-xs text-muted" style="margin:.4rem 0 0;line-height:1.55;">Use the Netlify deploy preview below. It runs the update branch with the same " +
+        '<p class="text-xs text-muted" style="margin:.4rem 0 0;line-height:1.55;">Use the Netlify deploy preview below. It runs the update branch with the same ' +
+        '"' +
         escapeHtml(preview.tenantLabel) +
         " data as production.</p>" +
-        '<div class="core-update-preview-warn">Do not use " +
+        '<div class="core-update-preview-warn">Do not use ' +
+        '"' +
         escapeHtml(preview.productionBuilderUrl) +
         ' for this test — that URL is still the live production build (main branch).</div>' +
         "<ul class=\"text-xs text-muted\">" +
