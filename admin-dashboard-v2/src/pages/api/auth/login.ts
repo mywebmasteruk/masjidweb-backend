@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAdminPasswordMatch } from "../../../lib/admin-password";
 import { adminLoginRateLimiter, getLoginClientKey } from "../../../lib/login-rate-limit";
+import { readServerEnv } from "../../../lib/server-env";
 import { createSessionToken, serializeSessionCookie } from "../../../lib/session";
 
 export const POST: APIRoute = async ({ request }) => {
@@ -27,7 +28,7 @@ export const POST: APIRoute = async ({ request }) => {
       password = String(form.get("password") ?? "");
     }
 
-    const expected = import.meta.env.DASHBOARD_ADMIN_PASSWORD;
+    const expected = readServerEnv("DASHBOARD_ADMIN_PASSWORD");
     if (!isAdminPasswordMatch(expected, password)) {
       return new Response(JSON.stringify({ ok: false, error: "Invalid password" }), {
         status: 401,
@@ -35,7 +36,7 @@ export const POST: APIRoute = async ({ request }) => {
       });
     }
 
-    const secret = import.meta.env.ADMIN_SESSION_SECRET;
+    const secret = readServerEnv("ADMIN_SESSION_SECRET");
     if (!secret || secret.length < 32) {
       return new Response(
         JSON.stringify({ ok: false, error: "Server misconfiguration: set ADMIN_SESSION_SECRET (min 32 characters)." }),

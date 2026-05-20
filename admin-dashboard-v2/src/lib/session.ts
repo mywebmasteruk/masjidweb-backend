@@ -1,9 +1,10 @@
 import { SignJWT, jwtVerify } from "jose";
+import { readServerEnv } from "./server-env";
 
 const COOKIE_NAME = "admin_session_v2";
 
 function getSecret() {
-  const secret = import.meta.env.ADMIN_SESSION_SECRET;
+  const secret = readServerEnv("ADMIN_SESSION_SECRET");
   if (!secret || secret.length < 32) {
     throw new Error("ADMIN_SESSION_SECRET must be set (min 32 chars)");
   }
