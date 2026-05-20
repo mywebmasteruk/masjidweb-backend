@@ -18,7 +18,7 @@ describe("describeAdminUpdateState", () => {
     });
 
     expect(result.status).toBe("update_available");
-    expect(result.phases.find((p) => p.step === 2)?.status).toBe("current");
+    expect(result.phases.find((p) => p.step === 1)?.status).toBe("current");
     expect(result.canPrepare).toBe(true);
     expect(result.canApprove).toBe(false);
   });
@@ -52,7 +52,7 @@ describe("describeAdminUpdateState", () => {
     expect(result.status).toBe("blocked_needs_resolution");
     expect(result.canApprove).toBe(false);
     expect(result.canCopyPrompt).toBe(true);
-    expect(result.phases.find((p) => p.step === 3)?.status).toBe("current");
+    expect(result.phases.find((p) => p.step === 2)?.status).toBe("current");
     expect(result.agentPrompt).toContain("Safe update PR: #1");
   });
 
@@ -77,7 +77,7 @@ describe("describeAdminUpdateState", () => {
     expect(result.previewBuilderUrl).toContain("/ycode");
     expect(result.preview?.tenantSlug).toBe("masjidemo1");
     expect(result.preview?.loginEmailHint).toBe("masjidemo1@masjidweb.com");
-    expect(result.phases.find((p) => p.step === 4)?.status).toBe("current");
+    expect(result.phases.find((p) => p.step === 3)?.status).toBe("current");
   });
 
   it("allows approval when safe PR is mergeable and checks pass", () => {
@@ -97,7 +97,7 @@ describe("describeAdminUpdateState", () => {
     expect(result.status).toBe("ready_to_approve");
     expect(result.canApprove).toBe(true);
     expect(result.actionLabel).toBe("Approve merge");
-    expect(result.phases.find((p) => p.step === 5)?.status).toBe("current");
+    expect(result.phases.find((p) => p.step === 4)?.status).toBe("current");
   });
 
   it("tells admins to wait while checks are pending", () => {

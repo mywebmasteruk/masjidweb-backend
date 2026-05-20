@@ -149,6 +149,15 @@ function withPr(
   };
 }
 
+export const CORE_UPDATE_FLOW_STEPS = 4;
+
+export function getCurrentUpdatePhase(
+  phases: AdminUpdatePhase[] | null | undefined,
+): AdminUpdatePhase | null {
+  if (!phases?.length) return null;
+  return phases.find((phase) => phase.status === "current") ?? null;
+}
+
 export function buildUpdatePhases(
   status: AdminUpdateStatus,
   opts: {
@@ -169,33 +178,23 @@ export function buildUpdatePhases(
   const phases: AdminUpdatePhase[] = [
     phase(
       1,
-      "Open Maintenance",
-      "You are on the right page. Production is unchanged until you approve a merge.",
+      "Prepare safe update",
+      'Click Prepare safe update to run the merge test. This opens a pull request only — live tenant sites stay unchanged.',
     ),
     phase(
       2,
-      "Prepare safe update",
-      'Click "Prepare safe update" to start the merge test. This creates a reviewed pull request; it does not change live sites.',
+      "Fix conflicts if needed",
+      "Copy the AI repair prompt, resolve conflicts or failed checks in Cursor, then refresh status here.",
     ),
     phase(
       3,
-      "Fix conflicts (only if needed)",
-      "If the merge test finds conflicts or failed checks, copy the AI repair prompt and finish the fix in Cursor. Then refresh status here.",
+      "Preview on deploy preview",
+      "Choose a tenant, open the Netlify preview (not the live subdomain), sign in, and check the builder and homepage.",
     ),
     phase(
       4,
-      "Preview your chosen tenant on deploy preview",
-      "Pick a tenant below, open the PR deploy preview (not {slug}.masjidweb.com — that stays on production). Log in on the preview URL with that tenant's admin email, check /ycode and the public homepage. Same database as live — do not publish test content.",
-    ),
-    phase(
-      5,
       "Approve the merge",
-      "When the preview looks good, approve the merge. Production deploys from main after the merge finishes.",
-    ),
-    phase(
-      6,
-      "Rollback if something goes wrong",
-      'In Recovery below, use "Restore previous live build" to switch back to the last good production build.',
+      "When the preview looks right, approve the merge. Production updates after the deploy finishes.",
     ),
   ];
 
@@ -212,71 +211,52 @@ export function buildUpdatePhases(
     if (row) row.status = "skipped";
   };
 
-  markDone(1);
-
-  if (status === "update_available") {
-    markCurrent(2);
+  if (status === "update_available" || status === "setup_required" || status === "unknown_error") {
+    markCurrent(1);
     return phases;
   }
 
-  if (status === "setup_required" || status === "unknown_error") {
-    markCurrent(2);
-    return phases;
-  }
-
-  if (status === "deploying") {
-    markDone(2);
+  if (status === "deploying" || status === "up_to_date") {
+    markDone(1);
+    markSkipped(2);
     markSkipped(3);
-    markDone(4);
-    markDone(5);
-    markCurrent(6);
-    return phases;
-  }
-
-  if (status === "up_to_date") {
-    markDone(2);
-    if (!opts.needsRepair) markSkipped(3);
     markSkipped(4);
-    markSkipped(5);
-    phases[5].status = "upcoming";
-    phases[5].detail = "No rollback needed unless a future update causes trouble.";
     return phases;
   }
 
   if (!opts.hasActivePr) {
-    markCurrent(2);
+    markCurrent(1);
     return phases;
   }
 
-  markDone(2);
+  markDone(1);
 
   if (opts.needsRepair) {
-    markCurrent(3);
+    markCurrent(2);
+    markSkipped(3);
     markSkipped(4);
-    markSkipped(5);
-    phases[5].status = "upcoming";
     return phases;
   }
 
-  markSkipped(3);
-
-  if (opts.canPreview || status === "ready_to_preview" || status === "ready_to_approve") {
-    if (status === "ready_to_approve") {
-      markDone(4);
-      markCurrent(5);
-    } else {
-      markCurrent(4);
-    }
-    return phases;
-  }
+  markSkipped(2);
 
   if (status === "preparing") {
-    markCurrent(2);
-    phases[2].status = "upcoming";
+    markCurrent(1);
     return phases;
   }
 
-  markCurrent(4);
+  if (status === "ready_to_approve") {
+    markDone(3);
+    markCurrent(4);
+    return phases;
+  }
+
+  if (opts.canPreview || status === "ready_to_preview") {
+    markCurrent(3);
+    return phases;
+  }
+
+  markCurrent(3);
   return phases;
 }
 
