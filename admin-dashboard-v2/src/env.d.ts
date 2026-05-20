@@ -21,6 +21,10 @@ interface ImportMetaEnv {
   readonly GITHUB_PRODUCTION_BRANCH?: string;
   /** Comma-separated PR base branches for sync PR list; first entry also used as production package ref fallback. */
   readonly GITHUB_SYNC_PR_BASES?: string;
+  /** OpenRouter API key for in-dashboard safe-update AI repair (Maintenance). */
+  readonly OPENROUTER_API_KEY?: string;
+  /** OpenRouter model id (default anthropic/claude-sonnet-4). */
+  readonly OPENROUTER_MODEL?: string;
   /** Base domain for tenant subdomains (e.g. masjidweb.com). */
   readonly TENANT_DOMAIN_SUFFIX: string;
   /** @deprecated Optional legacy global builder URL. Builder lives at `https://{slug}.<TENANT_DOMAIN_SUFFIX>/ycode`. */

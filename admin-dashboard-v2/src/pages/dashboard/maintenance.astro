@@ -390,6 +390,59 @@ const cleanupDeletesUnassigned =
       font-size: .78rem;
       line-height: 1.5;
     }
+    .mw-step-pr-link {
+      margin: .85rem 0 0;
+    }
+    .mw-step-pr-link a {
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .mw-step-pr-link a:hover {
+      text-decoration: underline;
+    }
+    .mw-ai-repair-panel {
+      margin-top: 1rem;
+      padding: .9rem;
+      border-radius: calc(var(--radius) - 2px);
+      border: 1px solid rgba(148, 163, 184, .22);
+      background: rgba(15, 23, 42, .35);
+    }
+    .mw-ai-repair-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-top: .65rem;
+    }
+    .mw-ai-repair-result {
+      margin-top: .75rem;
+      padding: .75rem;
+      border-radius: calc(var(--radius) - 2px);
+      border: 1px solid rgba(148, 163, 184, .2);
+      background: rgba(2, 6, 23, .55);
+      max-height: 22rem;
+      overflow: auto;
+    }
+    .mw-ai-repair-result.is-loading {
+      color: var(--muted);
+      font-size: .85rem;
+    }
+    .mw-ai-repair-result pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: .78rem;
+      line-height: 1.55;
+      color: var(--text);
+    }
+    .mw-ai-repair-meta {
+      margin: .5rem 0 0;
+      font-size: .72rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
   </style>
   <style>
     .history-wrap { overflow: visible; }
@@ -843,6 +896,112 @@ const cleanupDeletesUnassigned =
       return Boolean(phase && (phase.status === "current" || phase.status === "done"));
     }
 
+    function shouldShowAiRepairBlock(adminState, viewedStep) {
+      if (!adminState?.canCopyPrompt) return false;
+      const workflowStep = getWorkflowStep(adminState.phases || []);
+      return viewedStep === 2 || (viewedStep === workflowStep && workflowStep === 2);
+    }
+
+    function renderAiRepairPanelHtml() {
+      const saved = window.lastAiRepairReply || "";
+      const hidden = saved ? "" : " hidden";
+      const loading = window.aiRepairLoading ? " is-loading" : "";
+      return (
+        '<div class="mw-ai-repair-panel">' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Runs on OpenRouter in this dashboard. You still apply changes in GitHub — nothing is merged or deployed automatically.</p>' +
+        '<div class="mw-ai-repair-actions">' +
+        '<button type="button" id="runAiRepairBtn" class="btn btn-primary btn-sm">Run AI repair</button>' +
+        '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
+        "</div>" +
+        '<div id="aiRepairResult" class="mw-ai-repair-result' +
+        hidden +
+        loading +
+        '">' +
+        (saved
+          ? '<p class="mw-ai-repair-meta text-xs text-muted">Last response' +
+            (window.lastAiRepairModel ? " · " + escapeHtml(window.lastAiRepairModel) : "") +
+            "</p><pre>" +
+            escapeHtml(saved) +
+            "</pre>"
+          : "") +
+        "</div></div>"
+      );
+    }
+
+    async function copyAiRepairPrompt() {
+      const state = window.currentAdminUpdateState || {};
+      const prompt =
+        state.agentPrompt ||
+        state.nextActionText ||
+        "Resolve the MasjidWeb safe core update.";
+      try {
+        await navigator.clipboard.writeText(prompt);
+        toast("Copied AI repair prompt.", true);
+      } catch {
+        setApplyUpdateResult(
+          "Copy this AI repair prompt:<br /><br />" + escapeHtml(prompt).replaceAll("\n", "<br />"),
+          true,
+        );
+      }
+    }
+
+    async function runAiRepair() {
+      const state = window.currentAdminUpdateState || {};
+      const prompt =
+        state.agentPrompt ||
+        state.nextActionText ||
+        "Resolve the MasjidWeb safe core update.";
+      const runBtn = document.getElementById("runAiRepairBtn");
+      const resultEl = document.getElementById("aiRepairResult");
+      if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = "Running…";
+      }
+      window.aiRepairLoading = true;
+      if (resultEl) {
+        resultEl.classList.remove("hidden");
+        resultEl.classList.add("is-loading");
+        resultEl.innerHTML = "<pre>Thinking…</pre>";
+      }
+
+      const res = await api("/api/updates/ai-repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+
+      window.aiRepairLoading = false;
+      if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.textContent = "Run AI repair";
+      }
+
+      if (!resultEl) return;
+
+      resultEl.classList.remove("is-loading");
+      resultEl.classList.remove("hidden");
+
+      if (res.ok === true && typeof res.reply === "string") {
+        window.lastAiRepairReply = res.reply;
+        window.lastAiRepairModel = typeof res.model === "string" ? res.model : "";
+        const meta =
+          '<p class="mw-ai-repair-meta text-xs text-muted">' +
+          escapeHtml(res.disclaimer || "Guidance only — apply changes yourself.") +
+          (res.model ? " · " + escapeHtml(res.model) : "") +
+          "</p>";
+        resultEl.innerHTML = meta + "<pre>" + escapeHtml(res.reply) + "</pre>";
+        toast("AI repair response ready.", true);
+        return;
+      }
+
+      const err =
+        typeof res.error === "string"
+          ? res.error
+          : "AI repair failed. Check OPENROUTER_API_KEY on Netlify.";
+      resultEl.innerHTML = "<pre>" + escapeHtml(err) + "</pre>";
+      toast(err, false);
+    }
+
     function renderPreviewTenantPickerHtml(options, selectedSlug) {
       const list = Array.isArray(options) ? options : [];
       if (list.length === 0) return "";
@@ -966,6 +1125,10 @@ const cleanupDeletesUnassigned =
       }
       html += '<h3 class="core-update-headline">' + escapeHtml(headline) + "</h3>";
       html += '<p class="core-update-guide">' + escapeHtml(guide) + "</p>";
+
+      if (shouldShowAiRepairBlock(adminState, viewedStep)) {
+        html += renderAiRepairPanelHtml();
+      }
 
       if (shouldShowPreviewBlock(adminState, viewedStep)) {
         const selectedSlug = (data && data.previewTenant && data.previewTenant.slug) || getStoredPreviewTenantSlug();
@@ -1243,6 +1406,16 @@ const cleanupDeletesUnassigned =
 
       if (target.id === "coreUpdateStepNext" || target.closest("#coreUpdateStepNext")) {
         refreshCoreUpdateView((window.coreUpdateViewedStep || 1) + 1);
+        return;
+      }
+
+      if (target.id === "runAiRepairBtn" || target.closest("#runAiRepairBtn")) {
+        runAiRepair();
+        return;
+      }
+
+      if (target.id === "copyAiRepairPromptBtn" || target.closest("#copyAiRepairPromptBtn")) {
+        copyAiRepairPrompt();
       }
     });
 
@@ -1256,13 +1429,13 @@ const cleanupDeletesUnassigned =
       }
 
       if (state.status === "blocked_needs_resolution" || state.status === "checks_failed") {
-        const prompt = state.agentPrompt || state.nextActionText || "Resolve the MasjidWeb safe core update.";
-        try {
-          await navigator.clipboard.writeText(prompt);
-          toast("Copied AI repair prompt. Paste it into Cursor or your AI agent.", true);
-        } catch {
-          setApplyUpdateResult("Copy this AI repair prompt and paste it into Cursor or your AI agent:<br /><br />" + escapeHtml(prompt).replaceAll("\n", "<br />"), true);
+        const viewed = window.coreUpdateViewedStep || 2;
+        if (viewed !== 2) {
+          refreshCoreUpdateView(2);
+          setTimeout(() => runAiRepair(), 0);
+          return;
         }
+        await runAiRepair();
         return;
       }
 

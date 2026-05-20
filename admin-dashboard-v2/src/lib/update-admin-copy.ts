@@ -184,7 +184,7 @@ export function buildUpdatePhases(
     phase(
       2,
       "Fix conflicts if needed",
-      "Copy the AI repair prompt, resolve conflicts or failed checks in Cursor, then refresh status here.",
+      "Open the pull request, run AI repair on this page, apply the suggested fix in the repo, then refresh status.",
     ),
     phase(
       3,
@@ -343,8 +343,8 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The safe update pull request has merge conflicts in MasjidWeb-customized areas. Production is unchanged. Fix conflicts before preview or approval.",
         productionStatus: "Production unchanged",
-        actionLabel: "Copy AI repair prompt",
-        nextActionText: `Copy the AI repair prompt, fix PR #${active.number} in Cursor, then refresh status here.`,
+        actionLabel: "Run AI repair",
+        nextActionText: `Open PR #${active.number}, run AI repair below, apply the fix in the repo, then refresh status.`,
         agentPrompt: buildAgentPrompt(active, "Merge conflicts or developer review required"),
         canPrepare: false,
         canApprove: false,
@@ -360,8 +360,8 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The prepared update failed automated checks. Production is unchanged. Do not approve until checks pass.",
         productionStatus: "Production unchanged",
-        actionLabel: "Copy AI repair prompt",
-        nextActionText: `Copy the AI repair prompt, fix failed checks on PR #${active.number}, then refresh status.`,
+        actionLabel: "Run AI repair",
+        nextActionText: `Open PR #${active.number}, run AI repair below, fix failed checks, then refresh status.`,
         agentPrompt: buildAgentPrompt(active, "Safety checks failed"),
         canPrepare: false,
         canApprove: false,
