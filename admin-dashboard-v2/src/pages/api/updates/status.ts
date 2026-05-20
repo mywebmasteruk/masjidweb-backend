@@ -10,6 +10,10 @@ import {
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 import { describeAdminUpdateState } from "../../../lib/update-admin-copy";
+import {
+  listActivePreviewTenantOptions,
+  resolvePreviewTenantContext,
+} from "../../../lib/resolve-preview-tenant";
 import { githubProductionBranch } from "../../../lib/updates-env";
 
 type UpdateHistoryRow = {
@@ -73,10 +77,13 @@ export const GET: APIRoute = async (context) => {
 
   try {
     const productionBranch = githubProductionBranch();
-    const [status, semver, syncPRs] = await Promise.all([
+    const requestedPreviewSlug = context.url.searchParams.get("previewTenantSlug");
+    const [status, semver, syncPRs, previewTenant, previewTenantOptions] = await Promise.all([
       getUpdateStatus(token, repo),
       getReleaseSemverVsFork(token, repo, productionBranch),
       listSyncPRs(token, repo, [productionBranch]),
+      resolvePreviewTenantContext(requestedPreviewSlug),
+      listActivePreviewTenantOptions(),
     ]);
 
     let deployedPackageVersion: string | null = null;
@@ -168,6 +175,7 @@ export const GET: APIRoute = async (context) => {
           mergeableState: safeUpdatePr.mergeableState,
           ciStatus: safeUpdatePr.ciStatus,
           labels: safeUpdatePr.labels,
+          deployPreviewUrl: safeUpdatePr.deployPreviewUrl,
         }
       : null;
 
@@ -184,10 +192,16 @@ export const GET: APIRoute = async (context) => {
       updateHistory,
     };
 
+    const statusPayload = {
+      ...payload,
+      previewTenant,
+      previewTenantOptions,
+    };
+
     return new Response(
       JSON.stringify({
-        ...payload,
-        adminState: describeAdminUpdateState(payload),
+        ...statusPayload,
+        adminState: describeAdminUpdateState(statusPayload),
       }),
       {
         headers: { "Content-Type": "application/json" },

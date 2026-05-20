@@ -58,6 +58,19 @@ Implemented in [`provision-pipeline.ts`](../src/lib/provision-pipeline.ts): regi
 2. **New client:** use the dashboard form and choose which **demo template** to copy from.
 3. **Another demo template:** insert a `tenant_registry` row with `tenant_kind = 'template'`, add its subdomain on Netlify, build content in YCode under that slug, **Publish**.
 
+## Safe core update preview (MasjidDemo1)
+
+GitHub PR **deploy previews** use a Netlify hostname such as `https://deploy-preview-N--masjidweb-tenants.netlify.app`, **not** `masjidemo1.masjidweb.com` (that subdomain always serves **production** `main`).
+
+Before approving a core update merge from **Maintenance**:
+
+1. Open the deploy preview **builder**: `…/ycode` on that hostname.
+2. Log in as **`masjidemo1@masjidweb.com`** on the preview host (session cookies do not carry from `masjidweb.com`).
+3. Optionally open the deploy preview **homepage** (`/`) — it uses template tenant data via `TEMPLATE_TENANT_ID` on the builder site.
+4. Do **not** publish throwaway content (same Supabase as live).
+
+Optional env on the admin dashboard: `PREVIEW_TENANT_SLUG` (default `masjidemo1`). A tenant picker in Maintenance is planned later.
+
 ## Verification checklist (smoke)
 
 **A — Template publish**

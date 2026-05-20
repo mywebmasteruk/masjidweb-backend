@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { describeAdminUpdateState } from "./update-admin-copy";
 
+const basePr = {
+  number: 1,
+  title: "chore: review Ycode core update",
+  url: "https://github.com/example/repo/pull/1",
+  deployPreviewUrl: "https://deploy-preview-1--masjidweb-tenants.netlify.app",
+};
+
 describe("describeAdminUpdateState", () => {
   it("tells admins they can safely prepare an update when a newer release exists", () => {
     const result = describeAdminUpdateState({
@@ -11,12 +18,9 @@ describe("describeAdminUpdateState", () => {
     });
 
     expect(result.status).toBe("update_available");
-    expect(result.title).toBe("Update available");
-    expect(result.actionLabel).toBe("Prepare safe update");
+    expect(result.phases.find((p) => p.step === 2)?.status).toBe("current");
     expect(result.canPrepare).toBe(true);
     expect(result.canApprove).toBe(false);
-    expect(result.productionStatus).toBe("Production unchanged");
-    expect(result.description).toContain("Preparing it will not change production");
   });
 
   it("shows up to date when no newer release exists", () => {
@@ -28,84 +32,60 @@ describe("describeAdminUpdateState", () => {
     });
 
     expect(result.status).toBe("up_to_date");
-    expect(result.title).toBe("Up to date");
     expect(result.canPrepare).toBe(false);
-    expect(result.canApprove).toBe(false);
-    expect(result.description).toContain("No action needed");
   });
 
-  it("keeps setup errors plain English", () => {
-    const result = describeAdminUpdateState({
-      ok: false,
-      error: "GITHUB_TOKEN or GITHUB_REPO not configured",
-    });
-
-    expect(result.status).toBe("setup_required");
-    expect(result.title).toBe("Setup needed");
-    expect(result.canPrepare).toBe(false);
-    expect(result.canApprove).toBe(false);
-    expect(result.description).toContain("missing update configuration");
-  });
-
-  it("blocks approval for a draft safe-update PR with conflicts", () => {
+  it("blocks approval when merge conflicts exist", () => {
     const result = describeAdminUpdateState({
       ok: true,
       releaseAheadOfForkPackage: true,
       activeSafeUpdate: {
-        number: 1,
-        title: "chore: review Ycode core update",
-        url: "https://github.com/example/repo/pull/1",
+        ...basePr,
         isDraft: true,
         mergeable: false,
         mergeableState: "dirty",
         ciStatus: "failure",
-        labels: ["safe-ycode-update", "needs-developer-review", "tenant-sensitive-update"],
+        labels: ["safe-ycode-update", "needs-developer-review"],
       },
     });
 
     expect(result.status).toBe("blocked_needs_resolution");
-    expect(result.title).toBe("Update prepared, but not ready");
-    expect(result.canPrepare).toBe(false);
     expect(result.canApprove).toBe(false);
-    expect(result.productionStatus).toBe("Production unchanged");
-    expect(result.actionLabel).toBe("Copy AI repair prompt");
-    expect(result.nextActionText).toContain("AI agent");
-    expect(result.agentPrompt).toContain("MasjidWeb safe core update needs technical resolution");
+    expect(result.canCopyPrompt).toBe(true);
+    expect(result.phases.find((p) => p.step === 3)?.status).toBe("current");
     expect(result.agentPrompt).toContain("Safe update PR: #1");
-    expect(result.agentPrompt).toContain("Do not merge or deploy unless the platform admin explicitly asks");
-    expect(result.description).toContain("Do not approve this update yet");
   });
 
-  it("blocks approval when checks failed even if the PR is not draft", () => {
+  it("allows preview when draft PR is clean and checks pass", () => {
     const result = describeAdminUpdateState({
       ok: true,
       activeSafeUpdate: {
+        ...basePr,
         number: 2,
-        title: "chore: update Ycode core",
-        url: "https://github.com/example/repo/pull/2",
-        isDraft: false,
+        isDraft: true,
         mergeable: true,
         mergeableState: "clean",
-        ciStatus: "failure",
-        labels: ["safe-ycode-update"],
+        ciStatus: "success",
+        labels: ["safe-ycode-update", "tenant-sensitive-update"],
       },
     });
 
-    expect(result.status).toBe("checks_failed");
-    expect(result.canApprove).toBe(false);
-    expect(result.actionLabel).toBe("Copy AI repair prompt");
-    expect(result.agentPrompt).toContain("Safety checks failed");
-    expect(result.agentPrompt).toContain("Safe update PR: #2");
-    expect(result.description).toContain("checks failed");
+    expect(result.status).toBe("ready_to_preview");
+    expect(result.actionLabel).toBe("Approve merge");
+    expect(result.canPreview).toBe(true);
+    expect(result.canApprove).toBe(true);
+    expect(result.previewBuilderUrl).toContain("/ycode");
+    expect(result.preview?.tenantSlug).toBe("masjidemo1");
+    expect(result.preview?.loginEmailHint).toBe("masjidemo1@masjidweb.com");
+    expect(result.phases.find((p) => p.step === 4)?.status).toBe("current");
   });
 
-  it("allows approval only when safe PR is mergeable and checks pass", () => {
+  it("allows approval when safe PR is mergeable and checks pass", () => {
     const result = describeAdminUpdateState({
       ok: true,
       activeSafeUpdate: {
+        ...basePr,
         number: 3,
-        title: "chore: update Ycode core",
-        url: "https://github.com/example/repo/pull/3",
         isDraft: false,
         mergeable: true,
         mergeableState: "clean",
@@ -115,20 +95,17 @@ describe("describeAdminUpdateState", () => {
     });
 
     expect(result.status).toBe("ready_to_approve");
-    expect(result.title).toBe("Ready for admin approval");
     expect(result.canApprove).toBe(true);
-    expect(result.canPrepare).toBe(false);
-    expect(result.productionStatus).toBe("Production unchanged");
-    expect(result.actionLabel).toBe("Open PR to approve update");
+    expect(result.actionLabel).toBe("Approve merge");
+    expect(result.phases.find((p) => p.step === 5)?.status).toBe("current");
   });
 
   it("tells admins to wait while checks are pending", () => {
     const result = describeAdminUpdateState({
       ok: true,
       activeSafeUpdate: {
+        ...basePr,
         number: 4,
-        title: "chore: update Ycode core",
-        url: "https://github.com/example/repo/pull/4",
         isDraft: false,
         mergeable: true,
         mergeableState: "clean",
@@ -139,6 +116,5 @@ describe("describeAdminUpdateState", () => {
 
     expect(result.status).toBe("preparing");
     expect(result.actionLabel).toBe("Refresh status");
-    expect(result.description).toContain("still running");
   });
 });

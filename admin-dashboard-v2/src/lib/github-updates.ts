@@ -302,6 +302,83 @@ export interface SyncPR {
   mergeableState: string | null;
   ciStatus: "success" | "failure" | "pending" | "unknown";
   htmlUrl: string;
+  /** Netlify deploy preview for this PR, when checks have published one */
+  deployPreviewUrl: string | null;
+}
+
+/** Standard Netlify PR preview hostname for the builder site. */
+export function netlifyDeployPreviewUrlForPr(prNumber: number): string {
+  const siteSlug =
+    import.meta.env.NETLIFY_DEPLOY_PREVIEW_SITE_SLUG?.trim() || "masjidweb-tenants";
+  return `https://deploy-preview-${prNumber}--${siteSlug}.netlify.app`;
+}
+
+function deployPreviewUrlFromCheckRuns(
+  checkRuns: { name?: string | null; details_url?: string | null }[],
+): string | null {
+  for (const run of checkRuns) {
+    const url = run.details_url?.trim();
+    if (!url) continue;
+    if (/deploy-preview-\d+--/i.test(url) || /netlify\.app/i.test(url)) {
+      return url.replace(/\/$/, "");
+    }
+    const name = (run.name ?? "").toLowerCase();
+    if (name.includes("netlify") && name.includes("deploy")) {
+      return url.replace(/\/$/, "");
+    }
+  }
+  return null;
+}
+
+async function getHeadCiAndPreview(
+  token: string,
+  repo: string,
+  sha: string,
+  prNumber: number,
+): Promise<{
+  ciStatus: "success" | "failure" | "pending" | "unknown";
+  deployPreviewUrl: string | null;
+}> {
+  const res = await fetch(
+    `${GH}/repos/${repo}/commits/${sha}/check-runs`,
+    { headers: headers(token) },
+  );
+  if (res.ok) {
+    const data = (await res.json()) as {
+      total_count: number;
+      check_runs: {
+        conclusion: string | null;
+        status: string;
+        name?: string | null;
+        details_url?: string | null;
+      }[];
+    };
+    if (data.total_count > 0) {
+      const hasFailure = data.check_runs.some((c) => c.conclusion === "failure");
+      if (hasFailure) {
+        return {
+          ciStatus: "failure",
+          deployPreviewUrl: deployPreviewUrlFromCheckRuns(data.check_runs),
+        };
+      }
+
+      const allDone = data.check_runs.every((c) => c.status === "completed");
+      const preview =
+        deployPreviewUrlFromCheckRuns(data.check_runs) ??
+        (allDone ? netlifyDeployPreviewUrlForPr(prNumber) : null);
+      return {
+        ciStatus: allDone ? "success" : "pending",
+        deployPreviewUrl: preview,
+      };
+    }
+  }
+
+  const ciStatus = await getHeadCheckStatus(token, repo, sha);
+  return {
+    ciStatus,
+    deployPreviewUrl:
+      ciStatus === "success" ? netlifyDeployPreviewUrlForPr(prNumber) : null,
+  };
 }
 
 /** Default: MasjidWeb v2 builder line (`main`). Override with `GITHUB_SYNC_PR_BASES` if you add more base branches. */
@@ -356,7 +433,12 @@ export async function listSyncPRs(
         mergeableState = d.mergeable_state ?? null;
         headSha = d.head.sha;
       }
-      const ci = await getHeadCheckStatus(token, repo, headSha);
+      const { ciStatus, deployPreviewUrl } = await getHeadCiAndPreview(
+        token,
+        repo,
+        headSha,
+        pr.number,
+      );
       prs.push({
         number: pr.number,
         title: pr.title,
@@ -367,8 +449,9 @@ export async function listSyncPRs(
         labels: (pr.labels ?? []).map((label) => label.name).filter((label): label is string => Boolean(label)),
         mergeable,
         mergeableState,
-        ciStatus: ci,
+        ciStatus,
         htmlUrl: pr.html_url,
+        deployPreviewUrl,
       });
     }
   }
@@ -423,6 +506,22 @@ export async function getCommitCiStatus(
 }
 
 // ── Merge PR ─────────────────────────────────────────────────────────────────
+
+export async function markPullRequestReady(
+  token: string,
+  repo: string,
+  prNumber: number,
+): Promise<void> {
+  const res = await fetch(`${GH}/repos/${repo}/pulls/${prNumber}`, {
+    method: "PATCH",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ draft: false }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(data.message || `Mark PR ready failed: ${res.status}`);
+  }
+}
 
 export async function mergePR(
   token: string,
