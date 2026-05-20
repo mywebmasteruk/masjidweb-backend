@@ -1258,6 +1258,61 @@ const cleanupDeletesUnassigned =
       return html;
     }
 
+    function syncCoreUpdateActionButtons(adminState) {
+      const applyButton = document.getElementById("applyBuilderUpdateBtn");
+      const safeUpdatePrLink = document.getElementById("safeUpdatePrLink");
+      const openPreviewBtn = document.getElementById("openPreviewBtn");
+      if (!applyButton || !adminState) return;
+
+      const viewed = window.coreUpdateViewedStep ?? resolveViewedStep(adminState);
+      const aiRepairInPanel = shouldShowAiRepairBlock(adminState, viewed);
+      const repairStatus =
+        adminState.status === "blocked_needs_resolution" ||
+        adminState.status === "checks_failed";
+
+      const primaryEnabled =
+        adminState.canPrepare ||
+        adminState.status === "preparing" ||
+        adminState.canCopyPrompt ||
+        adminState.canPreview ||
+        adminState.canApprove;
+
+      if (aiRepairInPanel) {
+        applyButton.classList.add("hidden");
+        applyButton.disabled = true;
+      } else {
+        applyButton.classList.remove("hidden");
+        if (repairStatus) {
+          applyButton.textContent = "Refresh status";
+          applyButton.disabled = false;
+        } else {
+          applyButton.textContent = adminState.actionLabel;
+          applyButton.disabled = !primaryEnabled;
+        }
+      }
+
+      if (safeUpdatePrLink) {
+        if (adminState.prUrl) {
+          safeUpdatePrLink.setAttribute("href", adminState.prUrl);
+          safeUpdatePrLink.classList.remove("hidden");
+        } else {
+          safeUpdatePrLink.classList.add("hidden");
+        }
+      }
+
+      if (openPreviewBtn) {
+        const previewHref = adminState.previewBuilderUrl || adminState.previewUrl;
+        if (adminState.canPreview && previewHref) {
+          openPreviewBtn.setAttribute("href", previewHref);
+          const label = adminState.preview?.tenantLabel || "tenant";
+          openPreviewBtn.textContent = "Open " + label + " builder preview";
+          openPreviewBtn.classList.remove("hidden");
+        } else {
+          openPreviewBtn.classList.add("hidden");
+        }
+      }
+    }
+
     function refreshCoreUpdateView(nextStep) {
       const adminState = window.currentAdminUpdateState;
       const data = window.currentUpdateCheckData;
@@ -1273,6 +1328,7 @@ const cleanupDeletesUnassigned =
       }
       window.coreUpdateViewedStep = viewed;
       statusArea.innerHTML = renderCoreUpdateWizard(adminState, data, viewed);
+      syncCoreUpdateActionButtons(adminState);
     }
 
     async function runUpdateCheck() {
@@ -1310,39 +1366,6 @@ const cleanupDeletesUnassigned =
         canApprove: false,
         prUrl: null,
       };
-      const applyButton = document.getElementById("applyBuilderUpdateBtn");
-      const safeUpdatePrLink = document.getElementById("safeUpdatePrLink");
-      const openPreviewBtn = document.getElementById("openPreviewBtn");
-      const primaryEnabled =
-        adminState.canPrepare ||
-        adminState.status === "preparing" ||
-        adminState.canCopyPrompt ||
-        adminState.canPreview ||
-        adminState.canApprove;
-      if (applyButton) {
-        applyButton.textContent = adminState.actionLabel;
-        applyButton.disabled = !primaryEnabled;
-      }
-      if (safeUpdatePrLink) {
-        if (adminState.prUrl) {
-          safeUpdatePrLink.setAttribute("href", adminState.prUrl);
-          safeUpdatePrLink.classList.remove("hidden");
-        } else {
-          safeUpdatePrLink.classList.add("hidden");
-        }
-      }
-      if (openPreviewBtn) {
-        const previewHref = adminState.previewBuilderUrl || adminState.previewUrl;
-        if (adminState.canPreview && previewHref) {
-          openPreviewBtn.setAttribute("href", previewHref);
-          const label = adminState.preview?.tenantLabel || "tenant";
-          openPreviewBtn.textContent = "Open " + label + " builder preview";
-          openPreviewBtn.classList.remove("hidden");
-        } else {
-          openPreviewBtn.classList.add("hidden");
-        }
-      }
-
       const selectedPreviewSlug = data.previewTenant?.slug || previewSlug;
       if (selectedPreviewSlug) setStoredPreviewTenantSlug(selectedPreviewSlug);
 
