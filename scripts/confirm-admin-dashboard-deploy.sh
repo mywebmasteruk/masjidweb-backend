@@ -12,14 +12,14 @@ SHORT="${SHA:0:7}"
 echo "Looking for deploy workflow run for commit ${SHORT} in ${REPO}..."
 
 RUN_ID=""
-for _ in $(seq 1 30); do
+for _ in $(seq 1 45); do
   RUN_ID="$(gh run list \
     --repo "$REPO" \
     --workflow "deploy-admin-dashboard.yml" \
-    --commit "$SHA" \
-    --json databaseId,status \
-    --limit 1 \
-    -q '.[0].databaseId // empty' 2>/dev/null || true)"
+    --branch main \
+    --json databaseId,headSha,status \
+    --limit 10 \
+    -q ".[] | select(.headSha == \"${SHA}\") | .databaseId" 2>/dev/null | head -1 || true)"
   if [ -n "$RUN_ID" ]; then
     break
   fi
