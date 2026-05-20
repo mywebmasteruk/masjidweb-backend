@@ -133,6 +133,9 @@ const cleanupDeletesUnassigned =
 
   <style>
     .status-placeholder { padding: .75rem 0; }
+  </style>
+  <!-- Core update wizard HTML is injected client-side; scoped Astro CSS would not apply. -->
+  <style is:global>
     .core-update-state {
       padding: 1rem;
       border: 1px solid rgba(148, 163, 184, .22);
@@ -387,6 +390,8 @@ const cleanupDeletesUnassigned =
       font-size: .78rem;
       line-height: 1.5;
     }
+  </style>
+  <style>
     .history-wrap { overflow: visible; }
     .history-table {
       width: 100%;
