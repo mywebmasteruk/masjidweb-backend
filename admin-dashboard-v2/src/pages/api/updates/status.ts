@@ -14,6 +14,8 @@ import {
   listActivePreviewTenantOptions,
   resolvePreviewTenantContext,
 } from "../../../lib/resolve-preview-tenant";
+import { getGithubUpdatesConfig } from "../../../lib/github-env";
+import { readServerEnv } from "../../../lib/server-env";
 import { githubProductionBranch } from "../../../lib/updates-env";
 
 type UpdateHistoryRow = {
@@ -66,14 +68,15 @@ export const GET: APIRoute = async (context) => {
     });
   }
 
-  const token = import.meta.env.GITHUB_TOKEN;
-  const repo = import.meta.env.GITHUB_REPO;
-  if (!token || !repo) {
+  const github = getGithubUpdatesConfig();
+  if (!github) {
     return new Response(
       JSON.stringify({ error: "GITHUB_TOKEN or GITHUB_REPO not configured" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
+
+  const { token, repo } = github;
 
   try {
     const productionBranch = githubProductionBranch();
@@ -91,7 +94,7 @@ export const GET: APIRoute = async (context) => {
     let deployBranch: string | null = null;
     let updateHistory: UpdateHistoryRow[] = [];
 
-    const netlifyToken = import.meta.env.NETLIFY_AUTH_TOKEN;
+    const netlifyToken = readServerEnv("NETLIFY_AUTH_TOKEN");
     const nlSite = netlifyBuilderSiteId();
     if (netlifyToken && nlSite) {
       try {

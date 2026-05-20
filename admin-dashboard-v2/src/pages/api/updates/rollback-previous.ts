@@ -6,6 +6,7 @@ import {
   publishDeploy,
 } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
+import { readServerEnv } from "../../../lib/server-env";
 
 const json = { "Content-Type": "application/json" } as const;
 
@@ -17,7 +18,7 @@ export const POST: APIRoute = async (context) => {
     });
   }
 
-  const token = import.meta.env.NETLIFY_AUTH_TOKEN;
+  const token = readServerEnv("NETLIFY_AUTH_TOKEN");
   const siteId = netlifyBuilderSiteId();
   if (!token || !siteId) {
     return new Response(

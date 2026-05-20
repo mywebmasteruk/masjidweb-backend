@@ -1,5 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
+import { getGithubUpdatesConfig } from "../../../lib/github-env";
+import { readServerEnv } from "../../../lib/server-env";
 import { listSyncPRs } from "../../../lib/github-updates";
 
 export const GET: APIRoute = async (context) => {
@@ -10,16 +12,16 @@ export const GET: APIRoute = async (context) => {
     });
   }
 
-  const token = import.meta.env.GITHUB_TOKEN;
-  const repo = import.meta.env.GITHUB_REPO;
-  if (!token || !repo) {
+  const github = getGithubUpdatesConfig();
+  if (!github) {
     return new Response(
       JSON.stringify({ error: "GITHUB_TOKEN or GITHUB_REPO not configured" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
+  const { token, repo } = github;
 
-  const basesRaw = import.meta.env.GITHUB_SYNC_PR_BASES?.trim();
+  const basesRaw = readServerEnv("GITHUB_SYNC_PR_BASES");
   const basesFromEnv = basesRaw
     ? basesRaw.split(",").map((s) => s.trim()).filter(Boolean)
     : undefined;

@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
+import { readServerEnv } from "../../../lib/server-env";
 
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -11,7 +12,7 @@ export const GET: APIRoute = async (context) => {
     });
   }
 
-  const token = import.meta.env.NETLIFY_AUTH_TOKEN;
+  const token = readServerEnv("NETLIFY_AUTH_TOKEN");
   const siteId = netlifyBuilderSiteId();
   if (!token || !siteId) {
     return new Response(

@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
+import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import { listSyncPRs, markPullRequestReady, mergePR } from "../../../lib/github-updates";
 import { describeAdminUpdateState } from "../../../lib/update-admin-copy";
 import { githubProductionBranch } from "../../../lib/updates-env";
@@ -12,14 +13,14 @@ export const POST: APIRoute = async (context) => {
     });
   }
 
-  const token = import.meta.env.GITHUB_TOKEN;
-  const repo = import.meta.env.GITHUB_REPO;
-  if (!token || !repo) {
+  const github = getGithubUpdatesConfig();
+  if (!github) {
     return new Response(
       JSON.stringify({ ok: false, error: "GITHUB_TOKEN or GITHUB_REPO not configured" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }
+  const { token, repo } = github;
 
   try {
     const productionBranch = githubProductionBranch();

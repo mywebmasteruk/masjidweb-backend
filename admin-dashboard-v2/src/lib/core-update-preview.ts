@@ -1,3 +1,5 @@
+import { readServerEnv } from "./server-env";
+
 /**
  * Deploy-preview tenant selection for safe core updates (Maintenance UI).
  */
@@ -26,18 +28,11 @@ export type CoreUpdatePreviewLinks = {
 };
 
 function tenantDomainSuffix(): string {
-  return (
-    import.meta.env?.TENANT_DOMAIN_SUFFIX?.trim() ||
-    (typeof process !== "undefined" ? process.env.TENANT_DOMAIN_SUFFIX?.trim() : undefined) ||
-    "masjidweb.com"
-  );
+  return readServerEnv("TENANT_DOMAIN_SUFFIX") || "masjidweb.com";
 }
 
 export function getCoreUpdatePreviewTenantSlug(): string {
-  const fromEnv =
-    import.meta.env?.PREVIEW_TENANT_SLUG?.trim() ||
-    (typeof process !== "undefined" ? process.env.PREVIEW_TENANT_SLUG?.trim() : undefined);
-  return fromEnv || DEFAULT_CORE_UPDATE_PREVIEW_TENANT_SLUG;
+  return readServerEnv("PREVIEW_TENANT_SLUG") || DEFAULT_CORE_UPDATE_PREVIEW_TENANT_SLUG;
 }
 
 export function formatCoreUpdatePreviewTenantLabel(

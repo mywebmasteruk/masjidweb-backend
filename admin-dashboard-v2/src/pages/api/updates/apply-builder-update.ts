@@ -1,5 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
+import { getGithubUpdatesConfig } from "../../../lib/github-env";
+import { readServerEnv } from "../../../lib/server-env";
 import {
   createOrUpdateConflictIssue,
   ensureMergePR,
@@ -23,14 +25,14 @@ export const POST: APIRoute = async (context) => {
     });
   }
 
-  const token = import.meta.env.GITHUB_TOKEN;
-  const repo = import.meta.env.GITHUB_REPO;
-  if (!token || !repo) {
+  const github = getGithubUpdatesConfig();
+  if (!github) {
     return new Response(
       JSON.stringify({ ok: false, error: "GITHUB_TOKEN or GITHUB_REPO not configured" }),
       { status: 500, headers: json },
     );
   }
+  const { token, repo } = github;
 
   let clearNetlifyCache = false;
   try {
@@ -125,7 +127,7 @@ export const POST: APIRoute = async (context) => {
       }
 
       if (mergedViaAutoPr) {
-        const nlToken = import.meta.env.NETLIFY_AUTH_TOKEN;
+        const nlToken = readServerEnv("NETLIFY_AUTH_TOKEN");
         const nlSite = netlifyBuilderSiteId();
         if (!nlToken || !nlSite) {
           const skipMsg =
@@ -212,7 +214,7 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
-    const nlToken = import.meta.env.NETLIFY_AUTH_TOKEN;
+    const nlToken = readServerEnv("NETLIFY_AUTH_TOKEN");
     const nlSite = netlifyBuilderSiteId();
     if (!nlToken || !nlSite) {
       const skipMsg =

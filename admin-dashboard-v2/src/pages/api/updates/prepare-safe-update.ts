@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
+import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import { dispatchSafeUpdateWorkflow } from "../../../lib/github-safe-update";
 
 const json = { "Content-Type": "application/json" } as const;
@@ -12,9 +13,8 @@ export const POST: APIRoute = async (context) => {
     });
   }
 
-  const token = import.meta.env.GITHUB_TOKEN;
-  const repo = import.meta.env.GITHUB_REPO;
-  if (!token || !repo) {
+  const github = getGithubUpdatesConfig();
+  if (!github) {
     return new Response(
       JSON.stringify({
         ok: false,
@@ -24,6 +24,7 @@ export const POST: APIRoute = async (context) => {
       { status: 500, headers: json },
     );
   }
+  const { token, repo } = github;
 
   try {
     await dispatchSafeUpdateWorkflow(token, repo);

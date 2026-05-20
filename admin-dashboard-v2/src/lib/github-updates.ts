@@ -1,3 +1,5 @@
+import { readServerEnv } from "./server-env";
+
 const GH = "https://api.github.com";
 
 /** Official Ycode repo — must match tenant `checkForUpdates` upstream. */
@@ -309,7 +311,7 @@ export interface SyncPR {
 /** Standard Netlify PR preview hostname for the builder site. */
 export function netlifyDeployPreviewUrlForPr(prNumber: number): string {
   const siteSlug =
-    import.meta.env.NETLIFY_DEPLOY_PREVIEW_SITE_SLUG?.trim() || "masjidweb-tenants";
+    readServerEnv("NETLIFY_DEPLOY_PREVIEW_SITE_SLUG") || "masjidweb-tenants";
   return `https://deploy-preview-${prNumber}--${siteSlug}.netlify.app`;
 }
 
