@@ -1160,11 +1160,28 @@ const cleanupDeletesUnassigned =
           "</strong> (step " +
           escapeHtml(workflowStep) +
           '). Use <strong>Jump to current step</strong> below before taking action.</p>';
+      } else if (viewedStep < workflowStep && phase.status === "done") {
+        const workflowLabel = CORE_UPDATE_STEPPER_LABELS[workflowStep - 1] || String(workflowStep);
+        html +=
+          '<p class="mw-step-ahead-notice">This step is already complete. The live workflow is on <strong>' +
+          escapeHtml(workflowLabel) +
+          "</strong> (step " +
+          escapeHtml(workflowStep) +
+          '). Use <strong>Jump to current step</strong> or the actions below the wizard.</p>';
+        guide =
+          "Safe update preparation already started. You do not need to prepare again — continue on the current step.";
       } else if (isLiveStep) {
         html += '<span class="mw-step-live-hint">Current step</span>';
       }
       html += '<h3 class="core-update-headline">' + escapeHtml(headline) + "</h3>";
       html += '<p class="core-update-guide">' + escapeHtml(guide) + "</p>";
+
+      if (isLiveStep && adminState.canPrepare && viewedStep === 1) {
+        html +=
+          '<div class="mw-step-actions" style="margin-top:.85rem;">' +
+          '<button type="button" id="prepareSafeUpdateBtn" class="btn btn-primary btn-sm">Prepare safe update</button>' +
+          "</div>";
+      }
 
       if (shouldShowAiRepairBlock(adminState, viewedStep)) {
         html += renderAiRepairPanelHtml();
@@ -1277,12 +1294,16 @@ const cleanupDeletesUnassigned =
         adminState.canPreview ||
         adminState.canApprove;
 
-      if (aiRepairInPanel) {
+      const workflowStep = getWorkflowStep(adminState.phases || []);
+      const isLiveStep = viewed === workflowStep;
+      const prepareInPanel = isLiveStep && adminState.canPrepare && viewed === 1;
+
+      if (aiRepairInPanel || prepareInPanel) {
         applyButton.classList.add("hidden");
         applyButton.disabled = true;
       } else {
         applyButton.classList.remove("hidden");
-        if (repairStatus) {
+        if (repairStatus || viewed !== workflowStep) {
           applyButton.textContent = "Refresh status";
           applyButton.disabled = false;
         } else {
@@ -1479,6 +1500,11 @@ const cleanupDeletesUnassigned =
 
       if (target.id === "copyAiRepairPromptBtn" || target.closest("#copyAiRepairPromptBtn")) {
         copyAiRepairPrompt();
+        return;
+      }
+
+      if (target.id === "prepareSafeUpdateBtn" || target.closest("#prepareSafeUpdateBtn")) {
+        postPrepareSafeUpdate();
       }
     });
 
