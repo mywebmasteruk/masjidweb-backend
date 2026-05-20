@@ -162,25 +162,112 @@ const cleanupDeletesUnassigned =
       background: rgba(234, 179, 8, .08);
       color: var(--warning);
     }
-    .core-update-progress {
-      margin: .85rem 0 .25rem;
-      height: 6px;
-      border-radius: 999px;
-      background: rgba(148, 163, 184, .16);
-      overflow: hidden;
+    .core-update-stepper {
+      margin: .85rem 0 1rem;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .35rem;
     }
-    .core-update-progress-fill {
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, rgba(59, 130, 246, .85), rgba(96, 165, 250, .95));
-      transition: width .25s ease;
+    .core-update-stepper-item {
+      flex: 1 1 0;
+      min-width: 4.5rem;
     }
-    .core-update-progress-label {
-      margin: 0 0 .65rem;
-      font-size: .72rem;
-      font-weight: 600;
+    .core-update-stepper-btn {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .35rem;
+      padding: .45rem .35rem;
+      border-radius: calc(var(--radius) - 2px);
+      border: 1px solid rgba(148, 163, 184, .18);
+      background: rgba(255, 255, 255, .02);
       color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color .15s ease, background .15s ease, color .15s ease;
+    }
+    .core-update-stepper-btn:hover {
+      border-color: rgba(148, 163, 184, .35);
+      color: var(--text);
+    }
+    .core-update-stepper-btn.viewing {
+      border-color: rgba(59, 130, 246, .45);
+      background: rgba(59, 130, 246, .1);
+      color: var(--text);
+    }
+    .core-update-stepper-btn.done .core-update-stepper-dot {
+      border-color: rgba(34, 197, 94, .45);
+      background: var(--success-bg);
+      color: var(--success);
+    }
+    .core-update-stepper-btn.current:not(.viewing) .core-update-stepper-dot {
+      border-color: rgba(59, 130, 246, .5);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, .18);
+    }
+    .core-update-stepper-btn.skipped .core-update-stepper-dot {
+      opacity: .55;
+    }
+    .core-update-stepper-dot {
+      width: 1.65rem;
+      height: 1.65rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, .35);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .72rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .core-update-stepper-label {
+      font-size: .68rem;
+      font-weight: 600;
+      text-align: center;
+      line-height: 1.25;
+    }
+    .core-update-step-panel {
+      padding: .85rem 0 0;
+      border-top: 1px solid rgba(148, 163, 184, .14);
+    }
+    .core-update-step-badge {
+      display: inline-flex;
+      margin-bottom: .5rem;
+      border-radius: 999px;
+      padding: .15rem .5rem;
+      font-size: .68rem;
+      font-weight: 700;
       letter-spacing: .02em;
+    }
+    .core-update-step-badge.live {
+      border: 1px solid rgba(59, 130, 246, .35);
+      background: rgba(59, 130, 246, .1);
+      color: #93c5fd;
+    }
+    .core-update-step-badge.done {
+      border: 1px solid rgba(34, 197, 94, .28);
+      background: var(--success-bg);
+      color: var(--success);
+    }
+    .core-update-step-badge.skipped {
+      border: 1px solid rgba(148, 163, 184, .22);
+      background: rgba(148, 163, 184, .08);
+      color: var(--muted);
+    }
+    .core-update-step-badge.upcoming {
+      border: 1px solid rgba(148, 163, 184, .22);
+      color: var(--muted);
+    }
+    .core-update-wizard-nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: .65rem;
+      margin-top: 1rem;
+      padding-top: .85rem;
+      border-top: 1px solid rgba(148, 163, 184, .14);
     }
     .core-update-headline {
       margin: 0;
@@ -643,13 +730,47 @@ const cleanupDeletesUnassigned =
       return phases.find((phase) => phase.status === "current") || null;
     }
 
-    const CORE_UPDATE_STEP_COUNT = 4;
+    function getPhaseByStep(phases, step) {
+      if (!Array.isArray(phases)) return null;
+      return phases.find((phase) => phase.step === step) || null;
+    }
 
-    function shouldShowPreviewBlock(adminState) {
-      if (!adminState) return false;
+    function getWorkflowStep(phases) {
+      const current = getCurrentUpdatePhase(phases);
+      return current && current.step ? current.step : 1;
+    }
+
+    const CORE_UPDATE_STEP_COUNT = 4;
+    const CORE_UPDATE_VIEWED_STEP_KEY = "mw_core_update_viewed_step";
+    const CORE_UPDATE_LAST_WORKFLOW_KEY = "mw_core_update_last_workflow_step";
+    const CORE_UPDATE_STEPPER_LABELS = ["Prepare", "Fix", "Preview", "Approve"];
+
+    function getStoredViewedStep() {
+      const n = parseInt(sessionStorage.getItem(CORE_UPDATE_VIEWED_STEP_KEY) || "", 10);
+      return n >= 1 && n <= CORE_UPDATE_STEP_COUNT ? n : null;
+    }
+
+    function setStoredViewedStep(step) {
+      sessionStorage.setItem(CORE_UPDATE_VIEWED_STEP_KEY, String(step));
+    }
+
+    function resolveViewedStep(adminState) {
+      const workflowStep = getWorkflowStep(adminState.phases || []);
+      let lastWorkflow = parseInt(sessionStorage.getItem(CORE_UPDATE_LAST_WORKFLOW_KEY) || "", 10);
+      sessionStorage.setItem(CORE_UPDATE_LAST_WORKFLOW_KEY, String(workflowStep));
+      if (!Number.isNaN(lastWorkflow) && workflowStep > lastWorkflow) {
+        setStoredViewedStep(workflowStep);
+        return workflowStep;
+      }
+      const stored = getStoredViewedStep();
+      return stored || workflowStep;
+    }
+
+    function shouldShowPreviewBlock(adminState, viewedStep) {
+      if (!adminState || viewedStep !== 3) return false;
       if ((adminState.canPreview || adminState.canApprove) && adminState.preview) return true;
-      const current = getCurrentUpdatePhase(adminState.phases);
-      return Boolean(current && current.step === 3);
+      const phase = getPhaseByStep(adminState.phases, 3);
+      return Boolean(phase && (phase.status === "current" || phase.status === "done"));
     }
 
     function renderPreviewTenantPickerHtml(options, selectedSlug) {
@@ -680,66 +801,78 @@ const cleanupDeletesUnassigned =
       );
     }
 
-    function renderProgressBar(step, total) {
-      const pct = total > 0 ? Math.round((step / total) * 100) : 0;
+    function renderStepper(phases, viewedStep) {
+      const list = Array.isArray(phases) ? phases : [];
+      const items = [];
+      for (let step = 1; step <= CORE_UPDATE_STEP_COUNT; step += 1) {
+        const phase = getPhaseByStep(list, step) || { step, status: "upcoming" };
+        const shortLabel = CORE_UPDATE_STEPPER_LABELS[step - 1] || String(step);
+        const classes = ["core-update-stepper-btn", phase.status];
+        if (step === viewedStep) classes.push("viewing");
+        const dot =
+          phase.status === "done"
+            ? "\u2713"
+            : phase.status === "skipped"
+              ? "\u2014"
+              : String(step);
+        items.push(
+          '<li class="core-update-stepper-item">' +
+            '<button type="button" class="' +
+            classes.join(" ") +
+            '" data-goto-step="' +
+            escapeAttr(step) +
+            '" aria-current="' +
+            (step === viewedStep ? "step" : "false") +
+            '">' +
+            '<span class="core-update-stepper-dot">' +
+            escapeHtml(dot) +
+            "</span>" +
+            '<span class="core-update-stepper-label">' +
+            escapeHtml(shortLabel) +
+            "</span>" +
+            "</button></li>",
+        );
+      }
       return (
-        '<p class="core-update-progress-label">Step ' +
-        escapeHtml(step) +
-        " of " +
-        escapeHtml(total) +
-        '</p><div class="core-update-progress" role="progressbar" aria-valuemin="1" aria-valuemax="' +
-        escapeAttr(total) +
-        '" aria-valuenow="' +
-        escapeAttr(step) +
-        '"><div class="core-update-progress-fill" style="width:' +
-        pct +
-        '%;"></div></div>'
+        '<nav aria-label="Core update steps"><ol class="core-update-stepper">' + items.join("") + "</ol></nav>"
       );
     }
 
-    function buildVersionLine(data) {
-      if (!data || data.ok !== true) return "";
-      const latest = data.latestReleaseVersion;
-      const live = data.deployedPackageVersion || data.forkPackageVersion;
-      if (!latest && !live) return "";
-      let line = "Release " + (latest || "—") + " · Live builder " + (live || "—");
-      if (data.deployCommitRef && data.deployedPackageVersion) {
-        line += " · commit " + String(data.deployCommitRef).slice(0, 7);
+    function renderStepBadge(phase, viewedStep, workflowStep) {
+      if (viewedStep === workflowStep) {
+        return '<span class="core-update-step-badge live">You are here</span>';
       }
-      return line;
+      if (phase.status === "done") {
+        return '<span class="core-update-step-badge done">Completed</span>';
+      }
+      if (phase.status === "skipped") {
+        return '<span class="core-update-step-badge skipped">Skipped</span>';
+      }
+      return '<span class="core-update-step-badge upcoming">Up next</span>';
     }
 
-    function renderCoreUpdateState(adminState, data) {
+    function renderStepPanel(adminState, data, viewedStep) {
       const phases = adminState.phases || [];
-      const phase = getCurrentUpdatePhase(phases);
-      const total = phases.length || CORE_UPDATE_STEP_COUNT;
-      const productionPillClass = adminState.productionStatus === "Deploy pending" ? " pending" : "";
-      const versionLine = buildVersionLine(data);
+      const phase = getPhaseByStep(phases, viewedStep);
+      const workflowStep = getWorkflowStep(phases);
+      if (!phase) return "";
 
-      let html = '<div class="core-update-state">';
-      html +=
-        '<div class="core-update-topline"><span class="core-update-pill' +
-        productionPillClass +
-        '">' +
-        escapeHtml(adminState.productionStatus || "Production unchanged") +
-        "</span></div>";
-
-      if (phase) {
-        html += renderProgressBar(phase.step, total);
-        const headline = adminState.title || phase.title;
-        const guide = adminState.nextActionText || phase.detail;
-        html += '<h3 class="core-update-headline">' + escapeHtml(headline) + "</h3>";
-        html += '<p class="core-update-guide">' + escapeHtml(guide) + "</p>";
-      } else {
-        html += '<h3 class="core-update-headline">' + escapeHtml(adminState.title) + "</h3>";
-        html += '<p class="core-update-guide">' + escapeHtml(adminState.description) + "</p>";
+      const isLiveStep = viewedStep === workflowStep;
+      let headline = phase.title;
+      let guide = phase.detail;
+      if (isLiveStep) {
+        if (adminState.title) headline = adminState.title;
+        if (adminState.nextActionText) guide = adminState.nextActionText;
+      } else if (phase.status === "skipped" && viewedStep === 2) {
+        guide = "No merge conflicts were detected for this update. You can move on to preview when the pull request is ready.";
       }
 
-      if (versionLine) {
-        html += '<p class="core-update-version text-xs text-muted">' + escapeHtml(versionLine) + "</p>";
-      }
+      let html = '<div class="core-update-step-panel">';
+      html += renderStepBadge(phase, viewedStep, workflowStep);
+      html += '<h3 class="core-update-headline">' + escapeHtml(headline) + "</h3>";
+      html += '<p class="core-update-guide">' + escapeHtml(guide) + "</p>";
 
-      if (shouldShowPreviewBlock(adminState)) {
+      if (shouldShowPreviewBlock(adminState, viewedStep)) {
         const selectedSlug = (data && data.previewTenant && data.previewTenant.slug) || getStoredPreviewTenantSlug();
         const preview = adminState.preview;
         html += '<div class="core-update-preview-panel">';
@@ -759,6 +892,93 @@ const cleanupDeletesUnassigned =
 
       html += "</div>";
       return html;
+    }
+
+    function renderWizardNav(viewedStep, workflowStep) {
+      const backDisabled = viewedStep <= 1;
+      const nextDisabled = viewedStep >= CORE_UPDATE_STEP_COUNT;
+      let center =
+        '<span class="text-xs text-muted" style="align-self:center;">Step ' +
+        escapeHtml(viewedStep) +
+        " of " +
+        escapeHtml(CORE_UPDATE_STEP_COUNT) +
+        "</span>";
+      if (viewedStep !== workflowStep) {
+        center =
+          '<button type="button" class="btn btn-ghost btn-sm" data-goto-step="' +
+          escapeAttr(workflowStep) +
+          '">Jump to current</button>';
+      }
+      return (
+        '<div class="core-update-wizard-nav">' +
+        '<button type="button" id="coreUpdateStepBack" class="btn btn-ghost btn-sm"' +
+        (backDisabled ? " disabled" : "") +
+        ">\u2190 Back</button>" +
+        center +
+        '<button type="button" id="coreUpdateStepNext" class="btn btn-ghost btn-sm"' +
+        (nextDisabled ? " disabled" : "") +
+        ">Next \u2192</button></div>"
+      );
+    }
+
+    function buildVersionLine(data) {
+      if (!data || data.ok !== true) return "";
+      const latest = data.latestReleaseVersion;
+      const live = data.deployedPackageVersion || data.forkPackageVersion;
+      if (!latest && !live) return "";
+      let line = "Release " + (latest || "—") + " · Live builder " + (live || "—");
+      if (data.deployCommitRef && data.deployedPackageVersion) {
+        line += " · commit " + String(data.deployCommitRef).slice(0, 7);
+      }
+      return line;
+    }
+
+    function renderCoreUpdateWizard(adminState, data, viewedStep) {
+      const phases = adminState.phases || [];
+      const step = Math.max(1, Math.min(CORE_UPDATE_STEP_COUNT, viewedStep || resolveViewedStep(adminState)));
+      const productionPillClass = adminState.productionStatus === "Deploy pending" ? " pending" : "";
+      const versionLine = buildVersionLine(data);
+
+      let html = '<div class="core-update-state" data-viewed-step="' + escapeAttr(step) + '">';
+      html +=
+        '<div class="core-update-topline"><span class="core-update-pill' +
+        productionPillClass +
+        '">' +
+        escapeHtml(adminState.productionStatus || "Production unchanged") +
+        "</span></div>";
+
+      if (phases.length > 0) {
+        html += renderStepper(phases, step);
+        html += renderStepPanel(adminState, data, step);
+        html += renderWizardNav(step, getWorkflowStep(phases));
+      } else {
+        html += '<h3 class="core-update-headline">' + escapeHtml(adminState.title) + "</h3>";
+        html += '<p class="core-update-guide">' + escapeHtml(adminState.description) + "</p>";
+      }
+
+      if (versionLine) {
+        html += '<p class="core-update-version text-xs text-muted">' + escapeHtml(versionLine) + "</p>";
+      }
+
+      html += "</div>";
+      return html;
+    }
+
+    function refreshCoreUpdateView(nextStep) {
+      const adminState = window.currentAdminUpdateState;
+      const data = window.currentUpdateCheckData;
+      const statusArea = document.getElementById("statusArea");
+      if (!adminState || !statusArea) return;
+
+      let viewed = nextStep;
+      if (viewed == null) {
+        viewed = resolveViewedStep(adminState);
+      } else {
+        viewed = Math.max(1, Math.min(CORE_UPDATE_STEP_COUNT, viewed));
+        setStoredViewedStep(viewed);
+      }
+      window.coreUpdateViewedStep = viewed;
+      statusArea.innerHTML = renderCoreUpdateWizard(adminState, data, viewed);
     }
 
     async function runUpdateCheck() {
@@ -832,8 +1052,9 @@ const cleanupDeletesUnassigned =
       const selectedPreviewSlug = data.previewTenant?.slug || previewSlug;
       if (selectedPreviewSlug) setStoredPreviewTenantSlug(selectedPreviewSlug);
 
-      statusArea.innerHTML = renderCoreUpdateState(adminState, data);
       window.currentAdminUpdateState = adminState;
+      window.currentUpdateCheckData = data;
+      refreshCoreUpdateView();
 
       if (data.ok !== true) {
         toast(adminState.description, false);
@@ -912,6 +1133,26 @@ const cleanupDeletesUnassigned =
       if (!slug) return;
       setStoredPreviewTenantSlug(slug);
       await runUpdateCheck();
+    });
+
+    document.getElementById("statusArea")?.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const gotoBtn = target.closest("[data-goto-step]");
+      if (gotoBtn instanceof HTMLElement && gotoBtn.dataset.gotoStep) {
+        refreshCoreUpdateView(parseInt(gotoBtn.dataset.gotoStep, 10));
+        return;
+      }
+
+      if (target.id === "coreUpdateStepBack" || target.closest("#coreUpdateStepBack")) {
+        refreshCoreUpdateView((window.coreUpdateViewedStep || 1) - 1);
+        return;
+      }
+
+      if (target.id === "coreUpdateStepNext" || target.closest("#coreUpdateStepNext")) {
+        refreshCoreUpdateView((window.coreUpdateViewedStep || 1) + 1);
+      }
     });
 
     const applyBuilderBtn = document.getElementById("applyBuilderUpdateBtn");
