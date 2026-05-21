@@ -63,7 +63,7 @@ const cleanupDeletesUnassigned =
 
         <div class="flex core-update-actions" style="flex-wrap:wrap;gap:.75rem;align-items:center;margin-top:1rem;">
           <button type="button" id="applyBuilderUpdateBtn" class="btn btn-primary">Prepare safe update</button>
-          <a id="openPreviewBtn" class="btn btn-ghost hidden" href="#" target="_blank" rel="noopener noreferrer">Open MasjidDemo1 builder preview</a>
+          <a id="openPreviewBtn" class="btn btn-ghost hidden" href="#" target="_blank" rel="noopener noreferrer">Open MasjidDemo1 homepage preview</a>
           <a id="safeUpdatePrLink" class="btn btn-ghost hidden" href="#" target="_blank" rel="noopener noreferrer">Open pull request</a>
         </div>
         <div id="applyUpdateResult" class="hidden text-xs" style="margin-top:.75rem;padding:.75rem;border-radius:var(--radius);border:1px solid var(--border);"></div>
@@ -1211,8 +1211,8 @@ const cleanupDeletesUnassigned =
         if (preview) {
           html +=
             '<div class="core-update-preview-warn">Live sites still use <span class="mono">' +
-            escapeHtml(preview.productionBuilderUrl) +
-            "</span>. Use Open builder preview for PR code.</div>";
+            escapeHtml(preview.productionPublicUrl) +
+            "</span>. Use Open homepage preview for PR code.</div>";
           html +=
             '<p class="text-xs text-muted" style="margin:.55rem 0 0;">Sign in on the preview as <span class="mono">' +
             escapeHtml(preview.loginEmailHint) +
@@ -1338,11 +1338,12 @@ const cleanupDeletesUnassigned =
       }
 
       if (openPreviewBtn) {
-        const previewHref = adminState.previewBuilderUrl || adminState.previewUrl;
+        const previewHref =
+          adminState.preview?.publicSiteOnPreview || adminState.previewUrl;
         if (adminState.canPreview && previewHref) {
           openPreviewBtn.setAttribute("href", previewHref);
           const label = adminState.preview?.tenantLabel || "tenant";
-          openPreviewBtn.textContent = "Open " + label + " builder preview";
+          openPreviewBtn.textContent = "Open " + label + " homepage preview";
           openPreviewBtn.classList.remove("hidden");
         } else {
           openPreviewBtn.classList.add("hidden");

@@ -19,9 +19,13 @@ describe("core-update-preview", () => {
 
     expect(links.tenantSlug).toBe("masjidemo1");
     expect(links.tenantLabel).toBe("MasjidDemo1");
+    expect(links.publicSiteOnPreview).toBe(
+      "https://deploy-preview-2--masjidweb-tenants.netlify.app",
+    );
     expect(links.builderOnPreview).toBe(
       "https://deploy-preview-2--masjidweb-tenants.netlify.app/ycode",
     );
+    expect(links.productionPublicUrl).toBe("https://masjidemo1.masjidweb.com/");
     expect(links.productionBuilderUrl).toBe("https://masjidemo1.masjidweb.com/ycode");
     expect(links.loginEmailHint).toBe("masjidemo1@masjidweb.com");
   });

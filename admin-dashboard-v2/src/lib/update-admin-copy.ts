@@ -187,7 +187,7 @@ export function buildUpdatePhases(
     phase(
       3,
       "Preview on deploy preview",
-      "Choose a tenant, open the Netlify preview (not the live subdomain), sign in, and check the builder and homepage.",
+      "Choose a tenant and open the Netlify deploy preview homepage (not the live subdomain). Check the public site, then sign in to the builder if needed.",
     ),
     phase(
       4,

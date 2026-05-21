@@ -74,6 +74,11 @@ describe("describeAdminUpdateState", () => {
     expect(result.actionLabel).toBe("Approve merge");
     expect(result.canPreview).toBe(true);
     expect(result.canApprove).toBe(true);
+    expect(result.previewUrl).toBe(
+      "https://deploy-preview-1--masjidweb-tenants.netlify.app",
+    );
+    expect(result.previewUrl).not.toContain("/ycode");
+    expect(result.preview?.publicSiteOnPreview).toBe(result.previewUrl);
     expect(result.previewBuilderUrl).toContain("/ycode");
     expect(result.preview?.tenantSlug).toBe("masjidemo1");
     expect(result.preview?.loginEmailHint).toBe("masjidemo1@masjidweb.com");
