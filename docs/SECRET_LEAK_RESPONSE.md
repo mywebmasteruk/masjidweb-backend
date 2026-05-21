@@ -35,6 +35,8 @@ Optional history purge (coordinate with team; rewrites all clones):
 - Use [GitHub secret scanning remediation](https://docs.github.com/en/code-security/secret-scanning/working-with-secret-scanning-and-push-protection/working-with-push-protection-from-the-command-line) or `git filter-repo` / BFG
 - Force-push only with explicit approval
 
+**Done 2026-05-21:** `git filter-repo --replace-text` removed the service_role JWT from all commits on `main`; force-pushed (`6ea1dcf`). Old commit SHAs (e.g. `ae0443a`, `93e2f47`) no longer exist on GitHub. Re-clone or `git fetch origin && git reset --hard origin/main`.
+
 ## Prevention
 
 - `bash scripts/check-secrets.sh` locally before commit
