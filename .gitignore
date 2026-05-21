@@ -36,6 +36,7 @@ ycode-masjidweb/.netlify/
 # Local secrets for scripts (never commit)
 .env.netlify
 .env.local
+publish-collections.env
 admin-dashboard-v2/.env
 ycode-masjidweb/.env
 ycode-masjidweb/.env.local

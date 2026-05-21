@@ -1,6 +1,25 @@
-const SB_URL = 'https://jofgypmriaqphnsyxiks.supabase.co/rest/v1';
-const SB_KEY = 'REDACTED_USE_ENV';
-const TENANT = '2fff887d-a78e-4256-9116-6e02fe38c614';
+#!/usr/bin/env node
+/**
+ * One-off YCode publish helper (bypasses Netlify function timeout).
+ *
+ * Usage (never commit secrets):
+ *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... TENANT_ID=... node publish-collections.mjs
+ *
+ * Copy from Netlify admin env or admin-dashboard-v2/.env locally.
+ */
+function requireEnv(name) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    console.error(`Missing ${name}. Export it in the shell (never commit secrets).`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const supabaseUrl = requireEnv('SUPABASE_URL').replace(/\/$/, '');
+const SB_URL = `${supabaseUrl}/rest/v1`;
+const SB_KEY = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
+const TENANT = requireEnv('TENANT_ID');
 const HEADERS = {
   'apikey': SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
