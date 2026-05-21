@@ -1,6 +1,10 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
-import { listRecentDeploys, publishDeploy } from "../../../lib/netlify-deploys";
+import {
+  getDeployById,
+  listRecentDeploys,
+  publishDeploy,
+} from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 import { readServerEnv } from "../../../lib/server-env";
 import { githubProductionBranch } from "../../../lib/updates-env";
@@ -40,7 +44,10 @@ export const POST: APIRoute = async (context) => {
   try {
     const deploys = await listRecentDeploys(token, siteId, 25);
     const current = deploys.find((d) => d.isCurrent);
-    const target = deploys.find((d) => d.id === deployId);
+    let target = deploys.find((d) => d.id === deployId);
+    if (!target) {
+      target = (await getDeployById(token, siteId, deployId)) ?? undefined;
+    }
 
     if (!target || target.state !== "ready") {
       return new Response(

@@ -19,36 +19,33 @@ export interface DeployInfo {
   isCurrent: boolean;
 }
 
-export async function listRecentDeploys(
+type NetlifyDeployRow = {
+  id: string;
+  state: string;
+  title: string | null;
+  commit_ref: string | null;
+  branch: string | null;
+  created_at: string;
+  published_at: string | null;
+  deploy_ssl_url: string;
+};
+
+async function fetchCurrentDeployId(
   token: string,
   siteId: string,
-  limit = 10,
-): Promise<DeployInfo[]> {
-  const res = await fetch(
-    `${API}/sites/${siteId}/deploys?per_page=${limit}`,
-    { headers: authHeaders(token) },
-  );
-  if (!res.ok) throw new Error(`Netlify list deploys: ${res.status}`);
-
+): Promise<string | null> {
   const siteRes = await fetch(`${API}/sites/${siteId}`, {
     headers: authHeaders(token),
   });
-  const site = siteRes.ok
-    ? ((await siteRes.json()) as { published_deploy?: { id: string } })
-    : null;
-  const currentDeployId = site?.published_deploy?.id ?? null;
+  if (!siteRes.ok) return null;
+  const site = (await siteRes.json()) as { published_deploy?: { id: string } };
+  return site.published_deploy?.id ?? null;
+}
 
-  const deploys = (await res.json()) as {
-    id: string;
-    state: string;
-    title: string | null;
-    commit_ref: string | null;
-    branch: string | null;
-    created_at: string;
-    published_at: string | null;
-    deploy_ssl_url: string;
-  }[];
-
+function mapDeployRows(
+  deploys: NetlifyDeployRow[],
+  currentDeployId: string | null,
+): DeployInfo[] {
   return deploys.map((d) => ({
     id: d.id,
     state: d.state,
@@ -60,6 +57,76 @@ export async function listRecentDeploys(
     deployUrl: d.deploy_ssl_url,
     isCurrent: d.id === currentDeployId,
   }));
+}
+
+export async function listRecentDeploys(
+  token: string,
+  siteId: string,
+  limit = 10,
+): Promise<DeployInfo[]> {
+  const res = await fetch(
+    `${API}/sites/${siteId}/deploys?per_page=${limit}`,
+    { headers: authHeaders(token) },
+  );
+  if (!res.ok) throw new Error(`Netlify list deploys: ${res.status}`);
+
+  const currentDeployId = await fetchCurrentDeployId(token, siteId);
+  const deploys = (await res.json()) as NetlifyDeployRow[];
+  return mapDeployRows(deploys, currentDeployId);
+}
+
+/** Paginate Netlify deploys and return ready builds from the production branch (newest first). */
+export async function listProductionBranchDeploys(
+  token: string,
+  siteId: string,
+  productionBranch: string,
+  options?: { maxItems?: number; maxPages?: number },
+): Promise<DeployInfo[]> {
+  const maxItems = options?.maxItems ?? 50;
+  const maxPages = options?.maxPages ?? 10;
+  const perPage = 100;
+  const branch = productionBranch.trim();
+  const collected: DeployInfo[] = [];
+  const currentDeployId = await fetchCurrentDeployId(token, siteId);
+
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await fetch(
+      `${API}/sites/${siteId}/deploys?per_page=${perPage}&page=${page}`,
+      { headers: authHeaders(token) },
+    );
+    if (!res.ok) throw new Error(`Netlify list deploys: ${res.status}`);
+
+    const rows = (await res.json()) as NetlifyDeployRow[];
+    if (rows.length === 0) break;
+
+    for (const deploy of mapDeployRows(rows, currentDeployId)) {
+      if (deploy.state !== "ready") continue;
+      if ((deploy.branch ?? "").trim() !== branch) continue;
+      collected.push(deploy);
+      if (collected.length >= maxItems) break;
+    }
+
+    if (collected.length >= maxItems) break;
+    if (rows.length < perPage) break;
+  }
+
+  return collected;
+}
+
+export async function getDeployById(
+  token: string,
+  siteId: string,
+  deployId: string,
+): Promise<DeployInfo | null> {
+  const res = await fetch(`${API}/sites/${siteId}/deploys/${deployId}`, {
+    headers: authHeaders(token),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Netlify get deploy: ${res.status}`);
+
+  const currentDeployId = await fetchCurrentDeployId(token, siteId);
+  const d = (await res.json()) as NetlifyDeployRow;
+  return mapDeployRows([d], currentDeployId)[0] ?? null;
 }
 
 /** Netlify returns deploys newest-first; find the first `ready` deploy older than the live one. */

@@ -8,7 +8,10 @@ import {
   listSyncPRs,
   pickActiveSafeUpdatePr,
 } from "../../../lib/github-updates";
-import { listRecentDeploys } from "../../../lib/netlify-deploys";
+import {
+  listProductionBranchDeploys,
+  listRecentDeploys,
+} from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 import { describeAdminUpdateState } from "../../../lib/update-admin-copy";
 import {
@@ -114,9 +117,12 @@ export const GET: APIRoute = async (context) => {
           );
         }
 
-        const publishedDeploys = deploys
-          .filter((d) => d.state === "ready")
-          .slice(0, 8);
+        const publishedDeploys = await listProductionBranchDeploys(
+          netlifyToken,
+          nlSite,
+          productionBranch,
+          { maxItems: 50 },
+        );
         updateHistory = await Promise.all(
           publishedDeploys.map(async (d) => {
             let version: string | null = null;
