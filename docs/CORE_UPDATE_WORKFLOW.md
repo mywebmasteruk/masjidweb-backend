@@ -145,7 +145,8 @@ Apply migration in Supabase before relying on full rollback in production admin.
 
 ### After approve
 
-- [ ] Wait for Netlify **production** deploy to finish (GitHub Actions / Netlify dashboard)
+- [ ] GitHub workflow **Core update production deploy** completes (emails repo watchers with Actions notifications enabled)
+- [ ] PR comment confirms Netlify production is live
 - [ ] Spot-check live tenant subdomain + builder login
 - [ ] If problems: **Full rollback to pre-update** (not deploy-only, unless emergency seconds matter)
 
@@ -168,6 +169,7 @@ Apply migration in Supabase before relying on full rollback in production admin.
 | Checkpoint lib | `admin-dashboard-v2/src/lib/core-update-audit.ts` |
 | Create safe PR workflow | `ycode-mw-tenant/.github/workflows/sync-upstream.yml` |
 | PR CI | `ycode-mw-tenant/.github/workflows/ci-build-check.yml` |
+| Deploy complete notification (GitHub) | `ycode-mw-tenant/.github/workflows/core-update-deploy-notify.yml` |
 | Safety classifier | `ycode-mw-tenant/lib/masjidweb/update-safety-check.ts` |
 | Seam contract | `ycode-mw-tenant/docs/masjidweb-core-seams.md` |
 
