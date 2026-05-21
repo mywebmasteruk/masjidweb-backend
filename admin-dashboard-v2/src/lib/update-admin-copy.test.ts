@@ -80,6 +80,25 @@ describe("describeAdminUpdateState", () => {
     expect(result.phases.find((p) => p.step === 3)?.status).toBe("current");
   });
 
+  it("does not treat needs-developer-review as merge conflicts when PR is mergeable", () => {
+    const result = describeAdminUpdateState({
+      ok: true,
+      activeSafeUpdate: {
+        ...basePr,
+        number: 3,
+        isDraft: true,
+        mergeable: true,
+        mergeableState: "clean",
+        ciStatus: "success",
+        labels: ["safe-ycode-update", "needs-developer-review", "tenant-sensitive-update"],
+      },
+    });
+
+    expect(result.status).toBe("ready_to_preview");
+    expect(result.canApprove).toBe(true);
+    expect(result.canCopyPrompt).toBe(false);
+  });
+
   it("allows approval when safe PR is mergeable and checks pass", () => {
     const result = describeAdminUpdateState({
       ok: true,

@@ -84,9 +84,7 @@ function isConflictState(input: AdminSafeUpdateSummary): boolean {
     input.mergeable === false ||
     input.mergeableState === "dirty" ||
     input.mergeableState === "blocked" ||
-    input.labels.some((label) =>
-      ["auto-update-conflict", "needs-developer-review"].includes(label),
-    )
+    input.labels.includes("auto-update-conflict")
   );
 }
 
