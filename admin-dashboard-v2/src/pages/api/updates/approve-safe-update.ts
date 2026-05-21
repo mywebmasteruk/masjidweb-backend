@@ -1,8 +1,18 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
+import { insertCoreUpdateAudit } from "../../../lib/core-update-audit";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
-import { listSyncPRs, markPullRequestReady, mergePR } from "../../../lib/github-updates";
+import {
+  fetchBranchHeadSha,
+  fetchPackageJsonVersion,
+  listSyncPRs,
+  markPullRequestReady,
+  mergePR,
+} from "../../../lib/github-updates";
+import { listRecentDeploys } from "../../../lib/netlify-deploys";
+import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 import { describeAdminUpdateState } from "../../../lib/update-admin-copy";
+import { readServerEnv } from "../../../lib/server-env";
 import { githubProductionBranch } from "../../../lib/updates-env";
 
 export const POST: APIRoute = async (context) => {
@@ -70,6 +80,24 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
+    const beforeMainSha = await fetchBranchHeadSha(token, repo, productionBranch);
+    let beforeDeployId: string | null = null;
+    const netlifyToken = readServerEnv("NETLIFY_AUTH_TOKEN");
+    const nlSite = netlifyBuilderSiteId();
+    if (netlifyToken && nlSite) {
+      try {
+        const deploys = await listRecentDeploys(netlifyToken, nlSite, 5);
+        const cur = deploys.find((d) => d.isCurrent && d.state === "ready");
+        beforeDeployId = cur?.id ?? null;
+      } catch {
+        /* checkpoint still useful without deploy id */
+      }
+    }
+
+    const beforePackageVersion = beforeMainSha
+      ? await fetchPackageJsonVersion(token, repo, beforeMainSha)
+      : null;
+
     if (safeUpdatePr.isDraft) {
       await markPullRequestReady(token, repo, safeUpdatePr.number);
     }
@@ -86,12 +114,50 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
+    const afterMainSha = merged.sha ?? (await fetchBranchHeadSha(token, repo, productionBranch));
+    const afterPackageVersion = afterMainSha
+      ? await fetchPackageJsonVersion(token, repo, afterMainSha)
+      : null;
+
+    const safetyLevel = safeUpdatePr.labels.includes("auto-update-conflict")
+      ? "blocked"
+      : safeUpdatePr.labels.includes("tenant-sensitive-update")
+        ? "high"
+        : "safe";
+
+    let checkpointId: string | null = null;
+    try {
+      const checkpoint = await insertCoreUpdateAudit({
+        action: "approve_merge",
+        prNumber: safeUpdatePr.number,
+        beforeMainSha,
+        afterMainSha,
+        beforeDeployId,
+        afterDeployId: null,
+        beforePackageVersion,
+        afterPackageVersion,
+        upstreamRef: safeUpdatePr.title,
+        safetyLevel,
+        details: {
+          prUrl: safeUpdatePr.htmlUrl,
+          mergeCommitSha: merged.sha ?? null,
+        },
+      });
+      checkpointId = checkpoint?.id ?? null;
+    } catch {
+      /* merge succeeded; audit is best-effort */
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
         message: `Safe update PR #${safeUpdatePr.number} merged. Production will deploy from ${productionBranch} when the build finishes.`,
         prNumber: safeUpdatePr.number,
         prUrl: safeUpdatePr.htmlUrl,
+        checkpointId,
+        beforeMainSha,
+        afterMainSha,
+        beforeDeployId,
       }),
       { headers: { "Content-Type": "application/json" } },
     );

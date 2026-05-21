@@ -529,18 +529,54 @@ export async function mergePR(
   token: string,
   repo: string,
   prNumber: number,
-): Promise<{ merged: boolean; message: string }> {
+): Promise<{ merged: boolean; message: string; sha?: string }> {
   const res = await fetch(`${GH}/repos/${repo}/pulls/${prNumber}/merge`, {
     method: "PUT",
     headers: { ...headers(token), "Content-Type": "application/json" },
     body: JSON.stringify({ merge_method: "merge" }),
   });
-  const data = (await res.json()) as { merged?: boolean; message?: string };
+  const data = (await res.json()) as { merged?: boolean; message?: string; sha?: string };
 
   return {
     merged: data.merged ?? false,
     message: data.message ?? (res.ok ? "PR merged." : `Merge failed: ${res.status}`),
+    sha: data.sha,
   };
+}
+
+export async function fetchBranchHeadSha(
+  token: string,
+  repo: string,
+  branch: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `${GH}/repos/${repo}/git/ref/heads/${encodeURIComponent(branch.trim())}`,
+    { headers: headers(token) },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { object?: { sha?: string } };
+  return data.object?.sha ?? null;
+}
+
+export async function createRevertPullRequest(
+  token: string,
+  repo: string,
+  prNumber: number,
+): Promise<{ number: number; htmlUrl: string }> {
+  const res = await fetch(`${GH}/repos/${repo}/pulls/${prNumber}/revert`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const data = (await res.json()) as {
+    number?: number;
+    html_url?: string;
+    message?: string;
+  };
+  if (!res.ok || !data.number || !data.html_url) {
+    throw new Error(data.message || `Create revert PR failed: ${res.status}`);
+  }
+  return { number: data.number, htmlUrl: data.html_url };
 }
 
 export type MergeHeadIntoBaseResult =

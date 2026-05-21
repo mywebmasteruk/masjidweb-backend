@@ -14,6 +14,7 @@ import {
   listActivePreviewTenantOptions,
   resolvePreviewTenantContext,
 } from "../../../lib/resolve-preview-tenant";
+import { getLatestReversibleCheckpoint } from "../../../lib/core-update-audit";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import { readServerEnv } from "../../../lib/server-env";
 import { githubProductionBranch } from "../../../lib/updates-env";
@@ -81,12 +82,14 @@ export const GET: APIRoute = async (context) => {
   try {
     const productionBranch = githubProductionBranch();
     const requestedPreviewSlug = context.url.searchParams.get("previewTenantSlug");
-    const [status, semver, syncPRs, previewTenant, previewTenantOptions] = await Promise.all([
+    const [status, semver, syncPRs, previewTenant, previewTenantOptions, reversibleCheckpoint] =
+      await Promise.all([
       getUpdateStatus(token, repo),
       getReleaseSemverVsFork(token, repo, productionBranch),
       listSyncPRs(token, repo, [productionBranch]),
       resolvePreviewTenantContext(requestedPreviewSlug),
       listActivePreviewTenantOptions(),
+      getLatestReversibleCheckpoint().catch(() => null),
     ]);
 
     let deployedPackageVersion: string | null = null;
@@ -193,6 +196,7 @@ export const GET: APIRoute = async (context) => {
       gitAheadOfDeployed,
       activeSafeUpdate,
       updateHistory,
+      reversibleCheckpoint,
     };
 
     const statusPayload = {
