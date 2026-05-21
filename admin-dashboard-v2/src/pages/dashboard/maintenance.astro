@@ -1209,14 +1209,16 @@ const cleanupDeletesUnassigned =
         html += '<div class="core-update-preview-panel">';
         html += renderPreviewTenantPickerHtml(data && data.previewTenantOptions, selectedSlug);
         if (preview) {
+          if (preview.publicSiteOnPreview) {
+            html +=
+              '<p class="text-xs text-muted" style="margin:.55rem 0 0;">Deploy preview URL: <span class="mono">' +
+              escapeHtml(preview.publicSiteOnPreview) +
+              "</span></p>";
+          }
           html +=
-            '<div class="core-update-preview-warn">Live sites still use <span class="mono">' +
+            '<p class="text-xs text-muted" style="margin:.35rem 0 0;">Tenant subdomains like <span class="mono">' +
             escapeHtml(preview.productionPublicUrl) +
-            "</span>. Use Open homepage preview for PR code.</div>";
-          html +=
-            '<p class="text-xs text-muted" style="margin:.55rem 0 0;">Sign in on the preview as <span class="mono">' +
-            escapeHtml(preview.loginEmailHint) +
-            "</span></p>";
+            "</span> still show the live build until you approve this merge.</p>";
         }
         html += "</div>";
       }
