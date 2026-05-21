@@ -19,6 +19,7 @@ import {
   resolvePreviewTenantContext,
 } from "../../../lib/resolve-preview-tenant";
 import { getLatestReversibleCheckpoint } from "../../../lib/core-update-audit";
+import { pickCoreVersionUpgradeDeploys } from "../../../lib/core-version-history";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import { readServerEnv } from "../../../lib/server-env";
 import { githubProductionBranch } from "../../../lib/updates-env";
@@ -121,9 +122,9 @@ export const GET: APIRoute = async (context) => {
           netlifyToken,
           nlSite,
           productionBranch,
-          { maxItems: 50 },
+          { maxItems: 100 },
         );
-        updateHistory = await Promise.all(
+        const allHistoryRows = await Promise.all(
           publishedDeploys.map(async (d) => {
             let version: string | null = null;
             if (d.commitRef) {
@@ -139,7 +140,7 @@ export const GET: APIRoute = async (context) => {
               date: d.publishedAt ?? d.createdAt ?? null,
               originalDeployDate: d.createdAt ?? null,
               version,
-              status: d.isCurrent ? "live" : "previous",
+              status: d.isCurrent ? ("live" as const) : ("previous" as const),
               branch: d.branch,
               commitRef: d.commitRef,
               deployUrl: d.deployUrl,
@@ -149,6 +150,7 @@ export const GET: APIRoute = async (context) => {
             };
           }),
         );
+        updateHistory = pickCoreVersionUpgradeDeploys(allHistoryRows);
       } catch {
         /* ignore — fall back to git-branch semver only */
       }
