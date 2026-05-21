@@ -484,12 +484,6 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
     previewUrl: null,
     previewBuilderUrl: null,
     preview: null,
-    phases: buildUpdatePhases(status, {
-      hasActivePr: false,
-      needsRepair: false,
-      canPreview: false,
-      canApprove: false,
-      isDeploying: false,
-    }),
+    phases: [],
   };
 }

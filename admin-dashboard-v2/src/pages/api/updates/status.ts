@@ -6,6 +6,7 @@ import {
   getReleaseSemverVsFork,
   getUpdateStatus,
   listSyncPRs,
+  pickActiveSafeUpdatePr,
 } from "../../../lib/github-updates";
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
@@ -163,13 +164,12 @@ export const GET: APIRoute = async (context) => {
         compareVersions(semver.forkPackageVersion, deployedPackageVersion) > 0,
     );
 
-    const safeUpdatePr = syncPRs
-      .filter((pr) =>
-        pr.labels.includes("safe-ycode-update") ||
-        pr.title.toLowerCase().includes("ycode") ||
-        pr.title.toLowerCase().includes("safe update"),
-      )
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null;
+    const safeUpdatePr = await pickActiveSafeUpdatePr(
+      token,
+      repo,
+      syncPRs,
+      productionBranch,
+    );
 
     const activeSafeUpdate = safeUpdatePr
       ? {

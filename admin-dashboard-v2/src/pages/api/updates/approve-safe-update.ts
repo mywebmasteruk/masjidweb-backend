@@ -8,6 +8,7 @@ import {
   listSyncPRs,
   markPullRequestReady,
   mergePR,
+  pickActiveSafeUpdatePr,
 } from "../../../lib/github-updates";
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
@@ -35,15 +36,12 @@ export const POST: APIRoute = async (context) => {
   try {
     const productionBranch = githubProductionBranch();
     const syncPRs = await listSyncPRs(token, repo, [productionBranch]);
-    const safeUpdatePr =
-      syncPRs
-        .filter(
-          (pr) =>
-            pr.labels.includes("safe-ycode-update") ||
-            pr.title.toLowerCase().includes("ycode") ||
-            pr.title.toLowerCase().includes("safe update"),
-        )
-        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0] ?? null;
+    const safeUpdatePr = await pickActiveSafeUpdatePr(
+      token,
+      repo,
+      syncPRs,
+      productionBranch,
+    );
 
     if (!safeUpdatePr) {
       return new Response(

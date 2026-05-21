@@ -296,6 +296,7 @@ export interface SyncPR {
   base: string;
   state: string;
   createdAt: string;
+  headSha: string;
   isDraft: boolean;
   labels: string[];
   /** false = branch has merge conflicts with base */
@@ -447,6 +448,7 @@ export async function listSyncPRs(
         base: pr.base.ref,
         state: pr.state,
         createdAt: pr.created_at,
+        headSha,
         isDraft: pr.draft === true,
         labels: (pr.labels ?? []).map((label) => label.name).filter((label): label is string => Boolean(label)),
         mergeable,
@@ -459,6 +461,53 @@ export async function listSyncPRs(
   }
 
   return prs;
+}
+
+export function isSafeUpdatePullRequest(pr: SyncPR): boolean {
+  return (
+    pr.labels.includes("safe-ycode-update") ||
+    pr.title.toLowerCase().includes("ycode") ||
+    pr.title.toLowerCase().includes("safe update")
+  );
+}
+
+/** True when main already has this PR branch's package version (or newer). */
+export function isSupersededSafeUpdateVersion(
+  headVersion: string | null,
+  mainVersion: string | null,
+): boolean {
+  if (!headVersion || !mainVersion) return false;
+  return compareVersions(headVersion, mainVersion) <= 0;
+}
+
+/** Ignore stale open safe-update PRs left over after a successful merge. */
+export async function pickActiveSafeUpdatePr(
+  token: string,
+  repo: string,
+  prs: SyncPR[],
+  productionBranch: string,
+): Promise<SyncPR | null> {
+  const candidates = prs
+    .filter(isSafeUpdatePullRequest)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  if (candidates.length === 0) return null;
+
+  const mainSha = await fetchBranchHeadSha(token, repo, productionBranch);
+  const mainVersion = mainSha
+    ? await fetchPackageJsonVersion(token, repo, mainSha)
+    : null;
+
+  for (const pr of candidates) {
+    const headVersion = pr.headSha
+      ? await fetchPackageJsonVersion(token, repo, pr.headSha)
+      : null;
+    if (isSupersededSafeUpdateVersion(headVersion, mainVersion)) {
+      continue;
+    }
+    return pr;
+  }
+
+  return null;
 }
 
 async function getHeadCheckStatus(
