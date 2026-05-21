@@ -148,15 +148,8 @@ export const GET: APIRoute = async (context) => {
       }
     }
 
-    /** Same boolean the tenant builder uses: latest ycode/ycode release vs baked package.json at published deploy. */
-    let releaseAheadOfForkPackage = semver.releaseAheadOfForkPackage;
-    if (semver.latestReleaseVersion) {
-      if (deployedPackageVersion) {
-        releaseAheadOfForkPackage =
-          compareVersions(semver.latestReleaseVersion, deployedPackageVersion) >
-          0;
-      }
-    }
+    /** Upstream GitHub release vs fork main package.json (not live deploy — avoids false "update available" after merge). */
+    const releaseAheadOfForkPackage = semver.releaseAheadOfForkPackage;
 
     const gitAheadOfDeployed = Boolean(
       semver.forkPackageVersion &&
@@ -193,6 +186,7 @@ export const GET: APIRoute = async (context) => {
       deployedPackageVersion,
       deployCommitRef,
       deployBranch,
+      productionBranch,
       gitAheadOfDeployed,
       activeSafeUpdate,
       updateHistory,

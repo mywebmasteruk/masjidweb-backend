@@ -35,6 +35,33 @@ describe("describeAdminUpdateState", () => {
     expect(result.canPrepare).toBe(false);
   });
 
+  it("shows up to date when only an upstream patch is ahead and live matches git main", () => {
+    const result = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: true,
+      latestReleaseVersion: "1.10.1",
+      forkPackageVersion: "1.10.0",
+      deployedPackageVersion: "1.10.0",
+    });
+
+    expect(result.status).toBe("up_to_date");
+    expect(result.canPrepare).toBe(false);
+    expect(result.phases).toEqual([]);
+  });
+
+  it("still shows update available when fork main is behind upstream on minor version", () => {
+    const result = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: true,
+      latestReleaseVersion: "1.7.0",
+      forkPackageVersion: "1.6.1",
+      deployedPackageVersion: "1.6.1",
+    });
+
+    expect(result.status).toBe("update_available");
+    expect(result.canPrepare).toBe(true);
+  });
+
   it("blocks approval when merge conflicts exist", () => {
     const result = describeAdminUpdateState({
       ok: true,

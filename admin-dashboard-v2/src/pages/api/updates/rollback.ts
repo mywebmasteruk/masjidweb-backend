@@ -3,6 +3,7 @@ import { isAuthorized } from "../../../lib/auth-helpers";
 import { listRecentDeploys, publishDeploy } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
 import { readServerEnv } from "../../../lib/server-env";
+import { githubProductionBranch } from "../../../lib/updates-env";
 
 export const POST: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -48,9 +49,20 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
-    if (current?.branch && target.branch !== current.branch) {
+    const productionBranch = githubProductionBranch();
+    if (target.branch !== productionBranch) {
       return new Response(
-        JSON.stringify({ ok: false, error: "Selected build is not from the current production branch." }),
+        JSON.stringify({
+          ok: false,
+          error: `Only ${productionBranch} branch builds can be restored as live.`,
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (current?.id === target.id) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "That build is already live." }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }

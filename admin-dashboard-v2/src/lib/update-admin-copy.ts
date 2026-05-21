@@ -5,6 +5,7 @@ import {
   type CoreUpdatePreviewLinks,
   type PreviewTenantContext,
 } from "./core-update-preview";
+import { compareVersions } from "./github-updates";
 
 export type { PreviewTenantContext } from "./core-update-preview";
 
@@ -53,6 +54,7 @@ export type AdminUpdateCopyInput = {
   error?: unknown;
   releaseAheadOfForkPackage?: boolean;
   latestReleaseVersion?: string | null;
+  forkPackageVersion?: string | null;
   deployedPackageVersion?: string | null;
   gitAheadOfDeployed?: boolean;
   activeSafeUpdate?: AdminSafeUpdateSummary | null;
@@ -78,6 +80,21 @@ export type AdminUpdateCopy = {
   preview: CoreUpdatePreviewLinks | null;
   phases: AdminUpdatePhase[];
 };
+
+/** Upstream patch (same major.minor) while git main already matches live — not a new core update cycle. */
+function isOptionalUpstreamPatchAhead(input: AdminUpdateCopyInput): boolean {
+  const latest = input.latestReleaseVersion;
+  const fork = input.forkPackageVersion;
+  const deployed = input.deployedPackageVersion;
+  if (!latest || !fork || !deployed) return false;
+  if (compareVersions(latest, fork) <= 0) return false;
+  if (compareVersions(fork, deployed) !== 0) return false;
+
+  const parse = (v: string) => v.split(".").map((part) => Number(part) || 0);
+  const [lMajor, lMinor] = parse(latest);
+  const [fMajor, fMinor] = parse(fork);
+  return lMajor === fMajor && lMinor === fMinor;
+}
 
 function isConflictState(input: AdminSafeUpdateSummary): boolean {
   return (
@@ -435,9 +452,36 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
     }, previewTenant);
   }
 
+  if (input.releaseAheadOfForkPackage && isOptionalUpstreamPatchAhead(input)) {
+    const status: AdminUpdateStatus = "up_to_date";
+    return {
+      status,
+      title: "Up to date",
+      description:
+        "Production matches git main. A newer upstream patch exists but no core update workflow is required until you choose to prepare one.",
+      productionStatus: "Live update complete",
+      actionLabel: "No action needed",
+      nextActionText: "No update action is needed right now.",
+      agentPrompt: null,
+      canPrepare: false,
+      canApprove: false,
+      canPreview: false,
+      canCopyPrompt: false,
+      prNumber: null,
+      prUrl: null,
+      previewUrl: null,
+      previewBuilderUrl: null,
+      preview: null,
+      phases: [],
+    };
+  }
+
   if (input.releaseAheadOfForkPackage) {
     const latest = input.latestReleaseVersion || "the latest Ycode release";
-    const current = input.deployedPackageVersion || "the current live builder version";
+    const current =
+      input.forkPackageVersion ||
+      input.deployedPackageVersion ||
+      "the current fork version";
     const status: AdminUpdateStatus = "update_available";
     return {
       status,
