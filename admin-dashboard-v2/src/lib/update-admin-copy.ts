@@ -393,7 +393,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
           "The safe update pull request is being prepared and safety checks are still running. Production is unchanged.",
         productionStatus: "Production unchanged",
         actionLabel: "Refresh status",
-        nextActionText: "Wait about a minute, then click Refresh status.",
+        nextActionText: "Running the merge test on GitHub. This page updates automatically.",
         agentPrompt: null,
         canPrepare: false,
         canApprove: false,

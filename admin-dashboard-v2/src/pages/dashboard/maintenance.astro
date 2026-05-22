@@ -954,6 +954,40 @@ const cleanupDeletesUnassigned =
     const CORE_UPDATE_VIEWED_STEP_KEY = "mw_core_update_viewed_step";
     const CORE_UPDATE_LAST_WORKFLOW_KEY = "mw_core_update_last_workflow_step";
     const CORE_UPDATE_STEPPER_LABELS = ["Prepare", "Fix", "Preview", "Approve"];
+    const CORE_UPDATE_POLL_MS = 5000;
+    const CORE_UPDATE_POLL_MAX_MS = 10 * 60 * 1000;
+    let coreUpdatePollTimer = null;
+    let coreUpdatePollDeadline = 0;
+
+    function shouldAutoPollCoreUpdate(adminState) {
+      const status = adminState && adminState.status;
+      return status === "preparing" || status === "deploying";
+    }
+
+    function stopCoreUpdatePolling() {
+      if (coreUpdatePollTimer) {
+        clearInterval(coreUpdatePollTimer);
+        coreUpdatePollTimer = null;
+      }
+      coreUpdatePollDeadline = 0;
+    }
+
+    function startCoreUpdatePolling() {
+      stopCoreUpdatePolling();
+      coreUpdatePollDeadline = Date.now() + CORE_UPDATE_POLL_MAX_MS;
+      coreUpdatePollTimer = setInterval(async () => {
+        if (Date.now() > coreUpdatePollDeadline) {
+          stopCoreUpdatePolling();
+          return;
+        }
+        const state = window.currentAdminUpdateState;
+        if (!shouldAutoPollCoreUpdate(state)) {
+          stopCoreUpdatePolling();
+          return;
+        }
+        await runUpdateCheck({ silent: true });
+      }, CORE_UPDATE_POLL_MS);
+    }
 
     function getStoredViewedStep() {
       const n = parseInt(sessionStorage.getItem(CORE_UPDATE_VIEWED_STEP_KEY) || "", 10);
@@ -1480,9 +1514,13 @@ const cleanupDeletesUnassigned =
       syncCoreUpdateActionButtons(adminState);
     }
 
-    async function runUpdateCheck() {
+    async function runUpdateCheck(opts) {
+      const silent = opts && opts.silent === true;
+      const prevWorkflow = getWorkflowStep(
+        (window.currentAdminUpdateState && window.currentAdminUpdateState.phases) || [],
+      );
       const btn = document.getElementById("checkUpdatesBtn");
-      if (btn) {
+      if (!silent && btn) {
         btn.disabled = true;
         btn.innerHTML = '<span style="opacity:.6">Checking...</span>';
       }
@@ -1491,7 +1529,7 @@ const cleanupDeletesUnassigned =
       const statusUrl =
         "/api/updates/status?previewTenantSlug=" + encodeURIComponent(previewSlug);
       const data = await api(statusUrl);
-      if (btn) {
+      if (!silent && btn) {
         btn.disabled = false;
         btn.innerHTML = '<svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Refresh status';
       }
@@ -1522,6 +1560,18 @@ const cleanupDeletesUnassigned =
       window.currentUpdateCheckData = data;
       window.currentProductionBranch = data.productionBranch || "main";
       refreshCoreUpdateView();
+
+      const newWorkflow = getWorkflowStep(adminState.phases || []);
+      if (newWorkflow > prevWorkflow) {
+        const label = CORE_UPDATE_STEPPER_LABELS[newWorkflow - 1] || String(newWorkflow);
+        toast("Workflow advanced to step " + newWorkflow + ": " + label + ".", true);
+      }
+
+      if (shouldAutoPollCoreUpdate(adminState)) {
+        startCoreUpdatePolling();
+      } else {
+        stopCoreUpdatePolling();
+      }
 
       if (data.ok !== true) {
         toast(adminState.description, false);
@@ -1601,6 +1651,17 @@ const cleanupDeletesUnassigned =
     }
 
     async function postPrepareSafeUpdate() {
+      const panelBtn = document.getElementById("prepareSafeUpdateBtn");
+      const cardBtn = document.getElementById("applyBuilderUpdateBtn");
+      if (panelBtn) {
+        panelBtn.disabled = true;
+        panelBtn.textContent = "Preparing…";
+      }
+      if (cardBtn && !cardBtn.classList.contains("hidden")) {
+        cardBtn.disabled = true;
+        cardBtn.textContent = "Preparing…";
+      }
+
       const data = await api("/api/updates/prepare-safe-update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1609,8 +1670,18 @@ const cleanupDeletesUnassigned =
       if (data.ok === true) {
         setApplyUpdateResult(data.message || "Safe update preparation has started. Production has not changed.", true);
         toast(data.message || "Safe update preparation has started.", true);
-        setTimeout(runUpdateCheck, 3000);
+        await runUpdateCheck();
+        startCoreUpdatePolling();
         return;
+      }
+
+      if (panelBtn) {
+        panelBtn.disabled = false;
+        panelBtn.textContent = "Prepare safe update";
+      }
+      if (cardBtn && !cardBtn.classList.contains("hidden")) {
+        cardBtn.disabled = false;
+        cardBtn.textContent = "Prepare safe update";
       }
 
       const msg = typeof data.message === "string"
@@ -1664,6 +1735,7 @@ const cleanupDeletesUnassigned =
       }
 
       if (target.id === "prepareSafeUpdateBtn" || target.closest("#prepareSafeUpdateBtn")) {
+        if (!confirm("Prepare a safe Ycode update now? Production will not change immediately.")) return;
         postPrepareSafeUpdate();
       }
     });

@@ -144,3 +144,8 @@ export function getWizardNextNav(
 
   return { disabled: false, label: "See what's next", hint: null };
 }
+
+/** Poll /api/updates/status while GitHub workflow or production deploy is in flight. */
+export function shouldAutoPollCoreUpdateStatus(status: string | undefined): boolean {
+  return status === "preparing" || status === "deploying";
+}

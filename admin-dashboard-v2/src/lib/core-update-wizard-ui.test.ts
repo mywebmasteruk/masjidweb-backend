@@ -6,6 +6,7 @@ import {
   isReadingAhead,
   requiresStepActionBeforeNext,
   resolveViewedStep,
+  shouldAutoPollCoreUpdateStatus,
   stepperStepClass,
   type ViewedStepStorage,
 } from "./core-update-wizard-ui";
@@ -196,5 +197,11 @@ describe("core-update-wizard-ui", () => {
     const workflowStep = getWorkflowStep(ready.phases);
     expect(workflowStep).toBe(4);
     expect(requiresStepActionBeforeNext(4, workflowStep, ready)).toBe(true);
+  });
+
+  it("polls status while preparing or deploying", () => {
+    expect(shouldAutoPollCoreUpdateStatus("preparing")).toBe(true);
+    expect(shouldAutoPollCoreUpdateStatus("deploying")).toBe(true);
+    expect(shouldAutoPollCoreUpdateStatus("ready_to_preview")).toBe(false);
   });
 });
