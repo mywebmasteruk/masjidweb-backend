@@ -355,6 +355,14 @@ const cleanupDeletesUnassigned =
     .mw-step-jump:hover {
       color: var(--text);
     }
+    .mw-step-next {
+      min-width: 7.5rem;
+    }
+    .mw-step-nav-hint {
+      margin: 0;
+      max-width: 18rem;
+      line-height: 1.45;
+    }
     @media (max-width: 560px) {
       .mw-stepper-step {
         min-width: 2.75rem;
@@ -1184,7 +1192,10 @@ const cleanupDeletesUnassigned =
       let guide = phase.detail;
       if (isLiveStep) {
         if (adminState.title) headline = adminState.title;
-        if (adminState.nextActionText) guide = adminState.nextActionText;
+        // Keep step-specific copy from phases for update_available (nextActionText had wrong step numbering).
+        if (adminState.nextActionText && adminState.status !== "update_available") {
+          guide = adminState.nextActionText;
+        }
       } else if (phase.status === "skipped" && viewedStep === 2) {
         guide = "No merge conflicts were detected for this update. You can move on to preview when the pull request is ready.";
       }
@@ -1255,15 +1266,45 @@ const cleanupDeletesUnassigned =
       return html;
     }
 
-    function renderWizardNav(viewedStep, workflowStep) {
+    function requiresStepActionBeforeNext(viewedStep, workflowStep, adminState) {
+      if (!adminState || viewedStep !== workflowStep) return false;
+      if (viewedStep === 1 && adminState.canPrepare) return true;
+      if (viewedStep === 2 && adminState.canCopyPrompt) return true;
+      if (viewedStep === 4 && adminState.canApprove) return true;
+      return false;
+    }
+
+    function getWizardNextNav(viewedStep, workflowStep, adminState) {
+      if (viewedStep >= CORE_UPDATE_STEP_COUNT) {
+        return { disabled: true, label: "Next step", hint: null };
+      }
+      if (requiresStepActionBeforeNext(viewedStep, workflowStep, adminState)) {
+        return {
+          disabled: true,
+          label: "Next step",
+          hint: "Complete the action above first. Next unlocks when this step is done.",
+        };
+      }
+      if (viewedStep < workflowStep) {
+        return { disabled: false, label: "Review next step", hint: null };
+      }
+      return { disabled: false, label: "See what's next", hint: null };
+    }
+
+    function renderWizardNav(viewedStep, workflowStep, adminState) {
       const backDisabled = viewedStep <= 1;
-      const nextDisabled = viewedStep >= CORE_UPDATE_STEP_COUNT;
+      const nextNav = getWizardNextNav(viewedStep, workflowStep, adminState);
       let center = "";
       if (viewedStep !== workflowStep) {
         center =
           '<div class="mw-step-footer-center"><button type="button" class="mw-step-jump" data-goto-step="' +
           escapeAttr(workflowStep) +
           '">Jump to current step</button></div>';
+      } else if (nextNav.hint) {
+        center =
+          '<div class="mw-step-footer-center"><p class="mw-step-nav-hint text-xs text-muted">' +
+          escapeHtml(nextNav.hint) +
+          "</p></div>";
       }
       return (
         '<div class="mw-step-footer">' +
@@ -1271,9 +1312,11 @@ const cleanupDeletesUnassigned =
         (backDisabled ? " disabled" : "") +
         ">&lt; Previous</button>" +
         center +
-        '<button type="button" id="coreUpdateStepNext" class="btn btn-primary btn-sm"' +
-        (nextDisabled ? " disabled" : "") +
-        ">Next &gt;</button></div>"
+        '<button type="button" id="coreUpdateStepNext" class="btn btn-ghost btn-sm mw-step-next"' +
+        (nextNav.disabled ? " disabled" : "") +
+        ">" +
+        escapeHtml(nextNav.label) +
+        " &gt;</button></div>"
       );
     }
 
@@ -1307,7 +1350,7 @@ const cleanupDeletesUnassigned =
         const workflowStep = getWorkflowStep(phases);
         html += renderStepper(phases, step, workflowStep);
         html += renderStepPanel(adminState, data, step);
-        html += renderWizardNav(step, workflowStep);
+        html += renderWizardNav(step, workflowStep, adminState);
       } else {
         html += '<h3 class="core-update-headline">' + escapeHtml(adminState.title) + "</h3>";
         html += '<p class="core-update-guide">' + escapeHtml(adminState.description) + "</p>";

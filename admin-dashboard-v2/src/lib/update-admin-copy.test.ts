@@ -21,6 +21,8 @@ describe("describeAdminUpdateState", () => {
     expect(result.phases.find((p) => p.step === 1)?.status).toBe("current");
     expect(result.canPrepare).toBe(true);
     expect(result.canApprove).toBe(false);
+    expect(result.nextActionText).not.toMatch(/^Step 2:/);
+    expect(result.phases.find((p) => p.step === 1)?.detail).toMatch(/Prepare safe update/);
   });
 
   it("shows up to date when no newer release exists", () => {

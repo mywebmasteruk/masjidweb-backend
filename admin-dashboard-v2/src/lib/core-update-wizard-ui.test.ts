@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { describeAdminUpdateState } from "./update-admin-copy";
 import {
+  getWizardNextNav,
   getWorkflowStep,
   isReadingAhead,
+  requiresStepActionBeforeNext,
   resolveViewedStep,
   stepperStepClass,
   type ViewedStepStorage,
@@ -136,5 +138,62 @@ describe("core-update-wizard-ui", () => {
     expect(stepperStepClass(fixPhase, workflowStep, workflowStep, workflowStep)).toBe(
       "mw-stepper-step is-viewing is-progress",
     );
+  });
+
+  it("blocks wizard next on step 1 until prepare is done", () => {
+    const admin = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: true,
+      latestReleaseVersion: "1.11.0",
+      forkPackageVersion: "1.10.1",
+      deployedPackageVersion: "1.10.1",
+    });
+    expect(admin.canPrepare).toBe(true);
+    expect(requiresStepActionBeforeNext(1, 1, admin)).toBe(true);
+    const nav = getWizardNextNav(1, 1, admin);
+    expect(nav.disabled).toBe(true);
+    expect(nav.hint).toMatch(/Complete the action above first/);
+  });
+
+  it("allows browsing next on preview step while approve is still pending", () => {
+    const ready = describeAdminUpdateState({
+      ok: true,
+      activeSafeUpdate: {
+        number: 2,
+        title: "safe update",
+        url: "https://github.com/example/repo/pull/2",
+        deployPreviewUrl: "https://preview.example",
+        isDraft: true,
+        mergeable: true,
+        mergeableState: "clean",
+        ciStatus: "success",
+        labels: [],
+      },
+    });
+    const workflowStep = getWorkflowStep(ready.phases);
+    expect(workflowStep).toBe(3);
+    const nav = getWizardNextNav(3, workflowStep, ready);
+    expect(nav.disabled).toBe(false);
+    expect(nav.label).toBe("See what's next");
+  });
+
+  it("blocks wizard next on approve step until merge is approved", () => {
+    const ready = describeAdminUpdateState({
+      ok: true,
+      activeSafeUpdate: {
+        number: 2,
+        title: "safe update",
+        url: "https://github.com/example/repo/pull/2",
+        deployPreviewUrl: "https://preview.example",
+        isDraft: false,
+        mergeable: true,
+        mergeableState: "clean",
+        ciStatus: "success",
+        labels: [],
+      },
+    });
+    const workflowStep = getWorkflowStep(ready.phases);
+    expect(workflowStep).toBe(4);
+    expect(requiresStepActionBeforeNext(4, workflowStep, ready)).toBe(true);
   });
 });

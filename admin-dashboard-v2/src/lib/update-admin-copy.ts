@@ -489,7 +489,8 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       description: `${latest} is newer than ${current}. Start the merge test when you are ready. Production will not change until you approve the merge.`,
       productionStatus: "Production unchanged",
       actionLabel: "Prepare safe update",
-      nextActionText: "Step 2: prepare the safe update (merge test).",
+      nextActionText:
+        "Click Prepare safe update below to run the merge test. This opens a pull request only — live tenant sites stay unchanged until you approve.",
       agentPrompt: null,
       canPrepare: true,
       canApprove: false,

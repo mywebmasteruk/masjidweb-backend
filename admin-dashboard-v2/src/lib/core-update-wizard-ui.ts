@@ -90,3 +90,54 @@ export function isReadingAhead(viewedStep: number, workflowStep: number): boolea
 export function shouldShowAheadNotice(viewedStep: number, workflowStep: number): boolean {
   return isReadingAhead(viewedStep, workflowStep);
 }
+
+/** Minimal admin flags used to gate wizard "Next" on the live workflow step. */
+export type WizardStepActionGate = {
+  canPrepare?: boolean;
+  canApprove?: boolean;
+  canCopyPrompt?: boolean;
+};
+
+/** True when the admin must complete the current step before browsing forward. */
+export function requiresStepActionBeforeNext(
+  viewedStep: number,
+  workflowStep: number,
+  gate: WizardStepActionGate | null | undefined,
+): boolean {
+  if (!gate || viewedStep !== workflowStep) return false;
+  if (viewedStep === 1 && gate.canPrepare) return true;
+  if (viewedStep === 2 && gate.canCopyPrompt) return true;
+  if (viewedStep === 4 && gate.canApprove) return true;
+  return false;
+}
+
+export type WizardNextNav = {
+  disabled: boolean;
+  label: string;
+  hint: string | null;
+};
+
+export function getWizardNextNav(
+  viewedStep: number,
+  workflowStep: number,
+  gate: WizardStepActionGate | null | undefined,
+  stepCount: number = CORE_UPDATE_STEP_COUNT,
+): WizardNextNav {
+  if (viewedStep >= stepCount) {
+    return { disabled: true, label: "Next step", hint: null };
+  }
+
+  if (requiresStepActionBeforeNext(viewedStep, workflowStep, gate)) {
+    return {
+      disabled: true,
+      label: "Next step",
+      hint: "Complete the action above first. Next unlocks when this step is done.",
+    };
+  }
+
+  if (viewedStep < workflowStep) {
+    return { disabled: false, label: "Review next step", hint: null };
+  }
+
+  return { disabled: false, label: "See what's next", hint: null };
+}
