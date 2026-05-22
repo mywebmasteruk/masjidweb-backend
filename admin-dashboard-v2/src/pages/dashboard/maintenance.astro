@@ -312,13 +312,24 @@ const cleanupDeletesUnassigned =
     }
     .mw-step-footer {
       display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      justify-content: space-between;
+      flex-direction: column;
       gap: .75rem;
       margin-top: 1.35rem;
       padding-top: 1rem;
       border-top: 1px solid rgba(148, 163, 184, .16);
+    }
+    .mw-step-footer-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .mw-step-footer-nav-end {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: .75rem;
+      min-height: 2rem;
     }
     .mw-step-prev {
       border: none;
@@ -338,8 +349,8 @@ const cleanupDeletesUnassigned =
       cursor: not-allowed;
     }
     .mw-step-footer-center {
-      flex: 1 1 auto;
-      text-align: center;
+      flex: 0 1 auto;
+      text-align: right;
     }
     .mw-step-jump {
       border: none;
@@ -358,10 +369,22 @@ const cleanupDeletesUnassigned =
     .mw-step-next {
       min-width: 7.5rem;
     }
-    .mw-step-nav-hint {
+    .mw-step-footer-hint {
       margin: 0;
-      max-width: 18rem;
+      padding: .6rem .75rem;
+      border-radius: calc(var(--radius) - 2px);
+      border: 1px solid rgba(148, 163, 184, .22);
+      background: rgba(148, 163, 184, .06);
+      font-size: .78rem;
       line-height: 1.45;
+      color: var(--muted);
+    }
+    .mw-step-footer-meta {
+      margin: 0;
+      padding-top: .15rem;
+      font-size: .72rem;
+      line-height: 1.4;
+      color: var(--muted);
     }
     @media (max-width: 560px) {
       .mw-stepper-step {
@@ -1276,48 +1299,61 @@ const cleanupDeletesUnassigned =
 
     function getWizardNextNav(viewedStep, workflowStep, adminState) {
       if (viewedStep >= CORE_UPDATE_STEP_COUNT) {
-        return { disabled: true, label: "Next step", hint: null };
+        return { disabled: true, label: "Next step", hint: null, hideNext: true };
       }
       if (requiresStepActionBeforeNext(viewedStep, workflowStep, adminState)) {
         return {
           disabled: true,
           label: "Next step",
-          hint: "Complete the action above first. Next unlocks when this step is done.",
+          hint: "Finish the step above to unlock the next step.",
+          hideNext: true,
         };
       }
       if (viewedStep < workflowStep) {
-        return { disabled: false, label: "Review next step", hint: null };
+        return { disabled: false, label: "Review next step", hint: null, hideNext: false };
       }
-      return { disabled: false, label: "See what's next", hint: null };
+      return { disabled: false, label: "See what's next", hint: null, hideNext: false };
     }
 
-    function renderWizardNav(viewedStep, workflowStep, adminState) {
+    function renderWizardNav(viewedStep, workflowStep, adminState, versionLine) {
       const backDisabled = viewedStep <= 1;
       const nextNav = getWizardNextNav(viewedStep, workflowStep, adminState);
-      let center = "";
+      let navEnd = "";
       if (viewedStep !== workflowStep) {
-        center =
-          '<div class="mw-step-footer-center"><button type="button" class="mw-step-jump" data-goto-step="' +
+        navEnd =
+          '<button type="button" class="mw-step-jump" data-goto-step="' +
           escapeAttr(workflowStep) +
-          '">Jump to current step</button></div>';
-      } else if (nextNav.hint) {
-        center =
-          '<div class="mw-step-footer-center"><p class="mw-step-nav-hint text-xs text-muted">' +
-          escapeHtml(nextNav.hint) +
-          "</p></div>";
+          '">Jump to current step</button>';
       }
-      return (
+      if (!nextNav.hideNext) {
+        navEnd +=
+          '<button type="button" id="coreUpdateStepNext" class="btn btn-ghost btn-sm mw-step-next"' +
+          (nextNav.disabled ? " disabled" : "") +
+          ">" +
+          escapeHtml(nextNav.label) +
+          " &gt;</button>";
+      }
+      let html =
         '<div class="mw-step-footer">' +
+        '<div class="mw-step-footer-nav">' +
         '<button type="button" id="coreUpdateStepBack" class="mw-step-prev"' +
         (backDisabled ? " disabled" : "") +
         ">&lt; Previous</button>" +
-        center +
-        '<button type="button" id="coreUpdateStepNext" class="btn btn-ghost btn-sm mw-step-next"' +
-        (nextNav.disabled ? " disabled" : "") +
-        ">" +
-        escapeHtml(nextNav.label) +
-        " &gt;</button></div>"
-      );
+        '<div class="mw-step-footer-nav-end">' +
+        navEnd +
+        "</div></div>";
+      if (nextNav.hint) {
+        html +=
+          '<p class="mw-step-footer-hint">' + escapeHtml(nextNav.hint) + "</p>";
+      }
+      if (versionLine) {
+        html +=
+          '<p class="mw-step-footer-meta text-xs text-muted">' +
+          escapeHtml(versionLine) +
+          "</p>";
+      }
+      html += "</div>";
+      return html;
     }
 
     function buildVersionLine(data) {
@@ -1350,14 +1386,16 @@ const cleanupDeletesUnassigned =
         const workflowStep = getWorkflowStep(phases);
         html += renderStepper(phases, step, workflowStep);
         html += renderStepPanel(adminState, data, step);
-        html += renderWizardNav(step, workflowStep, adminState);
+        html += renderWizardNav(step, workflowStep, adminState, versionLine);
       } else {
         html += '<h3 class="core-update-headline">' + escapeHtml(adminState.title) + "</h3>";
         html += '<p class="core-update-guide">' + escapeHtml(adminState.description) + "</p>";
-      }
-
-      if (versionLine) {
-        html += '<p class="core-update-version text-xs text-muted">' + escapeHtml(versionLine) + "</p>";
+        if (versionLine) {
+          html +=
+            '<p class="mw-step-footer-meta text-xs text-muted" style="margin-top:1rem;">' +
+            escapeHtml(versionLine) +
+            "</p>";
+        }
       }
 
       html += "</div>";

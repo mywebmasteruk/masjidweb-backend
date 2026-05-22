@@ -152,7 +152,8 @@ describe("core-update-wizard-ui", () => {
     expect(requiresStepActionBeforeNext(1, 1, admin)).toBe(true);
     const nav = getWizardNextNav(1, 1, admin);
     expect(nav.disabled).toBe(true);
-    expect(nav.hint).toMatch(/Complete the action above first/);
+    expect(nav.hideNext).toBe(true);
+    expect(nav.hint).toMatch(/Finish the step above/);
   });
 
   it("allows browsing next on preview step while approve is still pending", () => {

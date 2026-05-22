@@ -115,6 +115,8 @@ export type WizardNextNav = {
   disabled: boolean;
   label: string;
   hint: string | null;
+  /** Hide the Next control when the live step action is still required. */
+  hideNext?: boolean;
 };
 
 export function getWizardNextNav(
@@ -124,14 +126,15 @@ export function getWizardNextNav(
   stepCount: number = CORE_UPDATE_STEP_COUNT,
 ): WizardNextNav {
   if (viewedStep >= stepCount) {
-    return { disabled: true, label: "Next step", hint: null };
+    return { disabled: true, label: "Next step", hint: null, hideNext: true };
   }
 
   if (requiresStepActionBeforeNext(viewedStep, workflowStep, gate)) {
     return {
       disabled: true,
       label: "Next step",
-      hint: "Complete the action above first. Next unlocks when this step is done.",
+      hint: "Finish the step above to unlock the next step.",
+      hideNext: true,
     };
   }
 
