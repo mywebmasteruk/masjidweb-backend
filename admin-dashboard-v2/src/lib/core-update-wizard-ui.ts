@@ -1,7 +1,18 @@
-import {
-  getCurrentUpdatePhase,
-  type AdminUpdatePhase,
-} from "./update-admin-copy";
+export type AdminUpdatePhaseStatus = "done" | "current" | "upcoming" | "skipped";
+
+export type AdminUpdatePhase = {
+  step: number;
+  title: string;
+  detail: string;
+  status: AdminUpdatePhaseStatus;
+};
+
+export function getCurrentUpdatePhase(
+  phases: AdminUpdatePhase[] | null | undefined,
+): AdminUpdatePhase | null {
+  if (!phases?.length) return null;
+  return phases.find((phase) => phase.status === "current") ?? null;
+}
 
 export const CORE_UPDATE_STEP_COUNT = 4;
 export const CORE_UPDATE_STEPPER_LABELS = ["Prepare", "Fix", "Preview", "Approve"] as const;

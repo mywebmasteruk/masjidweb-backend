@@ -741,8 +741,154 @@ const cleanupDeletesUnassigned =
     .history-modal-close:hover { background: rgba(255, 255, 255, .1); }
   </style>
 
-  <script type="module" define:vars={{ cleanupDeletesUnassigned }}>
-    import { buildCoreUpdateNowAction, shouldAutoPollCoreUpdateStatus } from "../../lib/core-update-wizard-ui.ts";
+  <script define:vars={{ cleanupDeletesUnassigned }}>
+    function shouldAutoPollCoreUpdateStatus(status, opts) {
+      if (opts?.prepareInFlight || opts?.aiRepairInFlight) return true;
+      return status === "preparing" || status === "deploying";
+    }
+
+    function buildCoreUpdateNowAction(adminState, opts) {
+      if (!adminState) {
+        return {
+          kind: "idle",
+          headline: "",
+          detail: "",
+          primaryLabel: null,
+          primaryDisabled: true,
+          showSpinner: false,
+          reassurance: null,
+        };
+      }
+
+      if (opts?.prepareInFlight || adminState.status === "preparing") {
+        return {
+          kind: "preparing",
+          headline: "Merge test running",
+          detail:
+            adminState.nextActionText ||
+            "GitHub is running the merge test and safety checks. This page updates automatically.",
+          primaryLabel: null,
+          primaryDisabled: true,
+          showSpinner: true,
+          reassurance:
+            "You already started prepare. Do not click Prepare again — wait for this page to advance.",
+        };
+      }
+
+      if (opts?.aiRepairInFlight) {
+        return {
+          kind: "repair",
+          headline: "AI repair in progress",
+          detail:
+            opts.aiRepairDetail ||
+            "GitHub Actions is resolving conflicts and verifying the build. This page updates automatically.",
+          primaryLabel: null,
+          primaryDisabled: true,
+          showSpinner: true,
+          reassurance:
+            "Do not approve the merge yet. When repair finishes and checks pass, this step will unlock preview.",
+        };
+      }
+
+      if (adminState.status === "deploying") {
+        return {
+          kind: "deploy_wait",
+          headline: adminState.title || "Production deploy in progress",
+          detail:
+            adminState.nextActionText ||
+            "The approved update is deploying. Refresh status until the live builder catches up.",
+          primaryLabel: "Refresh status",
+          primaryDisabled: false,
+          showSpinner: true,
+          reassurance: "No further approval is needed right now.",
+        };
+      }
+
+      if (adminState.canPrepare) {
+        return {
+          kind: "prepare",
+          headline: "Start the safe update",
+          detail:
+            adminState.nextActionText ||
+            "Click Prepare once to run the merge test. Production stays unchanged until you approve the merge.",
+          primaryLabel: "Prepare safe update",
+          primaryDisabled: false,
+          showSpinner: false,
+          reassurance: "You only need to click Prepare once. The page will move forward automatically.",
+        };
+      }
+
+      if (adminState.canCopyPrompt) {
+        return {
+          kind: "repair",
+          headline: adminState.title || "Fix required before preview",
+          detail:
+            adminState.nextActionText ||
+            "Run AI repair or fix the pull request on GitHub, then refresh status.",
+          primaryLabel: "Run AI repair",
+          primaryDisabled: false,
+          showSpinner: false,
+          reassurance: "Do not approve the merge until conflicts and checks are resolved.",
+        };
+      }
+
+      if (adminState.canApprove) {
+        const prLabel =
+          typeof adminState.prNumber === "number"
+            ? "PR #" + adminState.prNumber
+            : "the safe update PR";
+        return {
+          kind: "approve",
+          headline: adminState.title || "Ready to approve",
+          detail:
+            adminState.nextActionText ||
+            "Preview on the deploy preview if needed, then approve " + prLabel + ".",
+          primaryLabel: adminState.actionLabel || "Approve merge",
+          primaryDisabled: false,
+          showSpinner: false,
+          reassurance: "Approving merges to main and triggers the production deploy.",
+        };
+      }
+
+      if (adminState.canPreview) {
+        return {
+          kind: "preview",
+          headline: adminState.title || "Preview before approving",
+          detail:
+            adminState.nextActionText ||
+            "Open the deploy preview and check the tenant site, then continue to approve.",
+          primaryLabel: "Refresh status",
+          primaryDisabled: false,
+          showSpinner: false,
+          reassurance: null,
+        };
+      }
+
+      if (adminState.status === "up_to_date") {
+        return {
+          kind: "idle",
+          headline: adminState.title || "Up to date",
+          detail: adminState.description || "No update action is needed.",
+          primaryLabel: null,
+          primaryDisabled: true,
+          showSpinner: false,
+          reassurance: null,
+        };
+      }
+
+      return {
+        kind: "refresh",
+        headline: adminState.title || "Check update status",
+        detail:
+          adminState.nextActionText ||
+          adminState.description ||
+          "Refresh status to see the latest workflow step.",
+        primaryLabel: adminState.actionLabel || "Refresh status",
+        primaryDisabled: false,
+        showSpinner: false,
+        reassurance: null,
+      };
+    }
 
     window.currentAdminUpdateState = null;
     window.coreUpdatePrepareInFlight = false;
@@ -756,13 +902,27 @@ const cleanupDeletesUnassigned =
       setTimeout(() => (el.style.display = "none"), 5000);
     }
 
-    async function api(path, opts) {
-      const res = await fetch(path, opts);
-      const text = await res.text();
+    async function api(path, opts, timeoutMs = 55000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        return JSON.parse(text);
-      } catch {
-        return { ok: false, error: text || "Bad response (" + res.status + ")" };
+        const res = await fetch(path, { ...opts, signal: controller.signal });
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch {
+          return { ok: false, error: text || "Bad response (" + res.status + ")" };
+        }
+      } catch (err) {
+        const message =
+          err && typeof err === "object" && err.name === "AbortError"
+            ? "Request timed out. Try Refresh status again."
+            : err instanceof Error
+              ? err.message
+              : "Request failed";
+        return { ok: false, error: message };
+      } finally {
+        clearTimeout(timer);
       }
     }
 
@@ -1031,11 +1191,68 @@ const cleanupDeletesUnassigned =
     const CORE_UPDATE_POLL_MAX_MS = 10 * 60 * 1000;
     let coreUpdatePollTimer = null;
     let coreUpdatePollDeadline = 0;
+    let aiRepairPollTimer = null;
+    let aiRepairPollDeadline = 0;
+    let aiRepairWatchActive = false;
+    let lastAiRepairWasInFlight = false;
+
+    function stopAiRepairPolling() {
+      if (aiRepairPollTimer) {
+        clearInterval(aiRepairPollTimer);
+        aiRepairPollTimer = null;
+      }
+      aiRepairPollDeadline = 0;
+    }
+
+    async function fetchAiRepairStatus() {
+      const data = await api("/api/updates/ai-repair-status", {}, 15000);
+      if (data.ok !== true) return false;
+
+      const prevInFlight = isAiRepairInFlight(window.currentAiRepairRun);
+      window.currentAiRepairRun = data.aiRepairRun || null;
+      window.currentAiRepairSummary = data.aiRepairSummary || null;
+      const inFlight = isAiRepairInFlight(window.currentAiRepairRun);
+
+      if (window.currentAdminUpdateState && window.currentUpdateCheckData) {
+        refreshCoreUpdateView();
+      }
+
+      if (prevInFlight && !inFlight && window.currentAdminUpdateState?.canCopyPrompt) {
+        await runUpdateCheck({ silent: true });
+      }
+
+      lastAiRepairWasInFlight = inFlight;
+      return inFlight;
+    }
+
+    function shouldWatchAiRepair(adminState) {
+      return Boolean(
+        aiRepairWatchActive ||
+          isAiRepairInFlight(window.currentAiRepairRun) ||
+          (adminState && adminState.canCopyPrompt && lastAiRepairWasInFlight),
+      );
+    }
+
+    function startAiRepairPolling() {
+      stopAiRepairPolling();
+      aiRepairPollDeadline = Date.now() + CORE_UPDATE_POLL_MAX_MS;
+      aiRepairPollTimer = setInterval(async () => {
+        if (Date.now() > aiRepairPollDeadline) {
+          stopAiRepairPolling();
+          return;
+        }
+        const state = window.currentAdminUpdateState;
+        if (!shouldWatchAiRepair(state)) {
+          stopAiRepairPolling();
+          return;
+        }
+        await fetchAiRepairStatus();
+      }, CORE_UPDATE_POLL_MS);
+    }
 
     function shouldAutoPollCoreUpdate(adminState) {
       return shouldAutoPollCoreUpdateStatus(adminState && adminState.status, {
         prepareInFlight: window.coreUpdatePrepareInFlight === true,
-        aiRepairInFlight: isAiRepairInFlight(window.currentAiRepairRun),
       });
     }
 
@@ -1234,7 +1451,9 @@ const cleanupDeletesUnassigned =
             : "";
         resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
         toast("AI repair started on GitHub.", true);
-        startCoreUpdatePolling();
+        aiRepairWatchActive = true;
+        await fetchAiRepairStatus();
+        startAiRepairPolling();
         return;
       }
 
@@ -1468,7 +1687,7 @@ const cleanupDeletesUnassigned =
       html += '<p class="core-update-guide">' + escapeHtml(guide) + "</p>";
 
       if (shouldShowAiRepairBlock(adminState, viewedStep)) {
-        html += renderAiRepairPanelHtml(data && data.aiRepairRun, data && data.aiRepairSummary);
+        html += renderAiRepairPanelHtml(window.currentAiRepairRun, window.currentAiRepairSummary);
       }
 
       if (shouldShowPreviewBlock(adminState, viewedStep)) {
@@ -1593,8 +1812,8 @@ const cleanupDeletesUnassigned =
         html += renderNowActionPanel(
           adminState,
           window.coreUpdatePrepareInFlight === true,
-          data && data.aiRepairRun,
-          data && data.aiRepairSummary,
+          window.currentAiRepairRun,
+          window.currentAiRepairSummary,
         );
         html += renderStepper(phases, step, workflowStep);
         html += renderStepPanel(adminState, data, step);
@@ -1724,8 +1943,6 @@ const cleanupDeletesUnassigned =
 
       window.currentAdminUpdateState = adminState;
       window.currentUpdateCheckData = data;
-      window.currentAiRepairRun = data.aiRepairRun || null;
-      window.currentAiRepairSummary = data.aiRepairSummary || null;
       window.currentProductionBranch = data.productionBranch || "main";
 
       if (
@@ -1740,6 +1957,15 @@ const cleanupDeletesUnassigned =
 
       refreshCoreUpdateView();
 
+      if (adminState.canCopyPrompt) {
+        await fetchAiRepairStatus();
+      } else {
+        window.currentAiRepairRun = null;
+        window.currentAiRepairSummary = null;
+        aiRepairWatchActive = false;
+        lastAiRepairWasInFlight = false;
+      }
+
       const newWorkflow = getWorkflowStep(adminState.phases || []);
       if (newWorkflow > prevWorkflow) {
         const label = CORE_UPDATE_STEPPER_LABELS[newWorkflow - 1] || String(newWorkflow);
@@ -1752,8 +1978,14 @@ const cleanupDeletesUnassigned =
         stopCoreUpdatePolling();
       }
 
+      if (shouldWatchAiRepair(adminState)) {
+        startAiRepairPolling();
+      } else {
+        stopAiRepairPolling();
+      }
+
       if (data.ok !== true) {
-        toast(adminState.description, false);
+        toast(adminState.description || data.error || "Update status unavailable", false);
         renderUpdateHistory([]);
         return;
       }
