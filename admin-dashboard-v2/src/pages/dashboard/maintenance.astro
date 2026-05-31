@@ -168,6 +168,70 @@ const cleanupDeletesUnassigned =
       background: rgba(234, 179, 8, .08);
       color: var(--warning);
     }
+    .mw-now-action {
+      margin-bottom: 1rem;
+      padding: 1rem 1.05rem;
+      border-radius: calc(var(--radius) - 1px);
+      border: 1px solid rgba(59, 130, 246, .35);
+      background: linear-gradient(180deg, rgba(59, 130, 246, .12), rgba(59, 130, 246, .04));
+    }
+    .mw-now-action.is-waiting {
+      border-color: rgba(148, 163, 184, .35);
+      background: rgba(148, 163, 184, .08);
+    }
+    .mw-now-action-label {
+      margin: 0;
+      font-size: .68rem;
+      font-weight: 650;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .mw-now-action-headline {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin: .35rem 0 0;
+      font-size: 1.08rem;
+      font-weight: 650;
+      line-height: 1.35;
+      color: var(--text);
+    }
+    .mw-now-action-detail {
+      margin: .45rem 0 0;
+      font-size: .85rem;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+    .mw-now-action-reassurance {
+      margin: .55rem 0 0;
+      padding: .55rem .65rem;
+      border-radius: calc(var(--radius) - 2px);
+      border: 1px solid rgba(34, 197, 94, .28);
+      background: rgba(34, 197, 94, .08);
+      font-size: .78rem;
+      line-height: 1.45;
+      color: var(--text);
+    }
+    .mw-now-action-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-top: .85rem;
+      align-items: center;
+    }
+    .mw-now-spinner {
+      width: .95rem;
+      height: .95rem;
+      border: 2px solid rgba(148, 163, 184, .35);
+      border-top-color: var(--primary, #3b82f6);
+      border-radius: 50%;
+      animation: mw-now-spin .75s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes mw-now-spin {
+      to { transform: rotate(360deg); }
+    }
     .mw-stepper {
       margin: 1rem 0 1.35rem;
     }
@@ -490,6 +554,12 @@ const cleanupDeletesUnassigned =
       color: var(--muted);
       font-size: .85rem;
     }
+    .mw-ai-repair-result.is-success {
+      border-color: rgba(34, 197, 94, .35);
+    }
+    .mw-ai-repair-result.is-error {
+      border-color: rgba(239, 68, 68, .35);
+    }
     .mw-ai-repair-result pre {
       margin: 0;
       white-space: pre-wrap;
@@ -671,8 +741,11 @@ const cleanupDeletesUnassigned =
     .history-modal-close:hover { background: rgba(255, 255, 255, .1); }
   </style>
 
-  <script define:vars={{ cleanupDeletesUnassigned }}>
+  <script type="module" define:vars={{ cleanupDeletesUnassigned }}>
+    import { buildCoreUpdateNowAction, shouldAutoPollCoreUpdateStatus } from "../../lib/core-update-wizard-ui.ts";
+
     window.currentAdminUpdateState = null;
+    window.coreUpdatePrepareInFlight = false;
 
     function toast(msg, ok) {
       const el = document.getElementById("toast");
@@ -960,8 +1033,24 @@ const cleanupDeletesUnassigned =
     let coreUpdatePollDeadline = 0;
 
     function shouldAutoPollCoreUpdate(adminState) {
-      const status = adminState && adminState.status;
-      return status === "preparing" || status === "deploying";
+      return shouldAutoPollCoreUpdateStatus(adminState && adminState.status, {
+        prepareInFlight: window.coreUpdatePrepareInFlight === true,
+        aiRepairInFlight: isAiRepairInFlight(window.currentAiRepairRun),
+      });
+    }
+
+    function isAiRepairInFlight(run) {
+      return Boolean(
+        run &&
+          (run.status === "queued" || run.status === "in_progress" || run.status === "pending"),
+      );
+    }
+
+    function aiRepairOutcomeClass(run) {
+      if (isAiRepairInFlight(run)) return "is-loading";
+      if (run && run.conclusion === "success") return "is-success";
+      if (run && run.conclusion === "failure") return "is-error";
+      return "";
     }
 
     function stopCoreUpdatePolling() {
@@ -1025,28 +1114,49 @@ const cleanupDeletesUnassigned =
       return viewedStep === 2 || (viewedStep === workflowStep && workflowStep === 2);
     }
 
-    function renderAiRepairPanelHtml() {
+    function renderAiRepairPanelHtml(aiRepairRun, aiRepairSummary) {
       const saved = window.lastAiRepairReply || "";
-      const hidden = saved ? "" : " hidden";
-      const loading = window.aiRepairLoading ? " is-loading" : "";
+      const liveSummary = aiRepairSummary || "";
+      const showPanel = saved || liveSummary || aiRepairRun;
+      const hidden = showPanel ? "" : " hidden";
+      const loading = window.aiRepairLoading || isAiRepairInFlight(aiRepairRun) ? " is-loading" : "";
+      const outcomeClass = aiRepairOutcomeClass(aiRepairRun);
+      let statusHtml = "";
+      if (liveSummary || aiRepairRun) {
+        const runLink =
+          aiRepairRun && aiRepairRun.htmlUrl
+            ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
+              escapeHtml(aiRepairRun.htmlUrl) +
+              '" target="_blank" rel="noopener noreferrer">Open this workflow run</a></p>'
+            : "";
+        statusHtml =
+          runLink +
+          "<pre>" +
+          escapeHtml(liveSummary || saved || "Checking AI repair status…") +
+          "</pre>";
+      } else if (saved) {
+        statusHtml =
+          '<p class="mw-ai-repair-meta text-xs text-muted">Last response' +
+          (window.lastAiRepairModel ? " · " + escapeHtml(window.lastAiRepairModel) : "") +
+          "</p><pre>" +
+          escapeHtml(saved) +
+          "</pre>";
+      }
       return (
         '<div class="mw-ai-repair-panel">' +
         '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Starts automated repair on GitHub: a frontier OpenRouter model resolves merge conflicts on the PR branch, commits, and runs a build. Production is not merged until you approve.</p>' +
         '<div class="mw-ai-repair-actions">' +
-        '<button type="button" id="runAiRepairBtn" class="btn btn-primary btn-sm">Run AI repair</button>' +
+        '<button type="button" id="runAiRepairBtn" class="btn btn-primary btn-sm"' +
+        (isAiRepairInFlight(aiRepairRun) ? " disabled" : "") +
+        ">Run AI repair</button>" +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
         "</div>" +
         '<div id="aiRepairResult" class="mw-ai-repair-result' +
         hidden +
         loading +
+        outcomeClass +
         '">' +
-        (saved
-          ? '<p class="mw-ai-repair-meta text-xs text-muted">Last response' +
-            (window.lastAiRepairModel ? " · " + escapeHtml(window.lastAiRepairModel) : "") +
-            "</p><pre>" +
-            escapeHtml(saved) +
-            "</pre>"
-          : "") +
+        statusHtml +
         "</div></div>"
       );
     }
@@ -1124,6 +1234,7 @@ const cleanupDeletesUnassigned =
             : "";
         resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
         toast("AI repair started on GitHub.", true);
+        startCoreUpdatePolling();
         return;
       }
 
@@ -1238,6 +1349,74 @@ const cleanupDeletesUnassigned =
       );
     }
 
+    function renderNowActionPanel(adminState, prepareInFlight, aiRepairRun, aiRepairSummary) {
+      const action = buildCoreUpdateNowAction(adminState, {
+        prepareInFlight,
+        aiRepairInFlight: isAiRepairInFlight(aiRepairRun),
+        aiRepairDetail: aiRepairSummary || null,
+      });
+      if (action.kind === "idle" && adminState && adminState.status === "up_to_date") {
+        return (
+          '<div class="mw-now-action is-waiting" role="status">' +
+          '<p class="mw-now-action-label">Status</p>' +
+          '<h3 class="mw-now-action-headline">' +
+          escapeHtml(action.headline) +
+          "</h3>" +
+          '<p class="mw-now-action-detail">' +
+          escapeHtml(action.detail) +
+          "</p></div>"
+        );
+      }
+      if (action.kind === "idle") return "";
+
+      const waitingClass = action.showSpinner ? " is-waiting" : "";
+      let html = '<div class="mw-now-action' + waitingClass + '" role="status" aria-live="polite">';
+      html += '<p class="mw-now-action-label">Your next action</p>';
+      html += '<h3 class="mw-now-action-headline">';
+      if (action.showSpinner) html += '<span class="mw-now-spinner" aria-hidden="true"></span>';
+      html += escapeHtml(action.headline) + "</h3>";
+      html += '<p class="mw-now-action-detail">' + escapeHtml(action.detail) + "</p>";
+      if (action.reassurance) {
+        html +=
+          '<p class="mw-now-action-reassurance">' + escapeHtml(action.reassurance) + "</p>";
+      }
+      html += '<div class="mw-now-action-buttons">';
+      if (action.primaryLabel) {
+        let btnId = "nowActionRefreshBtn";
+        if (action.kind === "prepare") btnId = "prepareSafeUpdateBtn";
+        else if (action.kind === "approve") btnId = "approveSafeUpdateBtn";
+        else if (action.kind === "repair") btnId = "runAiRepairNowBtn";
+        html +=
+          '<button type="button" id="' +
+          btnId +
+          '" class="btn btn-primary btn-sm"' +
+          (action.primaryDisabled ? " disabled" : "") +
+          ">" +
+          escapeHtml(action.primaryLabel) +
+          "</button>";
+      }
+      if (adminState && adminState.prUrl) {
+        html +=
+          '<a class="btn btn-ghost btn-sm" href="' +
+          escapeAttr(adminState.prUrl) +
+          '" target="_blank" rel="noopener noreferrer">Open pull request</a>';
+      }
+      const previewHref =
+        adminState &&
+        (adminState.preview?.publicSiteOnPreview || adminState.previewUrl);
+      if (adminState && adminState.canPreview && previewHref) {
+        const label = adminState.preview?.tenantLabel || "tenant";
+        html +=
+          '<a class="btn btn-ghost btn-sm" href="' +
+          escapeAttr(previewHref) +
+          '" target="_blank" rel="noopener noreferrer">Open ' +
+          escapeHtml(label) +
+          " preview</a>";
+      }
+      html += "</div></div>";
+      return html;
+    }
+
     function renderStepPanel(adminState, data, viewedStep) {
       const phases = adminState.phases || [];
       const phase = getPhaseByStep(phases, viewedStep);
@@ -1288,15 +1467,8 @@ const cleanupDeletesUnassigned =
       html += '<h3 class="core-update-headline">' + escapeHtml(headline) + "</h3>";
       html += '<p class="core-update-guide">' + escapeHtml(guide) + "</p>";
 
-      if (isLiveStep && adminState.canPrepare && viewedStep === 1) {
-        html +=
-          '<div class="mw-step-actions" style="margin-top:.85rem;">' +
-          '<button type="button" id="prepareSafeUpdateBtn" class="btn btn-primary btn-sm">Prepare safe update</button>' +
-          "</div>";
-      }
-
       if (shouldShowAiRepairBlock(adminState, viewedStep)) {
-        html += renderAiRepairPanelHtml();
+        html += renderAiRepairPanelHtml(data && data.aiRepairRun, data && data.aiRepairSummary);
       }
 
       if (shouldShowPreviewBlock(adminState, viewedStep)) {
@@ -1418,6 +1590,12 @@ const cleanupDeletesUnassigned =
 
       if (phases.length > 0) {
         const workflowStep = getWorkflowStep(phases);
+        html += renderNowActionPanel(
+          adminState,
+          window.coreUpdatePrepareInFlight === true,
+          data && data.aiRepairRun,
+          data && data.aiRepairSummary,
+        );
         html += renderStepper(phases, step, workflowStep);
         html += renderStepPanel(adminState, data, step);
         html += renderWizardNav(step, workflowStep, adminState, versionLine);
@@ -1440,41 +1618,18 @@ const cleanupDeletesUnassigned =
       const applyButton = document.getElementById("applyBuilderUpdateBtn");
       const safeUpdatePrLink = document.getElementById("safeUpdatePrLink");
       const openPreviewBtn = document.getElementById("openPreviewBtn");
-      if (!applyButton || !adminState) return;
+      const actionsRow = document.querySelector(".core-update-actions");
+      if (!adminState) return;
 
-      const viewed = window.coreUpdateViewedStep ?? resolveViewedStep(adminState);
-      const aiRepairInPanel = shouldShowAiRepairBlock(adminState, viewed);
-      const repairStatus =
-        adminState.status === "blocked_needs_resolution" ||
-        adminState.status === "checks_failed";
-
-      const primaryEnabled =
-        adminState.canPrepare ||
-        adminState.status === "preparing" ||
-        adminState.canCopyPrompt ||
-        adminState.canPreview ||
-        adminState.canApprove;
-
-      const workflowStep = getWorkflowStep(adminState.phases || []);
-      const isLiveStep = viewed === workflowStep;
-      const prepareInPanel = isLiveStep && adminState.canPrepare && viewed === 1;
-
-      if (aiRepairInPanel || prepareInPanel) {
-        applyButton.classList.add("hidden");
-        applyButton.disabled = true;
-      } else {
-        applyButton.classList.remove("hidden");
-        if (repairStatus || viewed !== workflowStep) {
-          applyButton.textContent = "Refresh status";
-          applyButton.disabled = false;
-        } else {
-          applyButton.textContent = adminState.actionLabel;
-          applyButton.disabled = !primaryEnabled;
-        }
+      const hasWizard = Array.isArray(adminState.phases) && adminState.phases.length > 0;
+      if (actionsRow) {
+        if (hasWizard) actionsRow.classList.add("hidden");
+        else actionsRow.classList.remove("hidden");
       }
+      if (!applyButton) return;
 
       if (safeUpdatePrLink) {
-        if (adminState.prUrl) {
+        if (!hasWizard && adminState.prUrl) {
           safeUpdatePrLink.setAttribute("href", adminState.prUrl);
           safeUpdatePrLink.classList.remove("hidden");
         } else {
@@ -1485,7 +1640,7 @@ const cleanupDeletesUnassigned =
       if (openPreviewBtn) {
         const previewHref =
           adminState.preview?.publicSiteOnPreview || adminState.previewUrl;
-        if (adminState.canPreview && previewHref) {
+        if (!hasWizard && adminState.canPreview && previewHref) {
           openPreviewBtn.setAttribute("href", previewHref);
           const label = adminState.preview?.tenantLabel || "tenant";
           openPreviewBtn.textContent = "Open " + label + " homepage preview";
@@ -1493,6 +1648,17 @@ const cleanupDeletesUnassigned =
         } else {
           openPreviewBtn.classList.add("hidden");
         }
+      }
+
+      if (!hasWizard) {
+        const primaryEnabled =
+          adminState.canPrepare ||
+          adminState.status === "preparing" ||
+          adminState.canCopyPrompt ||
+          adminState.canPreview ||
+          adminState.canApprove;
+        applyButton.textContent = adminState.actionLabel || "Refresh status";
+        applyButton.disabled = !primaryEnabled && adminState.status !== "deploying";
       }
     }
 
@@ -1558,7 +1724,20 @@ const cleanupDeletesUnassigned =
 
       window.currentAdminUpdateState = adminState;
       window.currentUpdateCheckData = data;
+      window.currentAiRepairRun = data.aiRepairRun || null;
+      window.currentAiRepairSummary = data.aiRepairSummary || null;
       window.currentProductionBranch = data.productionBranch || "main";
+
+      if (
+        adminState.status !== "update_available" ||
+        adminState.prNumber ||
+        adminState.canApprove ||
+        adminState.canCopyPrompt ||
+        adminState.status === "preparing"
+      ) {
+        window.coreUpdatePrepareInFlight = false;
+      }
+
       refreshCoreUpdateView();
 
       const newWorkflow = getWorkflowStep(adminState.phases || []);
@@ -1650,17 +1829,43 @@ const cleanupDeletesUnassigned =
       }
     }
 
+    async function postApproveSafeUpdate() {
+      const state = window.currentAdminUpdateState || {};
+      const prLabel = state.prNumber ? "PR #" + state.prNumber : "the safe update pull request";
+      if (
+        !confirm(
+          "Approve and merge " +
+            prLabel +
+            " now? Production will deploy the new core after the merge build finishes.",
+        )
+      ) {
+        return;
+      }
+      const btn = document.getElementById("approveSafeUpdateBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Approving…";
+      }
+      const res = await api("/api/updates/approve-safe-update", { method: "POST" });
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = state.actionLabel || "Approve merge";
+      }
+      if (res.ok) {
+        setApplyUpdateResult(res.message || "Update approved.", true);
+        toast(res.message || "Update approved.", true);
+        await runUpdateCheck();
+        startCoreUpdatePolling();
+        return;
+      }
+      const err = res.error || res.message || "Could not approve update";
+      setApplyUpdateResult(err, false);
+      toast(err, false);
+    }
+
     async function postPrepareSafeUpdate() {
-      const panelBtn = document.getElementById("prepareSafeUpdateBtn");
-      const cardBtn = document.getElementById("applyBuilderUpdateBtn");
-      if (panelBtn) {
-        panelBtn.disabled = true;
-        panelBtn.textContent = "Preparing…";
-      }
-      if (cardBtn && !cardBtn.classList.contains("hidden")) {
-        cardBtn.disabled = true;
-        cardBtn.textContent = "Preparing…";
-      }
+      window.coreUpdatePrepareInFlight = true;
+      refreshCoreUpdateView();
 
       const data = await api("/api/updates/prepare-safe-update", {
         method: "POST",
@@ -1675,14 +1880,8 @@ const cleanupDeletesUnassigned =
         return;
       }
 
-      if (panelBtn) {
-        panelBtn.disabled = false;
-        panelBtn.textContent = "Prepare safe update";
-      }
-      if (cardBtn && !cardBtn.classList.contains("hidden")) {
-        cardBtn.disabled = false;
-        cardBtn.textContent = "Prepare safe update";
-      }
+      window.coreUpdatePrepareInFlight = false;
+      refreshCoreUpdateView();
 
       const msg = typeof data.message === "string"
         ? data.message
@@ -1735,8 +1934,25 @@ const cleanupDeletesUnassigned =
       }
 
       if (target.id === "prepareSafeUpdateBtn" || target.closest("#prepareSafeUpdateBtn")) {
+        if (window.coreUpdatePrepareInFlight) return;
         if (!confirm("Prepare a safe Ycode update now? Production will not change immediately.")) return;
         postPrepareSafeUpdate();
+        return;
+      }
+
+      if (target.id === "approveSafeUpdateBtn" || target.closest("#approveSafeUpdateBtn")) {
+        postApproveSafeUpdate();
+        return;
+      }
+
+      if (target.id === "runAiRepairNowBtn" || target.closest("#runAiRepairNowBtn")) {
+        runAiRepair();
+        return;
+      }
+
+      if (target.id === "nowActionRefreshBtn" || target.closest("#nowActionRefreshBtn")) {
+        runUpdateCheck();
+        return;
       }
     });
 

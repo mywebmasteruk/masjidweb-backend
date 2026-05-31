@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { describeAdminUpdateState } from "./update-admin-copy";
 import {
+  buildCoreUpdateNowAction,
   getWizardNextNav,
   getWorkflowStep,
   isReadingAhead,
@@ -203,5 +204,84 @@ describe("core-update-wizard-ui", () => {
     expect(shouldAutoPollCoreUpdateStatus("preparing")).toBe(true);
     expect(shouldAutoPollCoreUpdateStatus("deploying")).toBe(true);
     expect(shouldAutoPollCoreUpdateStatus("ready_to_preview")).toBe(false);
+    expect(shouldAutoPollCoreUpdateStatus("update_available", { prepareInFlight: true })).toBe(
+      true,
+    );
+    expect(shouldAutoPollCoreUpdateStatus("checks_failed", { aiRepairInFlight: true })).toBe(
+      true,
+    );
+  });
+
+  it("shows repair-in-progress now-action while GitHub repair runs", () => {
+    const admin = describeAdminUpdateState({
+      ok: true,
+      activeSafeUpdate: {
+        number: 12,
+        title: "safe update",
+        url: "https://github.com/example/repo/pull/12",
+        deployPreviewUrl: null,
+        isDraft: false,
+        mergeable: false,
+        mergeableState: "dirty",
+        ciStatus: "failure",
+        labels: [],
+      },
+    });
+    const now = buildCoreUpdateNowAction(admin, {
+      aiRepairInFlight: true,
+      aiRepairDetail: "AI repair running: Run AI conflict repair…",
+    });
+    expect(now.kind).toBe("repair");
+    expect(now.showSpinner).toBe(true);
+    expect(now.primaryLabel).toBeNull();
+    expect(now.detail).toContain("Run AI conflict repair");
+  });
+
+  it("shows preparing now-action after prepare click until PR is detected", () => {
+    const admin = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: true,
+      latestReleaseVersion: "1.12.0",
+      forkPackageVersion: "1.11.0",
+      deployedPackageVersion: "1.11.0",
+    });
+    const now = buildCoreUpdateNowAction(admin, { prepareInFlight: true });
+    expect(now.kind).toBe("preparing");
+    expect(now.primaryLabel).toBeNull();
+    expect(now.showSpinner).toBe(true);
+    expect(now.reassurance).toMatch(/Do not click Prepare again/);
+  });
+
+  it("shows single prepare action when update is available", () => {
+    const admin = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: true,
+      latestReleaseVersion: "1.12.0",
+      forkPackageVersion: "1.11.0",
+      deployedPackageVersion: "1.11.0",
+    });
+    const now = buildCoreUpdateNowAction(admin);
+    expect(now.kind).toBe("prepare");
+    expect(now.primaryLabel).toBe("Prepare safe update");
+  });
+
+  it("shows approve action when PR is ready", () => {
+    const admin = describeAdminUpdateState({
+      ok: true,
+      activeSafeUpdate: {
+        number: 6,
+        title: "safe update",
+        url: "https://github.com/example/repo/pull/6",
+        deployPreviewUrl: "https://preview.example",
+        isDraft: false,
+        mergeable: true,
+        mergeableState: "clean",
+        ciStatus: "success",
+        labels: [],
+      },
+    });
+    const now = buildCoreUpdateNowAction(admin);
+    expect(now.kind).toBe("approve");
+    expect(now.primaryLabel).toBe("Approve merge");
   });
 });

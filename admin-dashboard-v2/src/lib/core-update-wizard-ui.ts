@@ -146,6 +146,184 @@ export function getWizardNextNav(
 }
 
 /** Poll /api/updates/status while GitHub workflow or production deploy is in flight. */
-export function shouldAutoPollCoreUpdateStatus(status: string | undefined): boolean {
+export function shouldAutoPollCoreUpdateStatus(
+  status: string | undefined,
+  opts?: { prepareInFlight?: boolean; aiRepairInFlight?: boolean },
+): boolean {
+  if (opts?.prepareInFlight || opts?.aiRepairInFlight) return true;
   return status === "preparing" || status === "deploying";
+}
+
+export type CoreUpdateNowActionKind =
+  | "idle"
+  | "prepare"
+  | "preparing"
+  | "repair"
+  | "preview"
+  | "approve"
+  | "deploy_wait"
+  | "refresh";
+
+export type CoreUpdateNowActionInput = WizardStepActionGate & {
+  status?: string;
+  title?: string;
+  nextActionText?: string;
+  actionLabel?: string;
+  canPreview?: boolean;
+  prNumber?: number | null;
+};
+
+export type CoreUpdateNowAction = {
+  kind: CoreUpdateNowActionKind;
+  headline: string;
+  detail: string;
+  primaryLabel: string | null;
+  primaryDisabled: boolean;
+  showSpinner: boolean;
+  reassurance: string | null;
+};
+
+/** Single primary action for the core-update wizard — one clear next step for admins. */
+export function buildCoreUpdateNowAction(
+  adminState: CoreUpdateNowActionInput | null | undefined,
+  opts?: { prepareInFlight?: boolean; aiRepairInFlight?: boolean; aiRepairDetail?: string | null },
+): CoreUpdateNowAction {
+  if (!adminState) {
+    return {
+      kind: "idle",
+      headline: "",
+      detail: "",
+      primaryLabel: null,
+      primaryDisabled: true,
+      showSpinner: false,
+      reassurance: null,
+    };
+  }
+
+  if (opts?.prepareInFlight || adminState.status === "preparing") {
+    return {
+      kind: "preparing",
+      headline: "Merge test running",
+      detail:
+        adminState.nextActionText ||
+        "GitHub is running the merge test and safety checks. This page updates automatically.",
+      primaryLabel: null,
+      primaryDisabled: true,
+      showSpinner: true,
+      reassurance:
+        "You already started prepare. Do not click Prepare again — wait for this page to advance.",
+    };
+  }
+
+  if (opts?.aiRepairInFlight) {
+    return {
+      kind: "repair",
+      headline: "AI repair in progress",
+      detail:
+        opts.aiRepairDetail ||
+        "GitHub Actions is resolving conflicts and verifying the build. This page updates automatically.",
+      primaryLabel: null,
+      primaryDisabled: true,
+      showSpinner: true,
+      reassurance:
+        "Do not approve the merge yet. When repair finishes and checks pass, this step will unlock preview.",
+    };
+  }
+
+  if (adminState.status === "deploying") {
+    return {
+      kind: "deploy_wait",
+      headline: adminState.title || "Production deploy in progress",
+      detail:
+        adminState.nextActionText ||
+        "The approved update is deploying. Refresh status until the live builder catches up.",
+      primaryLabel: "Refresh status",
+      primaryDisabled: false,
+      showSpinner: true,
+      reassurance: "No further approval is needed right now.",
+    };
+  }
+
+  if (adminState.canPrepare) {
+    return {
+      kind: "prepare",
+      headline: "Start the safe update",
+      detail:
+        adminState.nextActionText ||
+        "Click Prepare once to run the merge test. Production stays unchanged until you approve the merge.",
+      primaryLabel: "Prepare safe update",
+      primaryDisabled: false,
+      showSpinner: false,
+      reassurance: "You only need to click Prepare once. The page will move forward automatically.",
+    };
+  }
+
+  if (adminState.canCopyPrompt) {
+    return {
+      kind: "repair",
+      headline: adminState.title || "Fix required before preview",
+      detail:
+        adminState.nextActionText ||
+        "Run AI repair or fix the pull request on GitHub, then refresh status.",
+      primaryLabel: "Run AI repair",
+      primaryDisabled: false,
+      showSpinner: false,
+      reassurance: "Do not approve the merge until conflicts and checks are resolved.",
+    };
+  }
+
+  if (adminState.canApprove) {
+    const prLabel =
+      typeof adminState.prNumber === "number" ? `PR #${adminState.prNumber}` : "the safe update PR";
+    return {
+      kind: "approve",
+      headline: adminState.title || "Ready to approve",
+      detail:
+        adminState.nextActionText ||
+        `Preview on the deploy preview if needed, then approve ${prLabel}.`,
+      primaryLabel: adminState.actionLabel || "Approve merge",
+      primaryDisabled: false,
+      showSpinner: false,
+      reassurance: "Approving merges to main and triggers the production deploy.",
+    };
+  }
+
+  if (adminState.canPreview) {
+    return {
+      kind: "preview",
+      headline: adminState.title || "Preview before approving",
+      detail:
+        adminState.nextActionText ||
+        "Open the deploy preview and check the tenant site, then continue to approve.",
+      primaryLabel: "Refresh status",
+      primaryDisabled: false,
+      showSpinner: false,
+      reassurance: null,
+    };
+  }
+
+  if (adminState.status === "up_to_date") {
+    return {
+      kind: "idle",
+      headline: adminState.title || "Up to date",
+      detail: adminState.description || "No update action is needed.",
+      primaryLabel: null,
+      primaryDisabled: true,
+      showSpinner: false,
+      reassurance: null,
+    };
+  }
+
+  return {
+    kind: "refresh",
+    headline: adminState.title || "Check update status",
+    detail:
+      adminState.nextActionText ||
+      adminState.description ||
+      "Refresh status to see the latest workflow step.",
+    primaryLabel: adminState.actionLabel || "Refresh status",
+    primaryDisabled: false,
+    showSpinner: false,
+    reassurance: null,
+  };
 }

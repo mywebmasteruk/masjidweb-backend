@@ -21,6 +21,10 @@ import {
 import { getLatestReversibleCheckpoint } from "../../../lib/core-update-audit";
 import { pickCoreVersionUpgradeDeploys } from "../../../lib/core-version-history";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
+import {
+  describeAiRepairRun,
+  getActiveAiRepairRun,
+} from "../../../lib/github-safe-update";
 import { readServerEnv } from "../../../lib/server-env";
 import { githubProductionBranch } from "../../../lib/updates-env";
 
@@ -186,6 +190,16 @@ export const GET: APIRoute = async (context) => {
         }
       : null;
 
+    let aiRepairRun = null;
+    if (activeSafeUpdate) {
+      try {
+        aiRepairRun = await getActiveAiRepairRun(token, repo);
+      } catch {
+        aiRepairRun = null;
+      }
+    }
+    const aiRepairSummary = describeAiRepairRun(aiRepairRun);
+
     const payload = {
       ok: true,
       ...status,
@@ -197,6 +211,8 @@ export const GET: APIRoute = async (context) => {
       productionBranch,
       gitAheadOfDeployed,
       activeSafeUpdate,
+      aiRepairRun,
+      aiRepairSummary,
       updateHistory,
       reversibleCheckpoint,
     };

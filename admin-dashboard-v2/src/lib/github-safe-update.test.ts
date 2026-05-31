@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  describeAiRepairRun,
   dispatchAiRepairWorkflow,
   dispatchSafeUpdateWorkflow,
+  getActiveAiRepairRun,
   githubActionsWorkflowUrl,
 } from "./github-safe-update";
 
@@ -81,5 +83,75 @@ describe("githubActionsWorkflowUrl", () => {
     expect(githubActionsWorkflowUrl("o/r", "ai-repair-safe-update.yml")).toBe(
       "https://github.com/o/r/actions/workflows/ai-repair-safe-update.yml",
     );
+  });
+});
+
+describe("getActiveAiRepairRun", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns in-progress run with current step", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          workflow_runs: [
+            {
+              id: 99,
+              status: "in_progress",
+              conclusion: null,
+              html_url: "https://github.com/o/r/actions/runs/99",
+              created_at: "2026-05-31T08:00:00Z",
+              updated_at: "2026-05-31T08:01:00Z",
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          jobs: [
+            {
+              steps: [
+                { name: "Run AI conflict repair", status: "in_progress", conclusion: null },
+              ],
+            },
+          ],
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const run = await getActiveAiRepairRun("token", "o/r");
+    expect(run?.currentStep).toBe("Run AI conflict repair");
+    expect(run?.status).toBe("in_progress");
+  });
+});
+
+describe("describeAiRepairRun", () => {
+  it("describes in-progress and completed runs", () => {
+    expect(
+      describeAiRepairRun({
+        id: 1,
+        status: "in_progress",
+        conclusion: null,
+        htmlUrl: "https://example.com",
+        createdAt: "",
+        updatedAt: "",
+        currentStep: "Verify production build",
+      }),
+    ).toContain("Verify production build");
+    expect(
+      describeAiRepairRun({
+        id: 1,
+        status: "completed",
+        conclusion: "failure",
+        htmlUrl: "https://example.com",
+        createdAt: "",
+        updatedAt: "",
+        currentStep: null,
+      }),
+    ).toContain("failed");
   });
 });
