@@ -1361,11 +1361,8 @@ const cleanupDeletesUnassigned =
       }
       return (
         '<div class="mw-ai-repair-panel">' +
-        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Starts automated repair on GitHub: a frontier OpenRouter model resolves merge conflicts on the PR branch, commits, and runs a build. Production is not merged until you approve.</p>' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Run AI repair</strong> above to start automated conflict resolution on GitHub (a frontier OpenRouter model resolves merge conflicts, commits, and runs a build). Repair progress and the latest result show here. Production is not merged until you approve.</p>' +
         '<div class="mw-ai-repair-actions">' +
-        '<button type="button" id="runAiRepairBtn" class="btn btn-primary btn-sm"' +
-        (isAiRepairInFlight(aiRepairRun) ? " disabled" : "") +
-        ">Run AI repair</button>" +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
         "</div>" +
         '<div id="aiRepairResult" class="mw-ai-repair-result' +
@@ -1643,15 +1640,12 @@ const cleanupDeletesUnassigned =
       if (!phase) return "";
 
       const isLiveStep = viewedStep === workflowStep;
+      // Step panel explains what this step is. The live action + status lives in the
+      // "Your next action" banner above, so we intentionally do NOT repeat
+      // adminState.title / nextActionText here (that caused duplicate copy + buttons).
       let headline = phase.title;
       let guide = phase.detail;
-      if (isLiveStep) {
-        if (adminState.title) headline = adminState.title;
-        // Keep step-specific copy from phases for update_available (nextActionText had wrong step numbering).
-        if (adminState.nextActionText && adminState.status !== "update_available") {
-          guide = adminState.nextActionText;
-        }
-      } else if (phase.status === "skipped" && viewedStep === 2) {
+      if (phase.status === "skipped" && viewedStep === 2) {
         guide = "No merge conflicts were detected for this update. You can move on to preview when the pull request is ready.";
       }
 
