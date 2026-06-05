@@ -480,6 +480,22 @@ export function isSupersededSafeUpdateVersion(
   return compareVersions(headVersion, mainVersion) <= 0;
 }
 
+/** Ignore stale open safe-update PRs after merge or when head semver is strictly behind main. */
+export function isSupersededSafeUpdatePullRequest(
+  pr: Pick<SyncPR, "headSha">,
+  mainSha: string | null,
+  headVersion: string | null,
+  mainVersion: string | null,
+): boolean {
+  if (mainSha && pr.headSha && mainSha === pr.headSha) {
+    return true;
+  }
+  if (headVersion && mainVersion && compareVersions(headVersion, mainVersion) < 0) {
+    return true;
+  }
+  return false;
+}
+
 /** Ignore stale open safe-update PRs left over after a successful merge. */
 export async function pickActiveSafeUpdatePr(
   token: string,
@@ -501,7 +517,7 @@ export async function pickActiveSafeUpdatePr(
     const headVersion = pr.headSha
       ? await fetchPackageJsonVersion(token, repo, pr.headSha)
       : null;
-    if (isSupersededSafeUpdateVersion(headVersion, mainVersion)) {
+    if (isSupersededSafeUpdatePullRequest(pr, mainSha, headVersion, mainVersion)) {
       continue;
     }
     return pr;

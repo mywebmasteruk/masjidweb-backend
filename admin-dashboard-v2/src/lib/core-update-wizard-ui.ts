@@ -178,6 +178,7 @@ export type CoreUpdateNowActionKind =
 export type CoreUpdateNowActionInput = WizardStepActionGate & {
   status?: string;
   title?: string;
+  description?: string;
   nextActionText?: string;
   actionLabel?: string;
   canPreview?: boolean;

@@ -30,6 +30,9 @@ ycode-masjidweb/node_modules/
 ycode-masjidweb/.next/
 ycode-masjidweb/.netlify/
 
+# Supabase CLI local temp state (auto-generated; not source)
+supabase/.temp/
+
 # Netlify local state
 .netlify/
 

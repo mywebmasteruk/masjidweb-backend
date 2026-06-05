@@ -47,6 +47,7 @@ describe("core-update-wizard-ui", () => {
         mergeableState: "dirty",
         ciStatus: "failure",
         labels: ["needs-developer-review"],
+        deployPreviewUrl: null,
       },
     });
     const phases = admin.phases;
@@ -79,6 +80,7 @@ describe("core-update-wizard-ui", () => {
         mergeableState: "dirty",
         ciStatus: "failure",
         labels: [],
+        deployPreviewUrl: null,
       },
     });
     const storage = memoryStorage({ viewed: 3, lastWorkflow: 2 });
@@ -97,6 +99,7 @@ describe("core-update-wizard-ui", () => {
         mergeableState: "dirty",
         ciStatus: "failure",
         labels: [],
+        deployPreviewUrl: null,
       },
     });
     const storage = memoryStorage({ viewed: 2, lastWorkflow: 2 });
@@ -133,6 +136,7 @@ describe("core-update-wizard-ui", () => {
         mergeableState: "dirty",
         ciStatus: "failure",
         labels: [],
+        deployPreviewUrl: null,
       },
     });
     const workflowStep = getWorkflowStep(admin.phases);

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compareVersions, isSupersededSafeUpdateVersion } from "./github-updates";
+import {
+  compareVersions,
+  isSupersededSafeUpdatePullRequest,
+  isSupersededSafeUpdateVersion,
+} from "./github-updates";
 
 describe("compareVersions (aligned with ycode-masjidweb check-updates)", () => {
   it("detects newer patch", () => {
@@ -28,5 +32,40 @@ describe("isSupersededSafeUpdateVersion", () => {
 
   it("does not supersede when versions are unknown", () => {
     expect(isSupersededSafeUpdateVersion(null, "1.10.0")).toBe(false);
+  });
+});
+
+describe("isSupersededSafeUpdatePullRequest", () => {
+  it("treats merged head sha as superseded even when package versions match", () => {
+    expect(
+      isSupersededSafeUpdatePullRequest(
+        { headSha: "abc123" },
+        "abc123",
+        "1.11.0",
+        "1.11.0",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps open PR active when package versions match but head sha differs", () => {
+    expect(
+      isSupersededSafeUpdatePullRequest(
+        { headSha: "branch-sha" },
+        "main-sha",
+        "1.11.0",
+        "1.11.0",
+      ),
+    ).toBe(false);
+  });
+
+  it("skips PR when head semver is strictly behind main", () => {
+    expect(
+      isSupersededSafeUpdatePullRequest(
+        { headSha: "branch-sha" },
+        "main-sha",
+        "1.10.0",
+        "1.11.0",
+      ),
+    ).toBe(true);
   });
 });
