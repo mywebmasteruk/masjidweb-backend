@@ -48,6 +48,12 @@ interface ImportMetaEnv {
   readonly PROVISION_PUBLISH_MAX_ATTEMPTS?: string;
   readonly PUBLIC_SUPABASE_URL: string;
   readonly PUBLIC_SUPABASE_ANON_KEY: string;
+  /** Inbox for weekly core-update CTO bot emails (Resend). */
+  readonly CORE_UPDATE_ALERT_EMAIL?: string;
+  readonly RESEND_API_KEY?: string;
+  readonly CORE_UPDATE_EMAIL_FROM?: string;
+  /** Shared secret for GitHub Actions → POST /api/updates/notify */
+  readonly CORE_UPDATE_NOTIFY_SECRET?: string;
 }
 
 interface ImportMeta {
