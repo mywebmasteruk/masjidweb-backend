@@ -28,8 +28,8 @@ const {
   clientRow = false,
 } = Astro.props;
 const siteUrl = `https://${slug}.${domainSuffix}`;
-const builderUrl = `${siteUrl}/ycode`;
 const menuId = `tenantMenu-${id}`;
+const builderOpenTitle = `Magic link → ${siteUrl}/ycode (authenticated). New users may land on accept-invite first.`;
 const loginTitle = `Invite email → ${siteUrl}/ycode/accept-invite. Existing user magic link → ${siteUrl}/ycode`;
 ---
 
@@ -48,9 +48,15 @@ const loginTitle = `Invite email → ${siteUrl}/ycode/accept-invite. Existing us
     <button type="button" role="menuitem" data-open-add-form>
       Add
     </button>
-    <a href={builderUrl} target="_blank" rel="noopener noreferrer" role="menuitem">
+    <button
+      type="button"
+      role="menuitem"
+      data-open-builder-id={id}
+      data-open-builder-slug={slug}
+      title={builderOpenTitle}
+    >
       Open Ycode Builder
-    </a>
+    </button>
     <button
       type="button"
       role="menuitem"

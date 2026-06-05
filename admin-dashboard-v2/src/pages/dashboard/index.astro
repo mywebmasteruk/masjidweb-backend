@@ -1036,6 +1036,73 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     }
   }
 
+  async function requestTenantAuthLink(tenantId) {
+    const res = await fetch("/api/tenant-auth-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenantId }),
+    });
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error("Server returned non-JSON (status " + res.status + ")");
+    }
+    if (!data.ok) {
+      throw new Error(formatApiErrorPayload(data) || "Request failed (status " + res.status + ")");
+    }
+    return data;
+  }
+
+  document.querySelectorAll("[data-open-builder-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tenantId = btn.getAttribute("data-open-builder-id");
+      const slug = btn.getAttribute("data-open-builder-slug") || "tenant";
+      if (!tenantId) return;
+      btn.disabled = true;
+      try {
+        const data = await requestTenantAuthLink(tenantId);
+        const link = data.actionLink;
+        if (link) {
+          window.open(link, "_blank", "noopener,noreferrer");
+          if (data.method === "magiclink") {
+            toast(
+              "Opening " +
+                slug +
+                " builder — magic link signs you in at https://" +
+                slug +
+                "." +
+                domainSuffix +
+                "/ycode.",
+              true,
+            );
+          } else {
+            toast(
+              "Opening sign-up link for " +
+                slug +
+                " — finish password on accept-invite, then the builder opens.",
+              true,
+            );
+          }
+          return;
+        }
+        if (data.method === "invite") {
+          toast(
+            (data.message || "Invite email sent for " + slug + ".") +
+              " No link to open yet — check the inbox or use Login link to copy one.",
+            true,
+          );
+          return;
+        }
+        toast(data.message || "No auth link returned", false);
+      } catch (err) {
+        toast(err.message || "Request failed", false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
   document.querySelectorAll("[data-tenant-auth-id]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const tenantId = btn.getAttribute("data-tenant-auth-id");
@@ -1043,22 +1110,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       if (!tenantId) return;
       btn.disabled = true;
       try {
-        const res = await fetch("/api/tenant-auth-link", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tenantId }),
-        });
-        let data;
-        try {
-          data = await res.json();
-        } catch {
-          toast("Server returned non-JSON (status " + res.status + ")", false);
-          return;
-        }
-        if (!data.ok) {
-          toast(formatApiErrorPayload(data) || "Request failed (status " + res.status + ")", false);
-          return;
-        }
+        const data = await requestTenantAuthLink(tenantId);
 
         const link = data.actionLink;
         if (data.method === "magiclink" && link) {
