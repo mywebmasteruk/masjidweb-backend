@@ -415,16 +415,14 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     outline: none;
   }
   :global(.tenant-actions-menu) {
-    position: absolute;
-    right: 0;
-    top: calc(100% + .45rem);
+    position: fixed;
     min-width: 220px;
     padding: .45rem;
     border: 1px solid rgba(148, 163, 184, .28);
     border-radius: 14px;
     background: #111827;
     box-shadow: 0 24px 70px rgba(0, 0, 0, .55);
-    z-index: 200;
+    z-index: 1000;
   }
   :global(.tenant-actions-menu.hidden) { display: none; }
   :global(.tenant-actions-menu button),
@@ -845,8 +843,38 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     });
   })();
 
+  function resetTenantMenuPosition(menu) {
+    menu.style.top = "";
+    menu.style.left = "";
+    menu.style.visibility = "";
+  }
+
+  function positionTenantMenu(menu, button) {
+    const gap = 7;
+    const viewportPadding = 8;
+    menu.classList.remove("hidden");
+    menu.style.visibility = "hidden";
+    const btnRect = button.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    let top = btnRect.bottom + gap;
+    let left = btnRect.right - menuRect.width;
+    const spaceBelow = window.innerHeight - btnRect.bottom - gap;
+    const spaceAbove = btnRect.top - gap;
+    if (menuRect.height > spaceBelow && spaceAbove >= spaceBelow) {
+      top = btnRect.top - menuRect.height - gap;
+    }
+    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - menuRect.width - viewportPadding));
+    top = Math.max(viewportPadding, Math.min(top, window.innerHeight - menuRect.height - viewportPadding));
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+    menu.style.visibility = "";
+  }
+
   function closeTenantMenus() {
-    document.querySelectorAll(".tenant-actions-menu").forEach((menu) => menu.classList.add("hidden"));
+    document.querySelectorAll(".tenant-actions-menu").forEach((menu) => {
+      menu.classList.add("hidden");
+      resetTenantMenuPosition(menu);
+    });
     document.querySelectorAll("[data-tenant-menu]").forEach((btn) => btn.setAttribute("aria-expanded", "false"));
   }
 
@@ -861,7 +889,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       const willOpen = menu?.classList.contains("hidden");
       closeTenantMenus();
       if (menu && willOpen) {
-        menu.classList.remove("hidden");
+        positionTenantMenu(menu, menuButton);
         menuButton.setAttribute("aria-expanded", "true");
       }
       return;
@@ -872,8 +900,11 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       return;
     }
 
-    if (!target.closest(".tenant-row-actions")) closeTenantMenus();
+    if (!target.closest(".tenant-row-actions") && !target.closest(".tenant-actions-menu")) closeTenantMenus();
   });
+
+  window.addEventListener("resize", closeTenantMenus);
+  document.addEventListener("scroll", closeTenantMenus, true);
 
   document.getElementById("provisionForm").addEventListener("submit", async (e) => {
     e.preventDefault();
