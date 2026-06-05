@@ -61,8 +61,12 @@ export type AdminUpdateCopyInput = {
   previewTenant?: PreviewTenantContext | null;
 };
 
+export type CoreUpdateTrafficLight = "green" | "amber" | "red";
+
 export type AdminUpdateCopy = {
   status: AdminUpdateStatus;
+  trafficLight: CoreUpdateTrafficLight;
+  trafficLightLabel: string;
   title: string;
   description: string;
   productionStatus: ProductionStatus;
@@ -80,6 +84,47 @@ export type AdminUpdateCopy = {
   preview: CoreUpdatePreviewLinks | null;
   phases: AdminUpdatePhase[];
 };
+
+function trafficLightForStatus(status: AdminUpdateStatus): {
+  trafficLight: CoreUpdateTrafficLight;
+  trafficLightLabel: string;
+} {
+  if (status === "ready_to_approve" || status === "ready_to_preview") {
+    return { trafficLight: "green", trafficLightLabel: "Ready for you" };
+  }
+  if (
+    status === "preparing" ||
+    status === "update_available" ||
+    status === "deploying"
+  ) {
+    return { trafficLight: "amber", trafficLightLabel: "In progress" };
+  }
+  if (
+    status === "blocked_needs_resolution" ||
+    status === "checks_failed" ||
+    status === "setup_required" ||
+    status === "unknown_error"
+  ) {
+    return { trafficLight: "red", trafficLightLabel: "Do not approve" };
+  }
+  return { trafficLight: "amber", trafficLightLabel: "No action needed" };
+}
+
+function withTrafficLight(
+  state: Omit<AdminUpdateCopy, "trafficLight" | "trafficLightLabel">,
+): AdminUpdateCopy {
+  const { trafficLight, trafficLightLabel } = trafficLightForStatus(state.status);
+  return { ...state, trafficLight, trafficLightLabel };
+}
+
+/** Approve only when GitHub checks passed and a deploy preview URL exists. */
+function canSafelyApprove(active: AdminSafeUpdateSummary): boolean {
+  return (
+    active.ciStatus === "success" &&
+    active.mergeable === true &&
+    Boolean(active.deployPreviewUrl)
+  );
+}
 
 /** Upstream patch (same major.minor) while git main already matches live — not a new core update cycle. */
 function isOptionalUpstreamPatchAhead(input: AdminUpdateCopyInput): boolean {
@@ -146,7 +191,7 @@ function withPr(
     : null;
   const previewUrl = preview?.deployPreviewRoot ?? input.deployPreviewUrl;
   const previewBuilderUrl = preview?.builderOnPreview ?? null;
-  return {
+  return withTrafficLight({
     ...state,
     prNumber: input.number,
     prUrl: input.url,
@@ -161,7 +206,7 @@ function withPr(
       canApprove: state.canApprove,
       isDeploying: false,
     }),
-  };
+  });
 }
 
 export const CORE_UPDATE_FLOW_STEPS = 4;
@@ -198,8 +243,8 @@ export function buildUpdatePhases(
     ),
     phase(
       2,
-      "Fix conflicts if needed",
-      "Open the pull request, run AI repair on this page, apply the suggested fix in the repo, then refresh status.",
+      "Automated fix if needed",
+      "The CTO bot runs mechanical repair on GitHub. If status stays red, wait for email or refresh — do not approve.",
     ),
     phase(
       3,
@@ -282,7 +327,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       input.error.includes("GITHUB_TOKEN or GITHUB_REPO not configured");
 
     const status: AdminUpdateStatus = setupMissing ? "setup_required" : "unknown_error";
-    return {
+    return withTrafficLight({
       status,
       title: setupMissing ? "Setup needed" : "Update status unavailable",
       description: setupMissing
@@ -310,12 +355,12 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         canApprove: false,
         isDeploying: false,
       }),
-    };
+    });
   }
 
   if (input.gitAheadOfDeployed) {
     const status: AdminUpdateStatus = "deploying";
-    return {
+    return withTrafficLight({
       status,
       title: "Update approved; deploy pending",
       description:
@@ -340,7 +385,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         canApprove: false,
         isDeploying: true,
       }),
-    };
+    });
   }
 
   const active = input.activeSafeUpdate;
@@ -358,8 +403,8 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The safe update pull request has merge conflicts in MasjidWeb-customized areas. Production is unchanged. Fix conflicts before preview or approval.",
         productionStatus: "Production unchanged",
-        actionLabel: "Run AI repair",
-        nextActionText: `Run AI repair below to fix PR #${active.number} on GitHub, then refresh status when the workflow finishes.`,
+        actionLabel: "Run automated fix",
+        nextActionText: `The CTO bot can retry mechanical repair for PR #${active.number}, or wait for the weekly operator. Do not approve while red.`,
         agentPrompt: buildAgentPrompt(active, "Merge conflicts or developer review required"),
         canPrepare: false,
         canApprove: false,
@@ -375,8 +420,8 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The prepared update failed automated checks. Production is unchanged. Do not approve until checks pass.",
         productionStatus: "Production unchanged",
-        actionLabel: "Run AI repair",
-        nextActionText: `Run AI repair below for PR #${active.number} if needed, fix any remaining check failures on GitHub, then refresh status.`,
+        actionLabel: "Run automated fix",
+        nextActionText: `Checks failed for PR #${active.number}. The CTO bot will email you. Retry automated fix or wait — do not approve while red.`,
         agentPrompt: buildAgentPrompt(active, "Safety checks failed"),
         canPrepare: false,
         canApprove: false,
@@ -413,7 +458,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         nextActionText: `Preview ${previewLabel} on the deploy preview, then approve merge for PR #${active.number}.`,
         agentPrompt: null,
         canPrepare: false,
-        canApprove: true,
+        canApprove: canSafelyApprove(active),
         canPreview: true,
         canCopyPrompt: false,
       }, previewTenant);
@@ -430,7 +475,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         nextActionText: `Approve PR #${active.number} only after ${previewLabel} looked correct on the deploy preview.`,
         agentPrompt: null,
         canPrepare: false,
-        canApprove: true,
+        canApprove: canSafelyApprove(active),
         canPreview: true,
         canCopyPrompt: false,
       }, previewTenant);
@@ -454,7 +499,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
 
   if (input.releaseAheadOfForkPackage && isOptionalUpstreamPatchAhead(input)) {
     const status: AdminUpdateStatus = "up_to_date";
-    return {
+    return withTrafficLight({
       status,
       title: "Up to date",
       description:
@@ -473,7 +518,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       previewBuilderUrl: null,
       preview: null,
       phases: [],
-    };
+    });
   }
 
   if (input.releaseAheadOfForkPackage) {
@@ -483,7 +528,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       input.deployedPackageVersion ||
       "the current fork version";
     const status: AdminUpdateStatus = "update_available";
-    return {
+    return withTrafficLight({
       status,
       title: "Update available",
       description: `${latest} is newer than ${current}. Start the merge test when you are ready. Production will not change until you approve the merge.`,
@@ -508,11 +553,11 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         canApprove: false,
         isDeploying: false,
       }),
-    };
+    });
   }
 
   const status: AdminUpdateStatus = "up_to_date";
-  return {
+  return withTrafficLight({
     status,
     title: "Up to date",
     description: "No action needed. Production is already on the latest known safe version.",
@@ -530,5 +575,5 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
     previewBuilderUrl: null,
     preview: null,
     phases: [],
-  };
+  });
 }

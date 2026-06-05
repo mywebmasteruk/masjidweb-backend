@@ -12,6 +12,7 @@ import {
 } from "../../../lib/github-updates";
 import { listRecentDeploys } from "../../../lib/netlify-deploys";
 import { netlifyBuilderSiteId } from "../../../lib/netlify-site-ids";
+import { formatCoreUpdateEmail, sendCoreUpdateEmail } from "../../../lib/core-update-email";
 import { describeAdminUpdateState } from "../../../lib/update-admin-copy";
 import { readServerEnv } from "../../../lib/server-env";
 import { githubProductionBranch } from "../../../lib/updates-env";
@@ -145,6 +146,15 @@ export const POST: APIRoute = async (context) => {
     } catch {
       /* merge succeeded; audit is best-effort */
     }
+
+    void sendCoreUpdateEmail(
+      formatCoreUpdateEmail("update_approved", {
+        message: `You approved core update PR #${safeUpdatePr.number}. Production will deploy when the build finishes.`,
+        prNumber: safeUpdatePr.number,
+        prUrl: safeUpdatePr.htmlUrl,
+        previewUrl: safeUpdatePr.deployPreviewUrl,
+      }),
+    );
 
     return new Response(
       JSON.stringify({

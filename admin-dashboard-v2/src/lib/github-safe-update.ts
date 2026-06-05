@@ -126,23 +126,23 @@ export async function getActiveAiRepairRun(
 export function describeAiRepairRun(run: AiRepairWorkflowRun | null | undefined): string | null {
   if (!run) return null;
   if (run.status === "queued" || run.status === "pending") {
-    return "AI repair is queued on GitHub…";
+    return "Automated repair is queued on GitHub…";
   }
   if (run.status === "in_progress") {
     return run.currentStep
-      ? `AI repair running: ${run.currentStep}…`
-      : "AI repair running on GitHub…";
+      ? `Automated repair running: ${run.currentStep}…`
+      : "Automated repair running on GitHub…";
   }
   if (run.conclusion === "success") {
-    return "AI repair finished successfully. Refreshing pull request status…";
+    return "Automated repair finished successfully. Refreshing pull request status…";
   }
   if (run.conclusion === "failure") {
-    return "AI repair failed on GitHub. Open the workflow run for logs, fix manually, or run repair again.";
+    return "Automated repair failed on GitHub. The CTO bot will retry or escalate — check your email.";
   }
   if (run.conclusion === "cancelled") {
-    return "AI repair was cancelled on GitHub.";
+    return "Automated repair was cancelled on GitHub.";
   }
-  return "AI repair workflow completed. Refresh status to see whether the pull request is ready.";
+  return "Automated repair workflow completed. Refresh status to see whether the pull request is ready.";
 }
 
 export async function dispatchAiRepairWorkflow(
@@ -159,9 +159,12 @@ export async function dispatchAiRepairWorkflow(
     {
       method: "POST",
       headers: headers(token),
-      body: JSON.stringify({
+        body: JSON.stringify({
         ref: "main",
-        inputs: { pr_number: String(prNumber) },
+        inputs: {
+          pr_number: String(prNumber),
+          mechanical_only: true,
+        },
       }),
     },
   );

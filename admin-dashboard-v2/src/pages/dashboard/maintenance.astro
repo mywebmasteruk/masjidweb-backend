@@ -166,6 +166,51 @@ const cleanupDeletesUnassigned =
       background: rgba(234, 179, 8, .08);
       color: var(--warning);
     }
+    .core-update-traffic {
+      display: flex;
+      align-items: flex-start;
+      gap: .75rem;
+      margin-bottom: 1rem;
+      padding: .85rem 1rem;
+      border-radius: calc(var(--radius) - 1px);
+      border: 1px solid rgba(148, 163, 184, .28);
+      background: rgba(15, 23, 42, .35);
+    }
+    .core-update-traffic.is-green {
+      border-color: rgba(34, 197, 94, .35);
+      background: rgba(34, 197, 94, .08);
+    }
+    .core-update-traffic.is-amber {
+      border-color: rgba(234, 179, 8, .35);
+      background: rgba(234, 179, 8, .08);
+    }
+    .core-update-traffic.is-red {
+      border-color: rgba(239, 68, 68, .35);
+      background: rgba(239, 68, 68, .08);
+    }
+    .core-update-traffic-dot {
+      flex-shrink: 0;
+      width: .75rem;
+      height: .75rem;
+      margin-top: .2rem;
+      border-radius: 999px;
+      background: currentColor;
+    }
+    .core-update-traffic.is-green .core-update-traffic-dot { color: var(--success); }
+    .core-update-traffic.is-amber .core-update-traffic-dot { color: var(--warning); }
+    .core-update-traffic.is-red .core-update-traffic-dot { color: var(--danger, #ef4444); }
+    .core-update-traffic-label {
+      margin: 0;
+      font-size: .95rem;
+      font-weight: 650;
+      line-height: 1.35;
+    }
+    .core-update-traffic-hint {
+      margin: .25rem 0 0;
+      font-size: .78rem;
+      line-height: 1.5;
+      color: var(--muted);
+    }
     .mw-now-action {
       margin-bottom: 1rem;
       padding: 1rem 1.05rem;
@@ -745,6 +790,31 @@ const cleanupDeletesUnassigned =
       return status === "preparing" || status === "deploying";
     }
 
+    function renderTrafficLightBanner(adminState) {
+      const light = adminState.trafficLight || "amber";
+      const label = adminState.trafficLightLabel || "Checking status";
+      let hint = "Weekly updates run Mondays. You will get email when something needs you.";
+      if (light === "green") {
+        hint = "Preview the site, then click Approve merge. Production stays unchanged until you approve.";
+      } else if (light === "red") {
+        hint = "Do not approve yet. Wait for email or click Run automated fix once.";
+      } else if (adminState.status === "preparing" || adminState.status === "deploying") {
+        hint = "The CTO bot is working. This page refreshes automatically.";
+      }
+      return (
+        '<div class="core-update-traffic is-' +
+        escapeAttr(light) +
+        '" role="status" aria-live="polite">' +
+        '<span class="core-update-traffic-dot" aria-hidden="true"></span>' +
+        '<div><p class="core-update-traffic-label">' +
+        escapeHtml(label) +
+        "</p>" +
+        '<p class="core-update-traffic-hint">' +
+        escapeHtml(hint) +
+        "</p></div></div>"
+      );
+    }
+
     function buildCoreUpdateNowAction(adminState, opts) {
       if (!adminState) {
         return {
@@ -776,7 +846,7 @@ const cleanupDeletesUnassigned =
       if (opts?.aiRepairInFlight) {
         return {
           kind: "repair",
-          headline: "AI repair in progress",
+          headline: "Automated repair in progress",
           detail:
             opts.aiRepairDetail ||
             "GitHub Actions is resolving conflicts and verifying the build. This page updates automatically.",
@@ -822,8 +892,8 @@ const cleanupDeletesUnassigned =
           headline: adminState.title || "Fix required before preview",
           detail:
             adminState.nextActionText ||
-            "Run AI repair or fix the pull request on GitHub, then refresh status.",
-          primaryLabel: "Run AI repair",
+            "Run automated fix (mechanical repair) or wait for the weekly CTO bot, then refresh status.",
+          primaryLabel: "Run automated fix",
           primaryDisabled: false,
           showSpinner: false,
           reassurance: "Do not approve the merge until conflicts and checks are resolved.",
@@ -1347,7 +1417,7 @@ const cleanupDeletesUnassigned =
         statusHtml =
           runLink +
           "<pre>" +
-          escapeHtml(liveSummary || saved || "Checking AI repair status…") +
+          escapeHtml(liveSummary || saved || "Checking automated repair status…") +
           "</pre>";
       } else if (saved) {
         statusHtml =
@@ -1359,7 +1429,7 @@ const cleanupDeletesUnassigned =
       }
       return (
         '<div class="mw-ai-repair-panel">' +
-        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Run AI repair</strong> above to start automated conflict resolution on GitHub (a frontier OpenRouter model resolves merge conflicts, commits, and runs a build). Repair progress and the latest result show here. Production is not merged until you approve.</p>' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Run automated fix</strong> above to start mechanical repair on GitHub (rerere + lockfile fixes). Progress shows here. You will also get email alerts. Production is not merged until you approve.</p>' +
         '<div class="mw-ai-repair-actions">' +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
         "</div>" +
@@ -1419,7 +1489,7 @@ const cleanupDeletesUnassigned =
       window.aiRepairLoading = false;
       if (runBtn) {
         runBtn.disabled = false;
-        runBtn.textContent = "Run AI repair";
+        runBtn.textContent = "Run automated fix";
       }
 
       if (!resultEl) return;
@@ -1431,7 +1501,7 @@ const cleanupDeletesUnassigned =
         const message =
           typeof res.message === "string"
             ? res.message
-            : "Automated AI repair started on GitHub.";
+            : "Automated mechanical repair started on GitHub.";
         window.lastAiRepairReply = message;
         window.lastAiRepairModel = "";
         const workflowLink =
@@ -1445,7 +1515,7 @@ const cleanupDeletesUnassigned =
             ? '<p class="mw-ai-repair-meta text-xs text-muted">' + escapeHtml(res.disclaimer) + "</p>"
             : "";
         resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
-        toast("AI repair started on GitHub.", true);
+        toast("Automated repair started on GitHub.", true);
         aiRepairWatchActive = true;
         await fetchAiRepairStatus();
         startAiRepairPolling();
@@ -1455,7 +1525,7 @@ const cleanupDeletesUnassigned =
       const err =
         typeof res.error === "string"
           ? res.error
-          : "AI repair failed. Ensure OPENROUTER_API_KEY is set on the builder repo and the workflow is on main.";
+          : "Automated repair failed. Check GitHub Actions on the builder repo or wait for the CTO bot email.";
       const workflowLink =
         typeof res.workflowUrl === "string"
           ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
@@ -1792,6 +1862,7 @@ const cleanupDeletesUnassigned =
       const versionLine = buildVersionLine(data);
 
       let html = '<div class="core-update-state" data-viewed-step="' + escapeAttr(step) + '">';
+      html += renderTrafficLightBanner(adminState);
       html +=
         '<div class="core-update-topline"><span class="core-update-pill' +
         productionPillClass +

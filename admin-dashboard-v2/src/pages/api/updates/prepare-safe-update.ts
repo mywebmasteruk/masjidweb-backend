@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
+import { formatCoreUpdateEmail, sendCoreUpdateEmail } from "../../../lib/core-update-email";
 import { dispatchSafeUpdateWorkflow } from "../../../lib/github-safe-update";
 
 const json = { "Content-Type": "application/json" } as const;
@@ -28,6 +29,12 @@ export const POST: APIRoute = async (context) => {
 
   try {
     await dispatchSafeUpdateWorkflow(token, repo);
+    void sendCoreUpdateEmail(
+      formatCoreUpdateEmail("update_started", {
+        message:
+          "You started a core update (or the weekly schedule triggered). The CTO bot will email again when a PR is ready.",
+      }),
+    );
     return new Response(
       JSON.stringify({
         ok: true,

@@ -55,9 +55,9 @@ export const POST: APIRoute = async (context) => {
         prNumber,
         workflowUrl,
         message:
-          "Automated AI repair started on GitHub. It resolves merge conflicts on the PR branch, commits, and runs a build. Refresh status in a few minutes.",
+          "Automated mechanical repair started on GitHub (CTO bot). Refresh status in a few minutes.",
         disclaimer:
-          "Repair runs in GitHub Actions on the builder repo. Add OPENROUTER_API_KEY as a repository secret there (not only on the admin Netlify site).",
+          "Mechanical repair uses rerere and lockfile fixes only — no AI by default. You will receive email when status changes.",
       }),
       { headers: json },
     );

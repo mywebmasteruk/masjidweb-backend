@@ -81,6 +81,7 @@ describe("describeAdminUpdateState", () => {
     expect(result.status).toBe("blocked_needs_resolution");
     expect(result.canApprove).toBe(false);
     expect(result.canCopyPrompt).toBe(true);
+    expect(result.trafficLight).toBe("red");
     expect(result.phases.find((p) => p.step === 2)?.status).toBe("current");
     expect(result.agentPrompt).toContain("Safe update PR: #1");
   });
@@ -103,6 +104,8 @@ describe("describeAdminUpdateState", () => {
     expect(result.actionLabel).toBe("Approve merge");
     expect(result.canPreview).toBe(true);
     expect(result.canApprove).toBe(true);
+    expect(result.trafficLight).toBe("green");
+    expect(result.trafficLightLabel).toBe("Ready for you");
     expect(result.previewUrl).toBe(
       "https://deploy-preview-1--masjidweb-tenants.netlify.app",
     );
