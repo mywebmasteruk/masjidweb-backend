@@ -78,16 +78,69 @@ Files checked: `collectionItemRepository`, `mcpTokenRepository`, `mcp/handler`,
 
 ---
 
+## Broad audit status after 3144c5a / 43e8b2b
+
+### Reviewed high-risk merge paths
+
+The post-merge audit re-checked the highest-risk MasjidWeb seams from
+`feafbe0`:
+
+- Auth / RBAC: `api/auth/users`, `api/auth/session`, `api/auth/invite`,
+  `lib/roles*`, `bootstrap-tenant-owner`
+- Fragile login flow: `accept-invite`, `YCodeLayoutClient`, `proxy.ts`,
+  shared Supabase cookie-domain handling
+- Tenant isolation repositories: `collectionItemRepository`, `pageRepository`,
+  `translationRepository`
+- Safe-update automation: admin wizard, AI repair dispatch/status, PR CI,
+  completeness script, deploy notification
+
+### Audit conclusion
+
+- No additional shipped regression was found in the reviewed auth / tenant paths
+  after the follow-up fixes on `main` (`03932b6`, `3144c5a`).
+- The original failures are covered by real guardrails now:
+  - provisioned-tenant RBAC bootstrap tests
+  - completeness checks for truncated AI repair output
+  - OpenRouter truncation rejection (`finish_reason=length`)
+  - direct Netlify polling for post-merge production confirmation
+
+### Gaps still open
+
+These are **process / coverage gaps**, not confirmed production regressions:
+
+1. **AI repair success is not the same as PR safety green.**
+   `ai-repair-safe-update.yml` verifies the build and completeness script, but
+   it does **not** run the full tenant vitest safety suite itself. Approval must
+   still wait for the normal PR checks to finish green.
+2. **Accept-invite / standalone-route behavior is still mostly manual.**
+   The fragile flow is documented and partially covered, but we still rely on
+   preview smoke for `/ycode/accept-invite`, magic-link handoff, and standalone
+   layout exclusion.
+3. **Completeness checks are structural, not semantic.**
+   `check-repair-completeness.sh` proves critical exports survived and blocks the
+   broken `getSupabaseAdmin(tenantId)` pattern, but it cannot prove business
+   logic correctness in repaired functions.
+4. **Backend auth-link tests are still narrow.**
+   `send-tenant-auth-link.test.ts` protects the redirect target, but not yet the
+   full invite-recovery / magic-link fallback matrix.
+
+---
+
 ## Pre-approve checklist for future core updates
 
 Before clicking **Approve merge** in the admin dashboard:
 
 - [ ] CI green (`ci-build-check.yml`: tsc + tenant safety tests + build).
+- [ ] If AI repair pushed a commit, wait for the **normal PR checks** to rerun
+      and finish green. Do **not** approve based only on “AI repair finished”.
 - [ ] `bash scripts/check-repair-completeness.sh` exits 0 (automated in AI repair workflow; run manually for human-resolved conflicts).
 - [ ] Update safety check report reviewed — all `high` files listed were inspected.
 - [ ] If upstream added RBAC, auth, or role logic: confirm MasjidWeb provisioning path still works (provisioned user can log in, invite others, publish).
 - [ ] If upstream changed repository files: verify they still call `applyTenantEq` and `resolveEffectiveTenantId`.
 - [ ] Netlify deploy preview opens without JS errors.
+- [ ] If auth / proxy / layout files changed: preview-test `/ycode/accept-invite`,
+      magic-link to `/ycode`, and Settings → Members (“Invite User” visible for a
+      provisioned tenant with no pre-existing owner role).
 - [ ] Optional: run `MT_VALIDATION_CHECKLIST.md` two-tenant smoke on the preview deploy.
 
 ---
