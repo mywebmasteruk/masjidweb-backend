@@ -1,0 +1,125 @@
+---
+interface Props {
+  id: string;
+  slug: string;
+  status: string;
+  domainSuffix: string;
+  businessName: string;
+  email?: string | null;
+  domain?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  description?: string | null;
+  /** Client rows include Continue setup and Delete. Template/demo rows omit those. */
+  clientRow?: boolean;
+}
+
+const {
+  id,
+  slug,
+  status,
+  domainSuffix,
+  businessName,
+  email = "",
+  domain = "",
+  address = "",
+  phone = "",
+  description = "",
+  clientRow = false,
+} = Astro.props;
+const siteUrl = `https://${slug}.${domainSuffix}`;
+const builderUrl = `${siteUrl}/ycode`;
+const menuId = `tenantMenu-${id}`;
+const loginTitle = `Invite email → ${siteUrl}/ycode/accept-invite. Existing user magic link → ${siteUrl}/ycode`;
+---
+
+<div class="tenant-row-actions">
+  <button
+    type="button"
+    class="tenant-kebab"
+    data-tenant-menu={id}
+    aria-label="Open row actions"
+    aria-haspopup="menu"
+    aria-expanded="false"
+    aria-controls={menuId}
+    title="Actions"
+  >⋯</button>
+  <div class="tenant-actions-menu hidden" id={menuId} role="menu">
+    <button type="button" role="menuitem" data-open-add-form>
+      Add
+    </button>
+    <a href={builderUrl} target="_blank" rel="noopener noreferrer" role="menuitem">
+      Open Ycode Builder
+    </a>
+    <button
+      type="button"
+      role="menuitem"
+      data-edit-tenant-id={id}
+      data-edit-tenant-slug={slug}
+      data-edit-tenant-name={businessName}
+      data-edit-tenant-email={email ?? ""}
+      data-edit-tenant-domain={domain ?? ""}
+      data-edit-tenant-address={address ?? ""}
+      data-edit-tenant-phone={phone ?? ""}
+      data-edit-tenant-description={description ?? ""}
+    >
+      Edit Tenant
+    </button>
+    <a href={siteUrl} target="_blank" rel="noopener noreferrer" role="menuitem">Open site</a>
+    <button
+      type="button"
+      role="menuitem"
+      data-tenant-auth-id={id}
+      data-tenant-auth-slug={slug}
+      title={loginTitle}
+    >
+      Login link
+    </button>
+    {clientRow && status === "provisioning" && (
+      <button
+        type="button"
+        role="menuitem"
+        class="primary"
+        data-continue-provision-id={id}
+        data-continue-provision-slug={slug}
+        title="Run CMS seed, invite, and publish if phase 1 finished but status stayed on provisioning"
+      >
+        Continue setup
+      </button>
+    )}
+    {(status === "active" || status === "suspended") && (
+      <button
+        type="button"
+        role="menuitem"
+        data-deactivate-id={id}
+        data-deactivate-slug={slug}
+        title="Keep data; mark tenant deactivated"
+      >
+        Deactivate
+      </button>
+    )}
+    {status === "deactivated" && (
+      <button
+        type="button"
+        role="menuitem"
+        data-activate-id={id}
+        data-activate-slug={slug}
+        title="Mark tenant active again"
+      >
+        Reactivate
+      </button>
+    )}
+    {clientRow && (
+      <button
+        type="button"
+        role="menuitem"
+        class="danger"
+        data-delete-id={id}
+        data-delete-slug={slug}
+        title={`Permanently delete ${slug} and all site data`}
+      >
+        Delete tenant
+      </button>
+    )}
+  </div>
+</div>

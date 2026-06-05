@@ -9,11 +9,14 @@ import {
   deleteAuthUsersForMissingTenants,
   deleteTenantScopedData,
 } from "../../lib/tenant-delete-data";
+import { updateTenantSchema } from "../../lib/tenant-schema";
 
-const patchTenantSchema = z.object({
+const patchTenantStatusSchema = z.object({
   id: z.string().uuid(),
   status: z.enum(["deactivated", "active"]),
 });
+
+const patchTenantSchema = z.union([patchTenantStatusSchema, updateTenantSchema]);
 
 function envFlagEnabled(value: unknown): boolean {
   return value === "true" || value === "1" || String(value ?? "").toLowerCase() === "yes";
@@ -126,12 +129,56 @@ export const PATCH: APIRoute = async (context) => {
     );
   }
 
-  const { id, status } = parsed.data;
   const supabase = getServiceSupabase();
+
+  if ("status" in parsed.data && parsed.data.status !== undefined) {
+    const { id, status } = parsed.data;
+    const { data: tenant, error: fetchErr } = await supabase
+      .from("tenant_registry")
+      .select("id, status")
+      .eq("id", id)
+      .single();
+
+    if (fetchErr || !tenant) {
+      return new Response(JSON.stringify({ error: "Tenant not found" }), {
+        status: 404, headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const { error: updateErr } = await supabase
+      .from("tenant_registry")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", id);
+
+    if (updateErr) {
+      return new Response(JSON.stringify({ error: updateErr.message }), {
+        status: 500, headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ ok: true, id, status }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const { id, ...fields } = parsed.data;
+  const updates: Record<string, string | null> = {};
+  if (fields.business_name !== undefined) updates.business_name = fields.business_name;
+  if (fields.email !== undefined) updates.email = fields.email;
+  if (fields.address !== undefined) updates.address = fields.address.trim() || null;
+  if (fields.phone !== undefined) updates.phone = fields.phone.trim() || null;
+  if (fields.domain !== undefined) updates.domain = fields.domain.trim() || null;
+  if (fields.description !== undefined) updates.description = fields.description.trim() || null;
+
+  if (Object.keys(updates).length === 0) {
+    return new Response(JSON.stringify({ ok: false, error: "No fields to update" }), {
+      status: 400, headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const { data: tenant, error: fetchErr } = await supabase
     .from("tenant_registry")
-    .select("id, status")
+    .select("id")
     .eq("id", id)
     .single();
 
@@ -143,7 +190,7 @@ export const PATCH: APIRoute = async (context) => {
 
   const { error: updateErr } = await supabase
     .from("tenant_registry")
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ ...updates, updated_at: new Date().toISOString() })
     .eq("id", id);
 
   if (updateErr) {
@@ -152,7 +199,7 @@ export const PATCH: APIRoute = async (context) => {
     });
   }
 
-  return new Response(JSON.stringify({ ok: true, id, status }), {
+  return new Response(JSON.stringify({ ok: true, id, updated: updates }), {
     status: 200, headers: { "Content-Type": "application/json" },
   });
 };

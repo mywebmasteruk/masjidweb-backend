@@ -18,13 +18,13 @@ const { title } = Astro.props;
       --bg-card-hover: #1e2028;
       --bg-surface: #23252d;
       --border: #2a2d38;
-      --border-focus: #6366f1;
+      --border-focus: #276D59;
       --text: #e4e5ea;
       --text-secondary: #9395a0;
       --text-muted: #63657a;
-      --accent: #6366f1;
-      --accent-hover: #818cf8;
-      --accent-subtle: rgba(99,102,241,.12);
+      --accent: #276D59;
+      --accent-hover: #328f72;
+      --accent-subtle: rgba(39,109,89,.12);
       --success: #22c55e;
       --success-bg: rgba(34,197,94,.1);
       --warning: #eab308;
@@ -59,11 +59,8 @@ const { title } = Astro.props;
       display: flex; align-items: center; gap: .6rem;
       padding: .25rem .5rem; margin-bottom: 2rem;
     }
-    .sidebar-brand-icon {
-      width: 32px; height: 32px; border-radius: 8px;
-      background: linear-gradient(135deg, var(--accent), #a78bfa);
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: .8rem; color: #fff;
+    .sidebar-brand-logo {
+      width: 32px; height: 32px; flex-shrink: 0; display: block;
     }
     .sidebar-brand span { font-weight: 700; font-size: .95rem; letter-spacing: -.02em; }
     .sidebar-nav { flex: 1; display: flex; flex-direction: column; gap: .25rem; }

@@ -23,3 +23,15 @@ export const createTenantSchema = z.object({
 });
 
 export type CreateTenantInput = z.infer<typeof createTenantSchema>;
+
+export const updateTenantSchema = z.object({
+  id: z.string().uuid(),
+  business_name: z.string().min(1, "Business name is required").optional(),
+  address: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email("Enter a valid email address").optional(),
+  domain: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
