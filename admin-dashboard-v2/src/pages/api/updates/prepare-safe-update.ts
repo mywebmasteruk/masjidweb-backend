@@ -32,7 +32,7 @@ export const POST: APIRoute = async (context) => {
     void sendCoreUpdateEmail(
       formatCoreUpdateEmail("update_started", {
         message:
-          "You started a core update (or the weekly schedule triggered). The CTO bot will email again when a PR is ready.",
+          "You started a core update (or the daily schedule triggered). The CTO bot will email again when a PR is ready.",
       }),
     );
     return new Response(

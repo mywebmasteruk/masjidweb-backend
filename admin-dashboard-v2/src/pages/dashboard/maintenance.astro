@@ -793,7 +793,7 @@ const cleanupDeletesUnassigned =
     function renderTrafficLightBanner(adminState) {
       const light = adminState.trafficLight || "amber";
       const label = adminState.trafficLightLabel || "Checking status";
-      let hint = "Weekly updates run Mondays. You will get email when something needs you.";
+      let hint = "Core updates run daily at 06:00 UTC. You will get email when something needs you.";
       if (light === "green") {
         hint = "Preview the site, then click Approve merge. Production stays unchanged until you approve.";
       } else if (light === "red") {
@@ -892,7 +892,7 @@ const cleanupDeletesUnassigned =
           headline: adminState.title || "Fix required before preview",
           detail:
             adminState.nextActionText ||
-            "Run automated fix (mechanical repair) or wait for the weekly CTO bot, then refresh status.",
+            "Run automated fix (mechanical repair) or wait for the daily CTO bot run, then refresh status.",
           primaryLabel: "Run automated fix",
           primaryDisabled: false,
           showSpinner: false,

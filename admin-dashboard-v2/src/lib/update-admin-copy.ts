@@ -404,7 +404,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
           "The safe update pull request has merge conflicts in MasjidWeb-customized areas. Production is unchanged. Fix conflicts before preview or approval.",
         productionStatus: "Production unchanged",
         actionLabel: "Run automated fix",
-        nextActionText: `The CTO bot can retry mechanical repair for PR #${active.number}, or wait for the weekly operator. Do not approve while red.`,
+        nextActionText: `The CTO bot can retry mechanical repair for PR #${active.number}, or wait for the next daily run. Do not approve while red.`,
         agentPrompt: buildAgentPrompt(active, "Merge conflicts or developer review required"),
         canPrepare: false,
         canApprove: false,
