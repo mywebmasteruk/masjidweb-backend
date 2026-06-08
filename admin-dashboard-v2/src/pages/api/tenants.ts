@@ -161,7 +161,15 @@ export const PATCH: APIRoute = async (context) => {
     });
   }
 
-  const { id, ...fields } = parsed.data;
+  const updateParsed = updateTenantSchema.safeParse(parsed.data);
+  if (!updateParsed.success) {
+    return new Response(
+      JSON.stringify({ ok: false, error: updateParsed.error.flatten().fieldErrors }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const { id, ...fields } = updateParsed.data;
   const updates: Record<string, string | null> = {};
   if (fields.business_name !== undefined) updates.business_name = fields.business_name;
   if (fields.email !== undefined) updates.email = fields.email;

@@ -182,7 +182,14 @@ function withPr(
   input: AdminSafeUpdateSummary,
   state: Omit<
     AdminUpdateCopy,
-    "prNumber" | "prUrl" | "previewUrl" | "previewBuilderUrl" | "preview" | "phases"
+    | "trafficLight"
+    | "trafficLightLabel"
+    | "prNumber"
+    | "prUrl"
+    | "previewUrl"
+    | "previewBuilderUrl"
+    | "preview"
+    | "phases"
   >,
   previewTenant?: PreviewTenantContext | null,
 ): AdminUpdateCopy {
