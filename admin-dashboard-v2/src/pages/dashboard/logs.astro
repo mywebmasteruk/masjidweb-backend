@@ -1,6 +1,7 @@
 ---
 import Layout from "../../layouts/Layout.astro";
 import SidebarBrand from "../../components/SidebarBrand.astro";
+import { listIsolationCheckRuns } from "../../lib/isolation-check-log";
 import { getServiceSupabase } from "../../lib/supabase-server";
 
 const supabase = getServiceSupabase();
@@ -10,6 +11,18 @@ const { data: auditRows } = await supabase
   .select("id, tenant_id, action, actor, details, created_at")
   .order("created_at", { ascending: false })
   .limit(100);
+
+const isolationRows = await listIsolationCheckRuns(100);
+
+function formatDuration(ms: number | null): string {
+  if (ms == null || ms < 0) return "—";
+  if (ms < 1000) return `${ms} ms`;
+  const sec = ms / 1000;
+  if (sec < 60) return `${sec.toFixed(1)} s`;
+  const min = Math.floor(sec / 60);
+  const rem = Math.round(sec % 60);
+  return `${min}m ${rem}s`;
+}
 ---
 
 <Layout title="Logs — MasjidWeb Admin">
@@ -40,58 +53,223 @@ const { data: auditRows } = await supabase
 
     <main class="main">
       <div style="margin-bottom:1.5rem;">
-        <h1>Provisioning log</h1>
-        <p class="page-desc" style="margin-bottom:0;">Recent actions from tenant provisioning and admin API (newest first)</p>
+        <h1>Logs</h1>
+        <p class="page-desc" style="margin-bottom:0;">Provisioning audit trail and daily tenant isolation check history</p>
       </div>
 
-      <div class="card">
-        <div class="card-header">
-          <h2>Audit log</h2>
-          <button id="clearLogBtn" class="btn btn-ghost btn-sm">
-            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-            Clear
-          </button>
+      <div class="logs-tab-bar" role="tablist" aria-label="Log categories">
+        <button type="button" class="logs-tab active" role="tab" id="logsTabProvisioning" aria-selected="true" aria-controls="logsPanelProvisioning" data-tab="provisioning">
+          Provisioning
+        </button>
+        <button type="button" class="logs-tab" role="tab" id="logsTabIsolation" aria-selected="false" aria-controls="logsPanelIsolation" data-tab="isolation">
+          Isolation checks
+          {isolationRows.length > 0 && (
+            <span class="badge badge-gray" style="margin-left:.35rem;">{isolationRows.length}</span>
+          )}
+        </button>
+      </div>
+
+      <div id="logsPanelProvisioning" class="logs-tab-panel" role="tabpanel" aria-labelledby="logsTabProvisioning">
+        <div class="card">
+          <div class="card-header">
+            <h2>Provisioning audit log</h2>
+            <button id="clearLogBtn" class="btn btn-ghost btn-sm">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              Clear
+            </button>
+          </div>
+          {(auditRows && auditRows.length > 0) ? (
+            <div style="overflow-x:auto;">
+              <table>
+                <thead>
+                  <tr><th>Action</th><th>Actor</th><th>Tenant</th><th>Details</th><th>Time</th></tr>
+                </thead>
+                <tbody>
+                  {(auditRows).map((r) => (
+                    <tr>
+                      <td>
+                        <span class={`badge ${r.action.includes("complete") ? "badge-green" : r.action.includes("fail") ? "badge-red" : "badge-gray"}`}>{r.action}</span>
+                      </td>
+                      <td class="text-xs text-secondary">{r.actor || "—"}</td>
+                      <td class="text-xs mono text-secondary">{r.tenant_id?.slice(0, 8) ?? "—"}</td>
+                      <td class="text-xs text-muted truncate">{JSON.stringify(r.details)}</td>
+                      <td class="text-xs text-muted" style="white-space:nowrap;">{new Date(r.created_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div class="empty-state">
+              <p class="text-muted">No audit log entries</p>
+            </div>
+          )}
         </div>
-        {(auditRows && auditRows.length > 0) ? (
-          <div style="overflow-x:auto;">
-            <table>
-              <thead>
-                <tr><th>Action</th><th>Actor</th><th>Tenant</th><th>Details</th><th>Time</th></tr>
-              </thead>
-              <tbody>
-                {(auditRows).map((r) => (
+      </div>
+
+      <div id="logsPanelIsolation" class="logs-tab-panel" role="tabpanel" aria-labelledby="logsTabIsolation" hidden>
+        <div class="card">
+          <div class="card-header">
+            <h2>Tenant isolation checks</h2>
+            <p class="text-xs text-muted" style="margin:0;">Daily Vitest suite from <span class="mono">ycode-mw-tenant</span> (07:00 UTC)</p>
+          </div>
+          {isolationRows.length > 0 ? (
+            <div style="overflow-x:auto;">
+              <table class="isolation-table">
+                <thead>
                   <tr>
-                    <td>
-                      <span class={`badge ${r.action.includes("complete") ? "badge-green" : r.action.includes("fail") ? "badge-red" : "badge-gray"}`}>{r.action}</span>
-                    </td>
-                    <td class="text-xs text-secondary">{r.actor || "—"}</td>
-                    <td class="text-xs mono text-secondary">{r.tenant_id?.slice(0, 8) ?? "—"}</td>
-                    <td class="text-xs text-muted truncate">{JSON.stringify(r.details)}</td>
-                    <td class="text-xs text-muted" style="white-space:nowrap;">{new Date(r.created_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</td>
+                    <th>Status</th>
+                    <th>Time</th>
+                    <th>Duration</th>
+                    <th>Commit</th>
+                    <th>Branch</th>
+                    <th>Run</th>
+                    <th>Summary</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div class="empty-state">
-            <p class="text-muted">No audit log entries</p>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {isolationRows.map((r) => (
+                    <tr>
+                      <td>
+                        <span class={`badge ${r.status === "pass" ? "badge-green" : "badge-red"}`}>
+                          {r.status === "pass" ? "Pass" : "Fail"}
+                        </span>
+                      </td>
+                      <td class="text-xs text-muted" style="white-space:nowrap;">
+                        {new Date(r.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </td>
+                      <td class="text-xs text-secondary">{formatDuration(r.durationMs)}</td>
+                      <td class="text-xs mono text-secondary">
+                        {r.commitSha ? (
+                          <span title={r.commitSha}>{r.commitSha.slice(0, 12)}</span>
+                        ) : "—"}
+                      </td>
+                      <td class="text-xs text-secondary">{r.branch ?? "—"}</td>
+                      <td class="text-xs">
+                        {r.workflowRunUrl ? (
+                          <a href={r.workflowRunUrl} target="_blank" rel="noopener noreferrer">Actions</a>
+                        ) : r.workflowRunId ? (
+                          <span class="mono text-muted">{r.workflowRunId}</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td class="text-xs text-muted">
+                        {r.status === "fail" && (r.summary || r.failureOutput) ? (
+                          <details class="isolation-details">
+                            <summary>{r.summary ?? "Test failures — expand for output"}</summary>
+                            {r.failureOutput && (
+                              <pre class="isolation-output">{r.failureOutput}</pre>
+                            )}
+                          </details>
+                        ) : (
+                          r.summary ?? "All isolation tests passed"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div class="empty-state">
+              <p class="text-muted">No isolation check runs recorded yet.</p>
+              <p class="text-xs text-muted" style="margin-top:.5rem;">Configure <span class="mono">ADMIN_DASHBOARD_ISOLATION_LOG_URL</span> on the <span class="mono">ycode-mw-tenant</span> repo so the daily workflow reports here.</p>
+            </div>
+          )}
+        </div>
       </div>
     </main>
   </div>
 
+  <style>
+    .logs-tab-bar {
+      display: flex;
+      gap: .35rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .logs-tab {
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      border-radius: 8px;
+      padding: .45rem .85rem;
+      font-size: .8rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+    }
+    .logs-tab:hover { color: var(--text); background: var(--bg-card-hover); }
+    .logs-tab.active {
+      color: var(--text);
+      border-color: var(--accent);
+      background: var(--bg-card-hover);
+    }
+    .logs-tab-panel[hidden] { display: none !important; }
+    .isolation-table td { vertical-align: top; }
+    .isolation-details summary {
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+    .isolation-output {
+      margin: .5rem 0 0;
+      padding: .65rem .75rem;
+      max-height: 280px;
+      overflow: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: .7rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+  </style>
+
   <script>
-    document.getElementById("logoutBtn").addEventListener("click", async () => {
+    document.getElementById("logoutBtn")?.addEventListener("click", async () => {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login";
     });
 
-    document.getElementById("clearLogBtn").addEventListener("click", async () => {
-      if (!confirm("Clear all audit log entries?")) return;
+    document.getElementById("clearLogBtn")?.addEventListener("click", async () => {
+      if (!confirm("Clear all provisioning audit log entries?")) return;
       await fetch("/api/audit-log", { method: "DELETE" });
       location.reload();
     });
+
+    const tabs = document.querySelectorAll(".logs-tab");
+    const provisioningPanel = document.getElementById("logsPanelProvisioning");
+    const isolationPanel = document.getElementById("logsPanelIsolation");
+
+    function activateTab(name) {
+      const isIsolation = name === "isolation";
+      tabs.forEach((tab) => {
+        const on = tab.getAttribute("data-tab") === name;
+        tab.classList.toggle("active", on);
+        tab.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      if (provisioningPanel) provisioningPanel.hidden = isIsolation;
+      if (isolationPanel) isolationPanel.hidden = !isIsolation;
+      if (isIsolation) {
+        history.replaceState(null, "", "#isolation");
+      } else {
+        history.replaceState(null, "", window.location.pathname);
+      }
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        activateTab(tab.getAttribute("data-tab") || "provisioning");
+      });
+    });
+
+    if (window.location.hash === "#isolation") {
+      activateTab("isolation");
+    }
   </script>
 </Layout>

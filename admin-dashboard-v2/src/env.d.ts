@@ -52,7 +52,7 @@ interface ImportMetaEnv {
   readonly CORE_UPDATE_ALERT_EMAIL?: string;
   readonly RESEND_API_KEY?: string;
   readonly CORE_UPDATE_EMAIL_FROM?: string;
-  /** Shared secret for GitHub Actions → POST /api/updates/notify */
+  /** Shared secret for GitHub Actions → POST /api/updates/notify and /api/isolation-check-log */
   readonly CORE_UPDATE_NOTIFY_SECRET?: string;
 }
 
