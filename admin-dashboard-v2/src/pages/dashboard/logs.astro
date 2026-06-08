@@ -174,7 +174,7 @@ function formatDuration(ms: number | null): string {
           ) : (
             <div class="empty-state">
               <p class="text-muted">No isolation check runs recorded yet.</p>
-              <p class="text-xs text-muted" style="margin-top:.5rem;">Configure <span class="mono">ADMIN_DASHBOARD_ISOLATION_LOG_URL</span> on the <span class="mono">ycode-mw-tenant</span> repo so the daily workflow reports here.</p>
+              <p class="text-xs text-muted" style="margin-top:.5rem;">Runs appear after the daily GitHub Actions workflow posts to <span class="mono">/api/isolation-check-log</span>. On <span class="mono">ycode-mw-tenant</span>, set repo variable <span class="mono">ADMIN_DASHBOARD_ISOLATION_LOG_URL</span> and secret <span class="mono">CORE_UPDATE_NOTIFY_SECRET</span> (same value as Netlify on this dashboard). Ensure Supabase migration <span class="mono">tenant_isolation_check_log</span> is applied.</p>
             </div>
           )}
         </div>
