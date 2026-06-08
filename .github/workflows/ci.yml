@@ -42,25 +42,4 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  ycode:
-    name: ycode-masjidweb
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ycode-masjidweb
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: ycode-masjidweb/package-lock.json
-
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm test
-      - run: npm run lint
-      - run: npm run build
+  # Builder CI lives in mywebmasteruk/ycode-mw-tenant (replaces deprecated ycode-masjidweb submodule).
