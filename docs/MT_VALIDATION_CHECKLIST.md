@@ -34,6 +34,7 @@ Run on **deployed** preview or production URLs (not only localhost). Copy result
 
 - [ ] `bash scripts/verify-all.sh` passes locally
 - [ ] GitHub Actions CI green on the branch
+- [ ] `ycode-mw-tenant`: `bash scripts/check-tenant-isolation.sh` passes locally (same suite as [daily workflow](../ycode-mw-tenant/.github/workflows/tenant-isolation-daily.yml); see [`TENANT_ISOLATION_DAILY_CHECK.md`](TENANT_ISOLATION_DAILY_CHECK.md))
 
 ## Netlify / env (preview or production)
 
