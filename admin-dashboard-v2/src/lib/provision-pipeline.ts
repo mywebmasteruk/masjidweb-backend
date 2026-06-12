@@ -1,6 +1,6 @@
 import { getServiceSupabase } from "./supabase-server";
 import { addDomainAlias } from "./netlify-domains";
-import { slugify } from "./slug";
+import { isReservedTenantSlug, slugify } from "./slug";
 import { createTenantSchema, type CreateTenantInput } from "./tenant-schema";
 import { seedTenantsCollection } from "./ycode-cms-seed";
 import {
@@ -302,6 +302,7 @@ export async function startProvision(
       "Could not derive a URL slug from the business name.",
     );
   }
+  assertSlugNotReserved(slug);
 
   const supabase = getServiceSupabase();
   const domainSuffix = getDomainSuffix();
@@ -847,7 +848,17 @@ function resolveProvisionSlug(raw: unknown): string {
       "Could not derive a URL slug from the business name.",
     );
   }
+  assertSlugNotReserved(slug);
   return slug;
+}
+
+/** Reserved subdomains (admin dashboard, master builder, www, …) must never become tenants. */
+function assertSlugNotReserved(slug: string): void {
+  if (isReservedTenantSlug(slug)) {
+    throw new ProvisionValidationError(
+      `Slug "${slug}" is a reserved platform subdomain. Choose a different slug.`,
+    );
+  }
 }
 
 /**

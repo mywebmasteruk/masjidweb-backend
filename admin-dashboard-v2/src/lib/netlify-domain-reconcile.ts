@@ -1,14 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listDomainAliases, removeDomainAliases } from "./netlify-domains";
-
-const RESERVED_TENANT_SUBDOMAINS = new Set([
-  "admin",
-  "api",
-  "ftp",
-  "mail",
-  "tenants",
-  "www",
-]);
+import { RESERVED_TENANT_SUBDOMAINS } from "./slug";
 
 export interface DomainAliasReconcileInput {
   aliases: string[];

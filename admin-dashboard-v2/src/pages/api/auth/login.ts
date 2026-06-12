@@ -1,21 +1,48 @@
 import type { APIRoute } from "astro";
 import { isAdminPasswordMatch } from "../../../lib/admin-password";
 import { adminLoginRateLimiter, getLoginClientKey } from "../../../lib/login-rate-limit";
+import {
+  checkPersistentLoginRateLimit,
+  resetPersistentLoginRateLimit,
+} from "../../../lib/login-rate-limit-persistent";
 import { readServerEnv } from "../../../lib/server-env";
 import { createSessionToken, serializeSessionCookie } from "../../../lib/session";
+import { getServiceSupabase } from "../../../lib/supabase-server";
+
+function tryGetServiceSupabase(): ReturnType<typeof getServiceSupabase> | null {
+  try {
+    return getServiceSupabase();
+  } catch {
+    return null;
+  }
+}
+
+function tooManyAttemptsResponse(retryAfterSeconds: number): Response {
+  return new Response(JSON.stringify({ ok: false, error: "Too many login attempts" }), {
+    status: 429,
+    headers: {
+      "Content-Type": "application/json",
+      "Retry-After": String(retryAfterSeconds),
+    },
+  });
+}
 
 export const POST: APIRoute = async ({ request }) => {
   try {
     const clientKey = getLoginClientKey(request);
     const limit = adminLoginRateLimiter.check(clientKey);
     if (!limit.allowed) {
-      return new Response(JSON.stringify({ ok: false, error: "Too many login attempts" }), {
-        status: 429,
-        headers: {
-          "Content-Type": "application/json",
-          "Retry-After": String(limit.retryAfterSeconds),
-        },
-      });
+      return tooManyAttemptsResponse(limit.retryAfterSeconds);
+    }
+
+    // Durable counter (survives serverless cold starts). Falls back to the
+    // in-memory limiter above when the RPC/migration is unavailable.
+    const supabase = tryGetServiceSupabase();
+    if (supabase) {
+      const persistent = await checkPersistentLoginRateLimit(supabase, clientKey);
+      if (persistent && !persistent.allowed) {
+        return tooManyAttemptsResponse(persistent.retryAfterSeconds);
+      }
     }
 
     const contentType = request.headers.get("content-type") ?? "";
@@ -45,6 +72,9 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     adminLoginRateLimiter.reset(clientKey);
+    if (supabase) {
+      await resetPersistentLoginRateLimit(supabase, clientKey);
+    }
 
     const token = await createSessionToken();
     return new Response(JSON.stringify({ ok: true }), {

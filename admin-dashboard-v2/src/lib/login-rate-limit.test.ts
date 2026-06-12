@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLoginRateLimiter } from "./login-rate-limit";
+import { createLoginRateLimiter, getLoginClientKey } from "./login-rate-limit";
 
 describe("createLoginRateLimiter", () => {
   it("allows attempts below the limit", () => {
@@ -45,5 +45,43 @@ describe("createLoginRateLimiter", () => {
     limiter.reset("192.0.2.10");
 
     expect(limiter.check("192.0.2.10", 2_000)).toEqual({ allowed: true });
+  });
+});
+
+describe("getLoginClientKey", () => {
+  function requestWithHeaders(headers: Record<string, string>): Request {
+    return new Request("https://admin.example.com/api/auth/login", { headers });
+  }
+
+  it("prefers the Netlify trusted client IP over forwarded headers", () => {
+    const key = getLoginClientKey(
+      requestWithHeaders({
+        "x-nf-client-connection-ip": "203.0.113.7",
+        "x-real-ip": "198.51.100.1",
+        "x-forwarded-for": "10.0.0.1, 203.0.113.7",
+      }),
+    );
+    expect(key).toBe("203.0.113.7");
+  });
+
+  it("ignores client-prepended x-forwarded-for entries (uses last hop)", () => {
+    const key = getLoginClientKey(
+      requestWithHeaders({ "x-forwarded-for": "1.2.3.4, 5.6.7.8, 203.0.113.7" }),
+    );
+    expect(key).toBe("203.0.113.7");
+  });
+
+  it("falls back to x-real-ip when Netlify header is absent", () => {
+    const key = getLoginClientKey(
+      requestWithHeaders({
+        "x-real-ip": "198.51.100.1",
+        "x-forwarded-for": "1.2.3.4",
+      }),
+    );
+    expect(key).toBe("198.51.100.1");
+  });
+
+  it("returns unknown when no IP headers are present", () => {
+    expect(getLoginClientKey(requestWithHeaders({}))).toBe("unknown");
   });
 });

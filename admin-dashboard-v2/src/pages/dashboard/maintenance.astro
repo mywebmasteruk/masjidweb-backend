@@ -267,7 +267,7 @@ const cleanupDeletesUnassigned =
       width: .95rem;
       height: .95rem;
       border: 2px solid rgba(148, 163, 184, .35);
-      border-top-color: var(--primary, #3b82f6);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: mw-now-spin .75s linear infinite;
       flex-shrink: 0;
@@ -701,9 +701,9 @@ const cleanupDeletesUnassigned =
       top: calc(100% + .45rem);
       min-width: 220px;
       padding: .45rem;
-      border: 1px solid rgba(148, 163, 184, .28);
+      border: 1px solid var(--border);
       border-radius: 14px;
-      background: #111827;
+      background: var(--bg-card);
       box-shadow: 0 24px 70px rgba(0, 0, 0, .55);
       z-index: 200;
     }
@@ -718,7 +718,7 @@ const cleanupDeletesUnassigned =
       border: 0;
       border-radius: 10px;
       background: transparent;
-      color: #f8fafc;
+      color: var(--text);
       text-align: left;
       text-decoration: none;
       font: inherit;
@@ -727,8 +727,8 @@ const cleanupDeletesUnassigned =
       white-space: nowrap;
     }
     :global(.history-actions-menu button:hover),
-    :global(.history-actions-menu a:hover) { background: rgba(255, 255, 255, .08); }
-    :global(.history-actions-menu .danger) { color: #fca5a5; }
+    :global(.history-actions-menu a:hover) { background: var(--bg-card-hover); }
+    :global(.history-actions-menu .danger) { color: var(--danger); }
     .history-modal.hidden,
     :global(.history-modal.hidden) { display: none; }
     .history-modal {
@@ -752,9 +752,9 @@ const cleanupDeletesUnassigned =
       overflow: auto;
       padding: 1.35rem;
       border-radius: 18px;
-      border: 1px solid rgba(148, 163, 184, .24);
-      background: #111827;
-      color: #f8fafc;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
       box-shadow: 0 24px 80px rgba(0, 0, 0, .6);
     }
     .history-modal-header {
@@ -771,10 +771,10 @@ const cleanupDeletesUnassigned =
       justify-content: center;
       min-height: 2rem;
       padding: .4rem .75rem;
-      border: 1px solid rgba(148, 163, 184, .28);
+      border: 1px solid var(--border);
       border-radius: 999px;
       background: rgba(255, 255, 255, .06);
-      color: #f8fafc;
+      color: var(--text);
       cursor: pointer;
       font: inherit;
       font-size: .85rem;
