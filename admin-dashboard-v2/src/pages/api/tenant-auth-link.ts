@@ -5,7 +5,15 @@ import { sendTenantAuthLink } from "../../lib/send-tenant-auth-link";
 
 const bodySchema = z.object({
   tenantId: z.string().uuid(),
+  /** When true, return copy/open link without sending invite email. */
+  returnLink: z.boolean().optional(),
 });
+
+function parseReturnLinkOnly(context: Parameters<APIRoute>[0], bodyReturnLink?: boolean): boolean {
+  if (bodyReturnLink === true) return true;
+  const q = context.url.searchParams;
+  return q.get("return_link") === "true" || q.get("mode") === "copy";
+}
 
 export const POST: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -34,7 +42,8 @@ export const POST: APIRoute = async (context) => {
   }
 
   try {
-    const result = await sendTenantAuthLink(parsed.data.tenantId);
+    const returnLinkOnly = parseReturnLinkOnly(context, parsed.data.returnLink);
+    const result = await sendTenantAuthLink(parsed.data.tenantId, { returnLinkOnly });
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { "Content-Type": "application/json" },

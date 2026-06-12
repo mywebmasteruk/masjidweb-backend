@@ -30,7 +30,7 @@ const {
 const siteUrl = `https://${slug}.${domainSuffix}`;
 const menuId = `tenantMenu-${id}`;
 const builderOpenTitle = `Magic link → ${siteUrl}/ycode (authenticated). New users may land on accept-invite first.`;
-const loginTitle = `Invite email → ${siteUrl}/ycode/accept-invite. Existing user magic link → ${siteUrl}/ycode`;
+const loginTitle = `Generate sign-up or magic link (no email) for copy/open smoke tests. Redirect: ${siteUrl}/ycode/accept-invite or builder.`;
 ---
 
 <div class="tenant-row-actions">
@@ -79,7 +79,7 @@ const loginTitle = `Invite email → ${siteUrl}/ycode/accept-invite. Existing us
       data-tenant-auth-slug={slug}
       title={loginTitle}
     >
-      Login link
+      Copy login link
     </button>
     {clientRow && status === "provisioning" && (
       <button

@@ -78,6 +78,34 @@ Each row shows date/time, pass/fail badge, duration, commit SHA, branch, GitHub 
 
 The workflow step **Report result to admin dashboard** runs `if: always()` so successful days appear in history too.
 
+### Apply `tenant_isolation_check_log` (production Supabase)
+
+Production project: **ycode-masjidweb** (`jofgypmriaqphnsyxiks`). Migration file: `supabase/migrations/20260608120000_tenant_isolation_check_log.sql`.
+
+**Preferred (agent / local): Supabase MCP**
+
+1. Cursor MCP config must target production: `https://mcp.supabase.com/mcp?project_ref=jofgypmriaqphnsyxiks` (see repo `.cursor/mcp.json` and user `~/.cursor/mcp.json`).
+2. Authenticate Supabase MCP once (OAuth) with the Supabase account that **owns** `jofgypmriaqphnsyxiks`. The CLI account that only sees `iovviomnvlfjhyqdkvqu` cannot link or migrate production.
+3. Call MCP `apply_migration` with name `tenant_isolation_check_log` and the migration SQL (idempotent `CREATE TABLE IF NOT EXISTS` is fine).
+4. Verify: MCP `list_tables` or REST `GET /rest/v1/tenant_isolation_check_log?select=id&limit=1` with service role (expect 200, not `PGRST205`).
+
+**Fallback: Management API**
+
+```bash
+export SUPABASE_ACCESS_TOKEN='sbp_...'   # account token for ycode-masjidweb org
+export SUPABASE_PROJECT_REF='jofgypmriaqphnsyxiks'
+bash scripts/apply-supabase-migration-api.sh supabase/migrations/20260608120000_tenant_isolation_check_log.sql
+```
+
+**Report step errors**
+
+| HTTP | Meaning |
+| --- | --- |
+| 401 | `CORE_UPDATE_NOTIFY_SECRET` mismatch between GitHub Actions and Netlify admin dashboard |
+| 500 | Table missing or Supabase insert failed — apply migration above |
+
+Admin Netlify (`masjidweb-backend` site) already uses `SUPABASE_URL=https://jofgypmriaqphnsyxiks.supabase.co/`; a 500 on ingest is the missing table, not the wrong Supabase project.
+
 ## Alerts (v1)
 
 - **Default:** failed workflow + job summary on the Actions run.

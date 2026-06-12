@@ -32,6 +32,14 @@ export function inviteUserByEmailFailedForExistingUser(err: unknown): boolean {
   );
 }
 
+export type SendTenantAuthLinkOptions = {
+  /**
+   * Generate a copy/open link via admin generateLink only — do not send Supabase invite email.
+   * For smoke tests and admin copy/paste when inbox access is unavailable.
+   */
+  returnLinkOnly?: boolean;
+};
+
 export type SendTenantAuthLinkResult =
   | {
       ok: true;
@@ -41,6 +49,8 @@ export type SendTenantAuthLinkResult =
       message: string;
       /** Same URL as in the invite email; for admin copy/paste when clipboard works after async. */
       actionLink?: string;
+      /** True when returnLinkOnly was used (no invite email sent). */
+      linkOnly?: boolean;
     }
   | {
       ok: true;
@@ -49,6 +59,7 @@ export type SendTenantAuthLinkResult =
       coerced: boolean;
       actionLink: string;
       message: string;
+      linkOnly?: boolean;
     };
 
 export function buildTenantAuthRedirectUrls(siteUrl: string): {
@@ -62,6 +73,74 @@ export function buildTenantAuthRedirectUrls(siteUrl: string): {
   };
 }
 
+async function generateTenantAuthLinkWithoutEmail(
+  supabase: ReturnType<typeof getServiceSupabase>,
+  inviteEmail: string,
+  coerced: boolean,
+  domainSuffix: string,
+  redirectInviteTo: string,
+  redirectMagicLinkTo: string,
+  userMeta: Record<string, string>,
+  ensureTrustedAuthMetadata: (user: unknown) => Promise<void>,
+): Promise<SendTenantAuthLinkResult> {
+  const { data: inviteGen, error: inviteGenErr } =
+    await supabase.auth.admin.generateLink({
+      type: "invite",
+      email: inviteEmail,
+      options: {
+        redirectTo: redirectInviteTo,
+        data: userMeta,
+      },
+    });
+
+  if (!inviteGenErr && inviteGen?.properties?.action_link) {
+    await ensureTrustedAuthMetadata(inviteGen.user);
+    const baseMsg = coerced
+      ? `Sign-up link ready for ${inviteEmail} (coerced to @${domainSuffix}). No email sent.`
+      : `Sign-up link ready for ${inviteEmail}. No email sent.`;
+    return {
+      ok: true,
+      method: "invite",
+      email: inviteEmail,
+      coerced,
+      actionLink: inviteGen.properties.action_link,
+      message: `${baseMsg} Opens …/ycode/accept-invite to set a password.`,
+      linkOnly: true,
+    };
+  }
+
+  const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+    type: "magiclink",
+    email: inviteEmail,
+    options: {
+      redirectTo: redirectMagicLinkTo,
+      data: userMeta,
+    },
+  });
+
+  if (linkErr) {
+    throw linkErr;
+  }
+
+  const actionLink = linkData?.properties?.action_link;
+  if (!actionLink) {
+    throw new Error("Supabase did not return an action link.");
+  }
+  await ensureTrustedAuthMetadata(linkData.user);
+
+  return {
+    ok: true,
+    method: "magiclink",
+    email: inviteEmail,
+    coerced,
+    actionLink,
+    linkOnly: true,
+    message:
+      "Magic link generated (no email sent). Opens the tenant builder after sign-in. " +
+      (coerced ? `Email: ${inviteEmail} (@${domainSuffix}).` : ""),
+  };
+}
+
 /**
  * Sends a tenant admin sign-in path on the tenant subdomain (not apex only).
  * New users: invite email → redirect …/ycode/accept-invite (set password).
@@ -69,9 +148,12 @@ export function buildTenantAuthRedirectUrls(siteUrl: string): {
  * someone who never finished password setup can still open accept-invite; if that is not
  * available, generateLink(magiclink) for passwordless login. Callback URL for magic links:
  * …/ycode/api/auth/callback (server PKCE exchange; required for email-opened links).
+ *
+ * With returnLinkOnly: skip invite email; use generateLink(invite) then magiclink fallback.
  */
 export async function sendTenantAuthLink(
   tenantId: string,
+  options: SendTenantAuthLinkOptions = {},
 ): Promise<SendTenantAuthLinkResult> {
   const supabase = getServiceSupabase();
   const domainSuffix = getDomainSuffix();
@@ -115,6 +197,19 @@ export async function sendTenantAuthLink(
       displayName,
     });
   };
+
+  if (options.returnLinkOnly) {
+    return generateTenantAuthLinkWithoutEmail(
+      supabase,
+      inviteEmail,
+      coerced,
+      domainSuffix,
+      redirectInviteTo,
+      redirectMagicLinkTo,
+      userMeta,
+      ensureTrustedAuthMetadata,
+    );
+  }
 
   const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(
     inviteEmail,

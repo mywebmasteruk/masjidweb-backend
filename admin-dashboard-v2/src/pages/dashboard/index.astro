@@ -342,6 +342,22 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   .result-url { display: inline-block; margin-top: .5rem; padding: .4rem .8rem; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); font-family: 'SF Mono', monospace; font-size: .8rem; color: var(--accent-hover); word-break: break-all; }
   .result-warnings { margin-top: .75rem; padding: .6rem .8rem; background: var(--warning-bg); border: 1px solid rgba(234,179,8,.2); border-radius: var(--radius); font-size: .78rem; color: var(--warning); text-align: left; }
 
+  .auth-link-modal { max-width: 520px; text-align: left; }
+  .auth-link-modal h3 { margin: 0 0 .5rem; font-size: 1.05rem; }
+  .auth-link-input {
+    display: block; width: 100%; margin: .75rem 0; padding: .55rem .65rem;
+    font-family: 'SF Mono', ui-monospace, monospace; font-size: .72rem; line-height: 1.4;
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-surface);
+    color: var(--text); word-break: break-all;
+  }
+  .auth-link-actions { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; margin-top: .25rem; }
+  .auth-link-actions button {
+    padding: .45rem .85rem; border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--bg-surface); color: var(--text); font: inherit; font-size: .82rem; cursor: pointer;
+  }
+  .auth-link-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .auth-link-actions button:hover { filter: brightness(1.08); }
+
   .tenant-tab-bar {
     display: flex; gap: .35rem; margin-bottom: 1rem;
     padding: .25rem; background: var(--bg-surface); border-radius: var(--radius);
@@ -418,9 +434,9 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     position: fixed;
     min-width: 220px;
     padding: .45rem;
-    border: 1px solid rgba(148, 163, 184, .28);
+    border: 1px solid var(--border);
     border-radius: 14px;
-    background: #111827;
+    background: var(--bg-card);
     box-shadow: 0 24px 70px rgba(0, 0, 0, .55);
     z-index: 1000;
   }
@@ -435,7 +451,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     border: 0;
     border-radius: 10px;
     background: transparent;
-    color: #f8fafc;
+    color: var(--text);
     text-align: left;
     text-decoration: none;
     font: inherit;
@@ -444,9 +460,9 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     white-space: nowrap;
   }
   :global(.tenant-actions-menu button:hover),
-  :global(.tenant-actions-menu a:hover) { background: rgba(255, 255, 255, .08); }
-  :global(.tenant-actions-menu .primary) { color: #a5b4fc; font-weight: 600; }
-  :global(.tenant-actions-menu .danger) { color: #fca5a5; }
+  :global(.tenant-actions-menu a:hover) { background: var(--bg-card-hover); }
+  :global(.tenant-actions-menu .primary) { color: var(--accent-hover); font-weight: 600; }
+  :global(.tenant-actions-menu .danger) { color: var(--danger); }
 </style>
 
 <div id="provisionOverlay" class="provision-overlay hidden">
@@ -456,6 +472,19 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     <p id="provisionStatus" style="font-size:.9rem;font-weight:500;">Provisioning tenant…</p>
     <p id="provisionDetail" class="text-xs text-muted" style="margin-top:.35rem;">Multi-step setup: create tenant, clone template, seed CMS, invite, publish (often 1–4 min — keep this tab open)</p>
     <ol id="provisionSteps" class="text-xs text-muted hidden" style="margin:0.75rem 0 0;text-align:left;padding-left:1.25rem;line-height:1.5;"></ol>
+  </div>
+</div>
+
+<div id="authLinkOverlay" class="provision-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="authLinkTitle">
+  <div class="provision-modal auth-link-modal">
+    <h3 id="authLinkTitle">Tenant login link</h3>
+    <p id="authLinkMessage" class="text-xs text-muted" style="margin:0;line-height:1.5;"></p>
+    <input id="authLinkInput" type="text" readonly class="auth-link-input" aria-label="Tenant auth link URL" />
+    <div class="auth-link-actions">
+      <button type="button" id="authLinkClose">Close</button>
+      <button type="button" id="authLinkCopy" class="primary">Copy link</button>
+      <button type="button" id="authLinkOpen">Open link</button>
+    </div>
   </div>
 </div>
 
@@ -1067,12 +1096,16 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     }
   }
 
-  async function requestTenantAuthLink(tenantId) {
-    const res = await fetch("/api/tenant-auth-link", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenantId }),
-    });
+  async function requestTenantAuthLink(tenantId, options = {}) {
+    const returnLink = options.returnLink === true;
+    const res = await fetch(
+      returnLink ? "/api/tenant-auth-link?return_link=true" : "/api/tenant-auth-link",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId, ...(returnLink ? { returnLink: true } : {}) }),
+      },
+    );
     let data;
     try {
       data = await res.json();
@@ -1085,6 +1118,51 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
     return data;
   }
 
+  function hideAuthLinkModal() {
+    const ov = document.getElementById("authLinkOverlay");
+    if (ov) ov.classList.add("hidden");
+  }
+
+  function showAuthLinkModal({ slug, message, link, method }) {
+    const ov = document.getElementById("authLinkOverlay");
+    const title = document.getElementById("authLinkTitle");
+    const msg = document.getElementById("authLinkMessage");
+    const input = document.getElementById("authLinkInput");
+    const copyBtn = document.getElementById("authLinkCopy");
+    const openBtn = document.getElementById("authLinkOpen");
+    const closeBtn = document.getElementById("authLinkClose");
+    if (!ov || !title || !msg || !input || !copyBtn || !openBtn || !closeBtn) return;
+
+    title.textContent =
+      method === "magiclink" ? "Magic link — " + slug : "Sign-up link — " + slug;
+    msg.textContent =
+      message ||
+      (method === "magiclink"
+        ? "Opens the tenant builder after sign-in (time-limited)."
+        : "Opens accept-invite to set a password (time-limited).");
+    input.value = link;
+
+    copyBtn.onclick = async () => {
+      const copied = await copyTextBestEffort(link);
+      toast(copied ? "Link copied" : "Select the link and copy manually", copied);
+      if (!copied) {
+        input.focus();
+        input.select();
+      }
+    };
+    openBtn.onclick = () => {
+      window.open(link, "_blank", "noopener,noreferrer");
+    };
+    closeBtn.onclick = hideAuthLinkModal;
+    ov.onclick = (e) => {
+      if (e.target === ov) hideAuthLinkModal();
+    };
+
+    ov.classList.remove("hidden");
+    input.focus();
+    input.select();
+  }
+
   document.querySelectorAll("[data-open-builder-id]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const tenantId = btn.getAttribute("data-open-builder-id");
@@ -1092,7 +1170,7 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       if (!tenantId) return;
       btn.disabled = true;
       try {
-        const data = await requestTenantAuthLink(tenantId);
+        const data = await requestTenantAuthLink(tenantId, { returnLink: true });
         const link = data.actionLink;
         if (link) {
           window.open(link, "_blank", "noopener,noreferrer");
@@ -1117,14 +1195,6 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           }
           return;
         }
-        if (data.method === "invite") {
-          toast(
-            (data.message || "Invite email sent for " + slug + ".") +
-              " No link to open yet — check the inbox or use Login link to copy one.",
-            true,
-          );
-          return;
-        }
         toast(data.message || "No auth link returned", false);
       } catch (err) {
         toast(err.message || "Request failed", false);
@@ -1141,50 +1211,19 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
       if (!tenantId) return;
       btn.disabled = true;
       try {
-        const data = await requestTenantAuthLink(tenantId);
+        const data = await requestTenantAuthLink(tenantId, { returnLink: true });
 
         const link = data.actionLink;
-        if (data.method === "magiclink" && link) {
-          const copied = await copyTextBestEffort(link);
-          if (copied) {
-            toast(
-              "Magic link copied for " +
-                slug +
-                " — opens https://" +
-                slug +
-                "." +
-                domainSuffix +
-                "/ycode (not accept-invite). " +
-                (data.message || ""),
-              true,
-            );
-          } else {
-            window.prompt(
-              "Copy magic link (opens tenant builder; not accept-invite):",
-              link,
-            );
-            toast(data.message || "Magic link shown in dialog.", true);
-          }
+        if (link) {
+          showAuthLinkModal({
+            slug,
+            message: data.message,
+            link,
+            method: data.method,
+          });
           return;
         }
-
-        if (data.method === "invite") {
-          if (link) {
-            const copied = await copyTextBestEffort(link);
-            if (copied) {
-              toast(
-                (data.message || "Invite sent.") +
-                  " Sign-up link copied (same as in the email; redirect is …/ycode/accept-invite).",
-                true,
-              );
-            } else {
-              window.prompt("Copy invite / sign-up link (same as in the email):", link);
-              toast(data.message || "Invite email sent.", true);
-            }
-          } else {
-            toast(data.message || "Invite email sent", true);
-          }
-        }
+        toast(data.message || "No auth link returned", false);
       } catch (err) {
         toast(err.message || "Request failed", false);
       } finally {
