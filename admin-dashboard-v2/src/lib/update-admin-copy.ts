@@ -166,7 +166,7 @@ function blockedDescription(input: AdminSafeUpdateSummary): string {
 
 function blockedNextAction(input: AdminSafeUpdateSummary): string {
   const risk = input.autopilotRisk ? ` Autopilot classified this as ${input.autopilotRisk} risk.` : "";
-  return `Retry Autopilot once for mechanical fixes, defer the update, or ask a developer to resolve PR #${input.number}.${risk} Do not approve while red.`;
+  return `Retry Autopilot once for deterministic fixes such as lockfile regeneration, defer the update, or ask a developer to resolve PR #${input.number}.${risk} Do not approve while red.`;
 }
 
 function buildAgentPrompt(input: AdminSafeUpdateSummary, reason: string): string {

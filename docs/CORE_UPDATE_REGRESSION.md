@@ -131,8 +131,9 @@ These are **process / coverage gaps**, not confirmed production regressions:
 Before clicking **Approve merge** in the admin dashboard:
 
 - [ ] CI green (`ci-build-check.yml`: tsc + tenant safety tests + build).
-- [ ] If AI repair pushed a commit, wait for the **normal PR checks** to rerun
-      and finish green. Do **not** approve based only on “AI repair finished”.
+- [ ] If Retry Autopilot pushed a deterministic or AI repair commit, wait for the **normal PR checks** to rerun
+      and finish green. Do **not** approve based only on “repair finished”.
+- [ ] Review `core-update-autopilot-repair` artifacts when Autopilot v2.1 blocks; the report lists exact missing tenant invariants.
 - [ ] `bash scripts/check-repair-completeness.sh` exits 0 (automated in AI repair workflow; run manually for human-resolved conflicts).
 - [ ] Update safety check report reviewed — all `high` files listed were inspected.
 - [ ] If upstream added RBAC, auth, or role logic: confirm MasjidWeb provisioning path still works (provisioned user can log in, invite others, publish).

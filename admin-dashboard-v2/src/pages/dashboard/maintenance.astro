@@ -1429,7 +1429,7 @@ const cleanupDeletesUnassigned =
       }
       return (
         '<div class="mw-ai-repair-panel">' +
-        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Retry Autopilot</strong> above to start safe mechanical repair on GitHub (rerere + lockfile fixes). If Autopilot reports tenant-sensitive conflicts, a developer is required. Production is not merged until you approve.</p>' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Retry Autopilot</strong> above to start deterministic repair on GitHub (rerere + package-lock regeneration where safe). If Autopilot reports tenant-sensitive conflicts, it uploads an invariant report and a developer is required. Production is not merged until you approve.</p>' +
         '<div class="mw-ai-repair-actions">' +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
         "</div>" +

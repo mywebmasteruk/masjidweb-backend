@@ -55,13 +55,14 @@ On every safe-update PR:
 - `npm run build`
 - Netlify deploy preview
 
-### Autopilot v2 first slice
+### Autopilot v2.1 deterministic repair
 
-Autopilot v2 is a conservative guardrail layer, not an unsafe auto-merge bot.
+Autopilot v2.1 is a conservative guardrail and deterministic repair layer, not an unsafe auto-merge bot.
 
-It produces two artifacts in GitHub Actions:
+It produces three artifact families in GitHub Actions:
 
 - `update-safety-report.md/json` — machine-readable classification and plain-English summary.
+- `autopilot-repair-report.md/json` — deterministic repair attempts, repaired files, blocked files, and exact missing invariants.
 - `autopilot-guard-report.md/json` — deterministic guard results for conflict markers and tenant invariants.
 
 Risk levels:
@@ -72,11 +73,13 @@ Risk levels:
 | MEDIUM | Tooling/config/UI/lockfile risk, or non-tenant conflict. | Autopilot may retry mechanical repair; still wait for CI. |
 | HIGH | Tenant-sensitive paths such as repositories, publish, auth, proxy, Supabase cookie/session, collection items, or migrations. | If conflicted, the dashboard says “Autopilot blocked this update to protect tenant data” and requires a developer. |
 
-Deterministic guard behavior:
+Deterministic repair and guard behavior:
 
+- Detects unmerged paths with `git diff --name-only --diff-filter=U` and conflict-marker scans.
+- Regenerates `package-lock.json` mechanically with npm lockfile-only from `package.json`; if npm tries to modify `package.json`, Autopilot blocks for developer review.
 - Blocks when conflict markers remain in tenant-sensitive files.
 - Checks known repository/publish/auth/proxy/Supabase-cookie files for tenant-scope invariants such as `tenant_id`, `applyTenantEq`, `resolveEffectiveTenantId`, `getTenantIdFromHeaders`, `runWithEffectiveTenantId`, and no invalid `getSupabaseAdmin(tenantId)` calls.
-- Allows `package-lock.json` to be regenerated mechanically.
+- For high-risk repository/publish seams, fails closed unless a registered deterministic strategy can prove the required tenant-scope invariants. The report names the exact missing invariant and why it cannot auto-repair.
 - Does not perform broad text munging in tenant-sensitive files.
 
 ### What “preserve custom code” means
@@ -197,6 +200,7 @@ Apply migration in Supabase before relying on full rollback in production admin.
 | Deploy complete notification (GitHub) | `ycode-mw-tenant/.github/workflows/core-update-deploy-notify.yml` |
 | Safety classifier | `ycode-mw-tenant/lib/masjidweb/update-safety-check.ts` |
 | Safety CLI | `ycode-mw-tenant/scripts/check-update-safety.ts` |
+| Autopilot deterministic repair CLI | `ycode-mw-tenant/scripts/core-update/run-autopilot-repair.ts` |
 | Autopilot guard CLI | `ycode-mw-tenant/scripts/check-autopilot-guard.ts` |
 | Seam contract | `ycode-mw-tenant/docs/masjidweb-core-seams.md` |
 
