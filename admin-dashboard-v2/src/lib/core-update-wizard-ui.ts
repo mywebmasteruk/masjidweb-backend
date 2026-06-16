@@ -276,11 +276,11 @@ export function buildCoreUpdateNowAction(
       headline: adminState.title || "Fix required before preview",
       detail:
         adminState.nextActionText ||
-        "Run AI repair or fix the pull request on GitHub, then refresh status.",
-      primaryLabel: "Run AI repair",
+        "Retry Autopilot once for mechanical fixes, defer the update, or ask a developer to resolve the pull request.",
+      primaryLabel: adminState.actionLabel || "Retry Autopilot",
       primaryDisabled: false,
       showSpinner: false,
-      reassurance: "Do not approve the merge until conflicts and checks are resolved.",
+      reassurance: "Autopilot blocks red updates to protect tenant data. Do not approve until conflicts and checks are resolved.",
     };
   }
 

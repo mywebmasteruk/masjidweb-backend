@@ -137,7 +137,7 @@ export function describeAiRepairRun(run: AiRepairWorkflowRun | null | undefined)
     return "Automated repair finished successfully. Refreshing pull request status…";
   }
   if (run.conclusion === "failure") {
-    return "Automated repair failed on GitHub. The CTO bot will retry or escalate — check your email.";
+    return "Autopilot blocked or failed this update. If tenant-sensitive conflicts remain, a developer is required — check your email.";
   }
   if (run.conclusion === "cancelled") {
     return "Automated repair was cancelled on GitHub.";

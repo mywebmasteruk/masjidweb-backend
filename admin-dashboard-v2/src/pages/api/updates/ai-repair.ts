@@ -55,9 +55,9 @@ export const POST: APIRoute = async (context) => {
         prNumber,
         workflowUrl,
         message:
-          "Automated mechanical repair started on GitHub (CTO bot). Refresh status in a few minutes.",
+          "Autopilot mechanical repair started on GitHub. Refresh status in a few minutes.",
         disclaimer:
-          "Mechanical repair uses rerere and lockfile fixes only — no AI by default. You will receive email when status changes.",
+          "Autopilot uses rerere and lockfile fixes only by default. Tenant-sensitive conflicts stay blocked until a developer resolves them.",
       }),
       { headers: json },
     );

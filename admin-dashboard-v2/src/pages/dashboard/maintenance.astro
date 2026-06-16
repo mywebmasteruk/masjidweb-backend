@@ -797,7 +797,7 @@ const cleanupDeletesUnassigned =
       if (light === "green") {
         hint = "Preview the site, then click Approve merge. Production stays unchanged until you approve.";
       } else if (light === "red") {
-        hint = "Do not approve yet. Wait for email or click Run automated fix once.";
+        hint = adminState.autopilotBlockedReason || "Autopilot blocked this update to protect tenant data. Retry Autopilot once, defer the update, or ask a developer.";
       } else if (adminState.status === "preparing" || adminState.status === "deploying") {
         hint = "The CTO bot is working. This page refreshes automatically.";
       }
@@ -892,11 +892,11 @@ const cleanupDeletesUnassigned =
           headline: adminState.title || "Fix required before preview",
           detail:
             adminState.nextActionText ||
-            "Run automated fix (mechanical repair) or wait for the daily CTO bot run, then refresh status.",
-          primaryLabel: "Run automated fix",
+            "Retry Autopilot once for mechanical fixes, defer the update, or ask a developer to resolve the pull request.",
+          primaryLabel: adminState.actionLabel || "Retry Autopilot",
           primaryDisabled: false,
           showSpinner: false,
-          reassurance: "Do not approve the merge until conflicts and checks are resolved.",
+          reassurance: "Autopilot blocks red updates to protect tenant data. Do not approve until conflicts and checks are resolved.",
         };
       }
 
@@ -1429,7 +1429,7 @@ const cleanupDeletesUnassigned =
       }
       return (
         '<div class="mw-ai-repair-panel">' +
-        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Run automated fix</strong> above to start mechanical repair on GitHub (rerere + lockfile fixes). Progress shows here. You will also get email alerts. Production is not merged until you approve.</p>' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Retry Autopilot</strong> above to start safe mechanical repair on GitHub (rerere + lockfile fixes). If Autopilot reports tenant-sensitive conflicts, a developer is required. Production is not merged until you approve.</p>' +
         '<div class="mw-ai-repair-actions">' +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
         "</div>" +
@@ -1489,7 +1489,7 @@ const cleanupDeletesUnassigned =
       window.aiRepairLoading = false;
       if (runBtn) {
         runBtn.disabled = false;
-        runBtn.textContent = "Run automated fix";
+        runBtn.textContent = "Retry Autopilot";
       }
 
       if (!resultEl) return;
@@ -1501,7 +1501,7 @@ const cleanupDeletesUnassigned =
         const message =
           typeof res.message === "string"
             ? res.message
-            : "Automated mechanical repair started on GitHub.";
+            : "Autopilot mechanical repair started on GitHub.";
         window.lastAiRepairReply = message;
         window.lastAiRepairModel = "";
         const workflowLink =

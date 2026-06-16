@@ -75,10 +75,17 @@ describe("describeAdminUpdateState", () => {
         mergeableState: "dirty",
         ciStatus: "failure",
         labels: ["safe-ycode-update", "needs-developer-review"],
+        autopilotStatus: "blocked",
+        autopilotRisk: "HIGH",
+        autopilotBlockedReason: "Autopilot blocked this update to protect tenant data: 4 conflict(s) are in tenant-sensitive files.",
       },
     });
 
     expect(result.status).toBe("blocked_needs_resolution");
+    expect(result.title).toBe("Autopilot blocked this update");
+    expect(result.description).toContain("protect tenant data");
+    expect(result.actionLabel).toBe("Retry Autopilot");
+    expect(result.nextActionText).toContain("defer the update");
     expect(result.canApprove).toBe(false);
     expect(result.canCopyPrompt).toBe(true);
     expect(result.trafficLight).toBe("red");

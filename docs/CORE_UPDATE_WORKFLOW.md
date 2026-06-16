@@ -49,10 +49,35 @@ flowchart TD
 On every safe-update PR:
 
 - `npm run type-check`
-- `npm run updates:safety-check` (path-based risk report)
+- `npm run updates:safety-check` (Autopilot v2 LOW/MEDIUM/HIGH risk report)
+- `npm run updates:autopilot-guard` (conflict-marker and tenant-scope invariant guard)
 - Tenant vitest suite (isolation, auth store, MCP, repositories)
 - `npm run build`
 - Netlify deploy preview
+
+### Autopilot v2 first slice
+
+Autopilot v2 is a conservative guardrail layer, not an unsafe auto-merge bot.
+
+It produces two artifacts in GitHub Actions:
+
+- `update-safety-report.md/json` — machine-readable classification and plain-English summary.
+- `autopilot-guard-report.md/json` — deterministic guard results for conflict markers and tenant invariants.
+
+Risk levels:
+
+| Risk | Meaning | Dashboard behavior |
+|---|---|---|
+| LOW | No tenant-sensitive paths or conflicts detected. | Continue normal CI and preview. |
+| MEDIUM | Tooling/config/UI/lockfile risk, or non-tenant conflict. | Autopilot may retry mechanical repair; still wait for CI. |
+| HIGH | Tenant-sensitive paths such as repositories, publish, auth, proxy, Supabase cookie/session, collection items, or migrations. | If conflicted, the dashboard says “Autopilot blocked this update to protect tenant data” and requires a developer. |
+
+Deterministic guard behavior:
+
+- Blocks when conflict markers remain in tenant-sensitive files.
+- Checks known repository/publish/auth/proxy/Supabase-cookie files for tenant-scope invariants such as `tenant_id`, `applyTenantEq`, `resolveEffectiveTenantId`, `getTenantIdFromHeaders`, `runWithEffectiveTenantId`, and no invalid `getSupabaseAdmin(tenantId)` calls.
+- Allows `package-lock.json` to be regenerated mechanically.
+- Does not perform broad text munging in tenant-sensitive files.
 
 ### What “preserve custom code” means
 
@@ -171,6 +196,8 @@ Apply migration in Supabase before relying on full rollback in production admin.
 | PR CI | `ycode-mw-tenant/.github/workflows/ci-build-check.yml` |
 | Deploy complete notification (GitHub) | `ycode-mw-tenant/.github/workflows/core-update-deploy-notify.yml` |
 | Safety classifier | `ycode-mw-tenant/lib/masjidweb/update-safety-check.ts` |
+| Safety CLI | `ycode-mw-tenant/scripts/check-update-safety.ts` |
+| Autopilot guard CLI | `ycode-mw-tenant/scripts/check-autopilot-guard.ts` |
 | Seam contract | `ycode-mw-tenant/docs/masjidweb-core-seams.md` |
 
 ---

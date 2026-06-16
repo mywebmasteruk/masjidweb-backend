@@ -182,6 +182,9 @@ export const GET: APIRoute = async (context) => {
           mergeableState: safeUpdatePr.mergeableState,
           ciStatus: safeUpdatePr.ciStatus,
           labels: safeUpdatePr.labels,
+          autopilotStatus: safeUpdatePr.autopilotStatus,
+          autopilotRisk: safeUpdatePr.autopilotRisk,
+          autopilotBlockedReason: safeUpdatePr.autopilotBlockedReason,
           deployPreviewUrl: safeUpdatePr.deployPreviewUrl,
         }
       : null;

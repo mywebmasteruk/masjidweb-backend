@@ -7,7 +7,7 @@ Plain-language guide for Ycode core updates without a human CTO (daily schedule 
 1. Optional: click **Prepare safe update** (or wait for **daily 06:00 UTC** automatic run).
 2. Read **email alerts** from MasjidWeb.
 3. When Maintenance shows **green — Ready for you**, open the preview link, then click **Approve merge**.
-4. If **red — Do not approve**, wait for email or click **Run automated fix** once.
+4. If **red — Do not approve**, read the Autopilot reason. Click **Retry Autopilot** once for mechanical fixes, choose **Defer Update**, or ask a developer when it says tenant data is protected.
 
 You never merge on GitHub yourself.
 
@@ -16,9 +16,11 @@ You never merge on GitHub yourself.
 | Step | When |
 |------|------|
 | Daily prepare | 06:00 UTC every day |
-| Mechanical repair | Auto after prepare when merge has conflicts; or Run automated fix |
+| Autopilot classification | Every safe-update PR; writes LOW/MEDIUM/HIGH report and blocked reason |
+| Mechanical repair | Auto after prepare when merge has conflicts; or Retry Autopilot |
+| Autopilot guard | Fails if conflict markers or tenant-scope invariants are unsafe |
 | Ready email | When CI turns green |
-| Cursor escalation | When PR CI still fails after mechanical repair |
+| Cursor escalation | When PR CI still fails after Autopilot repair |
 | Approve email | When you click Approve merge |
 
 ## One-time setup
@@ -44,6 +46,16 @@ You never merge on GitHub yourself.
 - **Green** — preview and approve
 - **Amber** — wait (bot working or nothing needed)
 - **Red** — do not approve
+
+## Autopilot v2 messages
+
+When Autopilot says **“blocked this update to protect tenant data”**, it found conflicts in tenant-sensitive files such as repositories, publish, auth, proxy, Supabase cookie/session, or collection item code. This is a safety stop, not a dashboard failure.
+
+Use the buttons this way:
+
+- **Retry Autopilot** — safe once when lockfiles or known mechanical fixes may clear.
+- **Defer Update** — use when you do not need the update today.
+- **Developer required** — use when Autopilot names tenant-sensitive conflicts. A developer must resolve the PR and run tenant-scope checks before approval.
 
 ## Revert to weekly
 

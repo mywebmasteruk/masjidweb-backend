@@ -305,8 +305,27 @@ export interface SyncPR {
   mergeableState: string | null;
   ciStatus: "success" | "failure" | "pending" | "unknown";
   htmlUrl: string;
+  /** Plain-language Autopilot v2 status parsed from the safe-update PR body. */
+  autopilotStatus: string | null;
+  autopilotRisk: string | null;
+  autopilotBlockedReason: string | null;
   /** Netlify deploy preview for this PR, when checks have published one */
   deployPreviewUrl: string | null;
+}
+
+function parseAutopilotReportFromBody(body: string | null | undefined): Pick<
+  SyncPR,
+  "autopilotStatus" | "autopilotRisk" | "autopilotBlockedReason"
+> {
+  const text = body ?? "";
+  const status = text.match(/^Status:\s*(.+)$/m)?.[1]?.trim() ?? null;
+  const risk = text.match(/^Risk:\s*(.+)$/m)?.[1]?.trim() ?? null;
+  const blockedReason = text.match(/^-\s*(Autopilot blocked this update[^\n]+)/m)?.[1]?.trim() ?? null;
+  return {
+    autopilotStatus: status,
+    autopilotRisk: risk,
+    autopilotBlockedReason: blockedReason,
+  };
 }
 
 /** Standard Netlify PR preview hostname for the builder site. */
@@ -417,6 +436,7 @@ export async function listSyncPRs(
       mergeable_state?: string | null;
       head: { sha: string };
       html_url: string;
+      body?: string | null;
     }[];
 
     for (const pr of list) {
@@ -455,6 +475,7 @@ export async function listSyncPRs(
         mergeableState,
         ciStatus,
         htmlUrl: pr.html_url,
+        ...parseAutopilotReportFromBody(pr.body),
         deployPreviewUrl,
       });
     }

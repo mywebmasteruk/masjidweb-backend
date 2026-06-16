@@ -233,12 +233,12 @@ describe("core-update-wizard-ui", () => {
     });
     const now = buildCoreUpdateNowAction(admin, {
       aiRepairInFlight: true,
-      aiRepairDetail: "AI repair running: Run AI conflict repair…",
+      aiRepairDetail: "Autopilot running: deterministic repair…",
     });
     expect(now.kind).toBe("repair");
     expect(now.showSpinner).toBe(true);
     expect(now.primaryLabel).toBeNull();
-    expect(now.detail).toContain("Run AI conflict repair");
+    expect(now.detail).toContain("deterministic repair");
   });
 
   it("shows preparing now-action after prepare click until PR is detected", () => {
@@ -254,6 +254,30 @@ describe("core-update-wizard-ui", () => {
     expect(now.primaryLabel).toBeNull();
     expect(now.showSpinner).toBe(true);
     expect(now.reassurance).toMatch(/Do not click Prepare again/);
+  });
+
+  it("shows retry Autopilot action when update is blocked", () => {
+    const admin = describeAdminUpdateState({
+      ok: true,
+      activeSafeUpdate: {
+        number: 18,
+        title: "safe update",
+        url: "https://github.com/example/repo/pull/18",
+        deployPreviewUrl: null,
+        isDraft: true,
+        mergeable: false,
+        mergeableState: "dirty",
+        ciStatus: "failure",
+        labels: [],
+        autopilotStatus: "blocked",
+        autopilotRisk: "HIGH",
+        autopilotBlockedReason: "Autopilot blocked this update to protect tenant data: 4 conflict(s) are in tenant-sensitive files.",
+      },
+    });
+    const now = buildCoreUpdateNowAction(admin);
+    expect(now.kind).toBe("repair");
+    expect(now.primaryLabel).toBe("Retry Autopilot");
+    expect(now.reassurance).toContain("protect tenant data");
   });
 
   it("shows single prepare action when update is available", () => {

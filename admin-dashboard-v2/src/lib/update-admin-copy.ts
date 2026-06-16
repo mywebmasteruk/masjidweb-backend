@@ -46,6 +46,9 @@ export type AdminSafeUpdateSummary = {
   mergeableState: string | null;
   ciStatus: CiStatus;
   labels: string[];
+  autopilotStatus?: string | null;
+  autopilotRisk?: string | null;
+  autopilotBlockedReason?: string | null;
   deployPreviewUrl: string | null;
 };
 
@@ -143,11 +146,27 @@ function isOptionalUpstreamPatchAhead(input: AdminUpdateCopyInput): boolean {
 
 function isConflictState(input: AdminSafeUpdateSummary): boolean {
   return (
+    input.autopilotStatus === "blocked" ||
     input.mergeable === false ||
     input.mergeableState === "dirty" ||
     input.mergeableState === "blocked" ||
     input.labels.includes("auto-update-conflict")
   );
+}
+
+function blockedDescription(input: AdminSafeUpdateSummary): string {
+  if (input.autopilotBlockedReason) {
+    return input.autopilotBlockedReason;
+  }
+  if (input.autopilotRisk === "HIGH") {
+    return "Autopilot blocked this update to protect tenant data. A developer must review tenant-sensitive conflicts before preview or approval.";
+  }
+  return "The safe update pull request has merge conflicts in MasjidWeb-customized areas. Production is unchanged. Fix conflicts before preview or approval.";
+}
+
+function blockedNextAction(input: AdminSafeUpdateSummary): string {
+  const risk = input.autopilotRisk ? ` Autopilot classified this as ${input.autopilotRisk} risk.` : "";
+  return `Retry Autopilot once for mechanical fixes, defer the update, or ask a developer to resolve PR #${input.number}.${risk} Do not approve while red.`;
 }
 
 function buildAgentPrompt(input: AdminSafeUpdateSummary, reason: string): string {
@@ -404,15 +423,15 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
     );
 
     if (isConflictState(active)) {
+      const reason = blockedDescription(active);
       return withPr(active, {
         status: "blocked_needs_resolution",
-        title: "Merge test found conflicts",
-        description:
-          "The safe update pull request has merge conflicts in MasjidWeb-customized areas. Production is unchanged. Fix conflicts before preview or approval.",
+        title: active.autopilotRisk === "HIGH" ? "Autopilot blocked this update" : "Merge test found conflicts",
+        description: reason,
         productionStatus: "Production unchanged",
-        actionLabel: "Run automated fix",
-        nextActionText: `The CTO bot can retry mechanical repair for PR #${active.number}, or wait for the next daily run. Do not approve while red.`,
-        agentPrompt: buildAgentPrompt(active, "Merge conflicts or developer review required"),
+        actionLabel: "Retry Autopilot",
+        nextActionText: blockedNextAction(active),
+        agentPrompt: buildAgentPrompt(active, reason),
         canPrepare: false,
         canApprove: false,
         canPreview: false,
