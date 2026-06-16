@@ -55,14 +55,14 @@ On every safe-update PR:
 - `npm run build`
 - Netlify deploy preview
 
-### Autopilot v2.1 deterministic repair
+### Autopilot v2.2 deterministic repair
 
-Autopilot v2.1 is a conservative guardrail and deterministic repair layer, not an unsafe auto-merge bot.
+Autopilot v2.2 is a conservative guardrail and deterministic repair layer, not an unsafe auto-merge bot.
 
 It produces three artifact families in GitHub Actions:
 
 - `update-safety-report.md/json` — machine-readable classification and plain-English summary.
-- `autopilot-repair-report.md/json` — deterministic repair attempts, repaired files, blocked files, and exact missing invariants.
+- `autopilot-repair-report.md/json` — deterministic repair attempts, repaired files, blocked files grouped by reason (`known-resolver-unavailable`, `tenant-invariant-failed`, `conflict-markers-remain`), exact missing invariants, and dashboard-friendly next action text.
 - `autopilot-guard-report.md/json` — deterministic guard results for conflict markers and tenant invariants.
 
 Risk levels:
@@ -78,8 +78,9 @@ Deterministic repair and guard behavior:
 - Detects unmerged paths with `git diff --name-only --diff-filter=U` and conflict-marker scans.
 - Regenerates `package-lock.json` mechanically with npm lockfile-only from `package.json`; if npm tries to modify `package.json`, Autopilot blocks for developer review.
 - Blocks when conflict markers remain in tenant-sensitive files.
-- Checks known repository/publish/auth/proxy/Supabase-cookie files for tenant-scope invariants such as `tenant_id`, `applyTenantEq`, `resolveEffectiveTenantId`, `getTenantIdFromHeaders`, `runWithEffectiveTenantId`, and no invalid `getSupabaseAdmin(tenantId)` calls.
-- For high-risk repository/publish seams, fails closed unless a registered deterministic strategy can prove the required tenant-scope invariants. The report names the exact missing invariant and why it cannot auto-repair.
+- Checks known repository/publish/auth/proxy/Supabase-cookie plus v2.2 `lib/page-fetcher.ts` and `lib/services/collectionService.ts` for tenant-scope invariants such as `tenant_id`, `applyTenantEq`, `resolveEffectiveTenantId`, `getTenantIdFromHeaders`, `runWithEffectiveTenantId`, and no invalid `getSupabaseAdmin(tenantId)` calls.
+- For high-risk repository/publish/page-fetcher/collection-service seams, fails closed unless a registered deterministic strategy can prove the required tenant-scope invariants. The report names the exact missing invariant and why it cannot auto-repair.
+- v2.2 does not broad-merge `lib/page-fetcher.ts` or `lib/services/collectionService.ts`; it gives exact classification for missing host/subdomain tenant resolution, untenant-scoped service-role table reads, missing Knex tenant filters, remaining conflict markers, or missing seam resolver extraction.
 - Does not perform broad text munging in tenant-sensitive files.
 
 ### What “preserve custom code” means

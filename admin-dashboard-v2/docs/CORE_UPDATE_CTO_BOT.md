@@ -16,7 +16,7 @@ You never merge code on GitHub yourself.
 | Step | System |
 |------|--------|
 | Weekly prepare | GitHub `Create safe Ycode update PR` (Mondays) |
-| Mechanical repair | GitHub `Mechanical repair safe update PR` (rerere + lockfile) |
+| Mechanical repair | GitHub `Mechanical repair safe update PR` (rerere + lockfile + Autopilot v2.2 tenant invariant reports for page-fetcher and collection service) |
 | Operator follow-up | GitHub `Core update operator` after each prepare |
 | Ready email | GitHub `Core update notify ready` when CI is green |
 | Escalation | Cursor Automation (cloud) when repair/CI fails — optional |

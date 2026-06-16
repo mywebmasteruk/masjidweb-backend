@@ -53,7 +53,7 @@ When Autopilot says **“blocked this update to protect tenant data”**, it fou
 
 Use the buttons this way:
 
-- **Retry Autopilot** — safe once when lockfiles or known deterministic fixes may clear. Autopilot v2.1 uploads a repair report showing repaired files and any blocked tenant invariants.
+- **Retry Autopilot** — safe once when lockfiles or known deterministic checks may clear. Autopilot v2.2 uploads a repair report showing fixed files, blocked files, reason groups (`known resolver unavailable`, `tenant invariant failed`, `conflict markers remain`), and the next developer action. For `lib/page-fetcher.ts` and `lib/services/collectionService.ts`, v2.2 explains the exact missing tenant invariant instead of generic blocking.
 - **Defer Update** — use when you do not need the update today.
 - **Developer required** — use when Autopilot names tenant-sensitive conflicts. A developer must resolve the PR and run tenant-scope checks before approval.
 
