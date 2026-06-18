@@ -64,6 +64,7 @@ It produces three artifact families in GitHub Actions:
 - `update-safety-report.md/json` — machine-readable classification and plain-English summary.
 - `autopilot-repair-report.md/json` — deterministic repair attempts, repaired files, blocked files grouped by reason (`known-resolver-unavailable`, `tenant-invariant-failed`, `conflict-markers-remain`), exact missing invariants, and dashboard-friendly next action text.
 - `autopilot-guard-report.md/json` — deterministic guard results for conflict markers and tenant invariants.
+- Copilot escalation request — optional, gated PR comment or GitHub issue containing a constrained repair prompt when deterministic repair blocks.
 
 Risk levels:
 
@@ -82,6 +83,18 @@ Deterministic repair and guard behavior:
 - For high-risk repository/publish/page-fetcher/collection-service seams, fails closed unless a registered deterministic strategy can prove the required tenant-scope invariants. The report names the exact missing invariant and why it cannot auto-repair.
 - v2.2 does not broad-merge `lib/page-fetcher.ts` or `lib/services/collectionService.ts`; it gives exact classification for missing host/subdomain tenant resolution, untenant-scoped service-role table reads, missing Knex tenant filters, remaining conflict markers, or missing seam resolver extraction.
 - Does not perform broad text munging in tenant-sensitive files.
+
+### Optional Copilot escalation
+
+When deterministic repair blocks, an operator may rerun `ai-repair-safe-update.yml` with `copilot_escalation_mode` set to one of:
+
+- `comment` — update or create one idempotent PR comment with a paste-ready constrained repair prompt.
+- `issue` — also create or update a GitHub issue using the same prompt.
+- `assign` — create/update the issue and assign it to `@copilot` when GitHub Copilot coding agent is enabled for the repository.
+
+The default is `none`. Repository variable `ENABLE_COPILOT_ESCALATION=true` enables the PR-comment path for blocked repair runs, but issue creation and `@copilot` assignment still require the explicit workflow input. This path never approves, marks ready, or merges a PR. Any Copilot commit must pass `npm run updates:autopilot-guard`, `bash scripts/check-tenant-isolation.sh`, `npm run type-check`, `npm run build`, normal PR CI, preview review, and the applicable multi-tenant checklist before approval.
+
+GitHub CLI currently supports issue assignment to Copilot through `gh issue create --assignee "@copilot"`. If the repository or organization does not have Copilot coding agent enabled, use `comment` or `issue` mode and manually assign the prepared issue from GitHub.com.
 
 ### What “preserve custom code” means
 
@@ -202,6 +215,7 @@ Apply migration in Supabase before relying on full rollback in production admin.
 | Safety classifier | `ycode-mw-tenant/lib/masjidweb/update-safety-check.ts` |
 | Safety CLI | `ycode-mw-tenant/scripts/check-update-safety.ts` |
 | Autopilot deterministic repair CLI | `ycode-mw-tenant/scripts/core-update/run-autopilot-repair.ts` |
+| Copilot escalation CLI | `ycode-mw-tenant/scripts/core-update/create-copilot-escalation.ts` |
 | Autopilot guard CLI | `ycode-mw-tenant/scripts/check-autopilot-guard.ts` |
 | Seam contract | `ycode-mw-tenant/docs/masjidweb-core-seams.md` |
 

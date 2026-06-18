@@ -20,6 +20,7 @@ You never merge on GitHub yourself.
 | Deterministic repair | Auto after prepare when merge has conflicts; or Retry Autopilot. Regenerates known mechanical conflicts such as `package-lock.json`; blocks high-risk tenant seams with an invariant report. |
 | Autopilot guard | Fails if conflict markers or tenant-scope invariants are unsafe |
 | Ready email | When CI turns green |
+| Copilot escalation | Optional after deterministic repair blocks; creates a constrained PR comment/issue and can assign `@copilot` only when requested |
 | Cursor escalation | When PR CI still fails after Autopilot repair |
 | Approve email | When you click Approve merge |
 
@@ -36,6 +37,7 @@ You never merge on GitHub yourself.
 
 - Variable `ADMIN_DASHBOARD_NOTIFY_URL` = `https://admin.masjidweb.com/api/updates/notify`
 - Secret `CORE_UPDATE_NOTIFY_SECRET` — same value as Netlify
+- Optional variable `ENABLE_COPILOT_ESCALATION=true` — when enabled, blocked Autopilot repair runs create/update a constrained PR comment for Copilot/developer handoff. To create an issue or assign `@copilot`, rerun `ai-repair-safe-update.yml` manually and set `copilot_escalation_mode` to `issue` or `assign`.
 
 ### Cursor Automation (cloud)
 
@@ -54,8 +56,9 @@ When Autopilot says **“blocked this update to protect tenant data”**, it fou
 Use the buttons this way:
 
 - **Retry Autopilot** — safe once when lockfiles or known deterministic checks may clear. Autopilot v2.2 uploads a repair report showing fixed files, blocked files, reason groups (`known resolver unavailable`, `tenant invariant failed`, `conflict markers remain`), and the next developer action. For `lib/page-fetcher.ts` and `lib/services/collectionService.ts`, v2.2 explains the exact missing tenant invariant instead of generic blocking.
+- **Escalate to Copilot** — in GitHub Actions, rerun `Mechanical repair safe update PR` for the PR and choose `copilot_escalation_mode=comment`, `issue`, or `assign`. `assign` uses GitHub’s `@copilot` issue assignment when enabled; otherwise use `comment` or `issue` and assign manually in GitHub. This never approves or merges.
 - **Defer Update** — use when you do not need the update today.
-- **Developer required** — use when Autopilot names tenant-sensitive conflicts. A developer must resolve the PR and run tenant-scope checks before approval.
+- **Developer required** — use when Autopilot names tenant-sensitive conflicts. A developer or Copilot-created draft PR must resolve the PR and run tenant-scope checks before approval.
 
 ## Revert to weekly
 
