@@ -162,7 +162,7 @@ describe("core-update-wizard-ui", () => {
     expect(nav.hint).toMatch(/Finish the step above/);
   });
 
-  it("allows browsing next on preview step while approve is still pending", () => {
+  it("keeps future steps collapsed while preview is current", () => {
     const ready = describeAdminUpdateState({
       ok: true,
       activeSafeUpdate: {
@@ -180,8 +180,9 @@ describe("core-update-wizard-ui", () => {
     const workflowStep = getWorkflowStep(ready.phases);
     expect(workflowStep).toBe(3);
     const nav = getWizardNextNav(3, workflowStep, ready);
-    expect(nav.disabled).toBe(false);
-    expect(nav.label).toBe("See what's next");
+    expect(nav.disabled).toBe(true);
+    expect(nav.hideNext).toBe(true);
+    expect(nav.hint).toContain("Future steps");
   });
 
   it("blocks wizard next on approve step until merge is approved", () => {

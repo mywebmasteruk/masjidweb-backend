@@ -146,18 +146,21 @@ export function describeAiRepairRun(run: AiRepairWorkflowRun | null | undefined)
 }
 
 export type CopilotEscalationMode = "none" | "comment" | "issue" | "assign";
+export type AiRepairMode = "autopilot" | "premium_ai";
 
 export async function dispatchAiRepairWorkflow(
   token: string,
   repo: string,
   prNumber: number,
-  opts?: { copilotEscalationMode?: CopilotEscalationMode },
+  opts?: { copilotEscalationMode?: CopilotEscalationMode; repairMode?: AiRepairMode; openrouterModel?: string | null },
 ): Promise<{ workflowUrl: string }> {
   if (!Number.isFinite(prNumber) || prNumber < 1) {
     throw new Error("Invalid pull request number");
   }
 
   const copilotEscalationMode = opts?.copilotEscalationMode ?? "none";
+  const repairMode = opts?.repairMode ?? "autopilot";
+  const openrouterModel = opts?.openrouterModel?.trim() ?? "";
 
   const res = await fetch(
     `${GH}/repos/${repo}/actions/workflows/ai-repair-safe-update.yml/dispatches`,
@@ -168,7 +171,9 @@ export async function dispatchAiRepairWorkflow(
         ref: "main",
         inputs: {
           pr_number: String(prNumber),
-          mechanical_only: true,
+          mechanical_only: repairMode === "premium_ai" ? false : true,
+          repair_mode: repairMode,
+          openrouter_model: openrouterModel,
           copilot_escalation_mode: copilotEscalationMode,
         },
       }),

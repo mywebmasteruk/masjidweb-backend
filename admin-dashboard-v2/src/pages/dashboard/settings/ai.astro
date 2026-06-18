@@ -1,0 +1,323 @@
+---
+import Layout from "../../../layouts/Layout.astro";
+import SidebarBrand from "../../../components/SidebarBrand.astro";
+---
+
+<Layout title="AI Provider Settings — MasjidWeb Admin">
+  <div class="shell">
+    <aside class="sidebar">
+      <SidebarBrand />
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          Tenants
+        </a>
+        <a href="/dashboard/logs" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Logs
+        </a>
+        <a href="/dashboard/maintenance" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Maintenance
+        </a>
+        <a href="/dashboard/settings/ai" class="sidebar-link active">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 16v-2m8-6h-2M6 12H4m13.657-5.657l-1.414 1.414M7.757 16.243l-1.414 1.414m0-11.314l1.414 1.414m8.486 8.486l1.414 1.414"/><circle cx="12" cy="12" r="3"/></svg>
+          Settings
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="logoutBtn" class="sidebar-link" style="width:100%;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          Log out
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="settings-header">
+        <div>
+          <p class="eyebrow">Settings</p>
+          <h1>AI Provider</h1>
+          <p class="page-desc" style="margin-bottom:0;">Configure Premium AI Repair defaults for blocked safe-update conflicts.</p>
+        </div>
+        <a href="/dashboard/maintenance" class="btn btn-ghost">Back to Maintenance</a>
+      </div>
+
+      <div class="settings-grid">
+        <section class="card ai-card">
+          <div class="card-header">
+            <div>
+              <h2>Provider configuration</h2>
+              <p class="text-xs text-muted" style="margin:.35rem 0 0;">Saved keys are encrypted server-side and never displayed again.</p>
+            </div>
+            <label class="switch-row">
+              <span>Enabled</span>
+              <input id="enabled" type="checkbox" />
+              <span class="switch-ui" aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <form id="aiProviderForm" class="ai-form">
+            <label class="field">
+              <span>Provider</span>
+              <select id="provider" name="provider">
+                <option value="none">None</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Model selection mode</span>
+              <select id="modelSelectionMode" name="modelSelectionMode" disabled>
+                <option value="manual">Manual</option>
+              </select>
+            </label>
+
+            <div class="field model-field">
+              <label for="model">Model</label>
+              <div class="model-row">
+                <input id="model" name="model" type="text" placeholder="anthropic/claude-opus-4.1" autocomplete="off" />
+                <button type="button" id="refreshModelsBtn" class="btn btn-ghost btn-sm">Refresh models</button>
+              </div>
+              <select id="modelPicker" class="hidden" aria-label="OpenRouter model list"></select>
+              <p class="help">Manual model IDs are supported even when model refresh is unavailable.</p>
+            </div>
+
+            <div class="field-grid">
+              <label class="field">
+                <span>Reasoning effort</span>
+                <select id="reasoningEffort" name="reasoningEffort">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Temperature</span>
+                <input id="temperature" name="temperature" type="number" min="0" max="2" step="0.05" />
+              </label>
+
+              <label class="field">
+                <span>Max output tokens</span>
+                <input id="maxOutputTokens" name="maxOutputTokens" type="number" min="1000" max="100000" step="1000" />
+              </label>
+
+              <label class="field">
+                <span>Request timeout</span>
+                <input id="requestTimeoutMs" name="requestTimeoutMs" type="number" min="10000" max="300000" step="5000" />
+              </label>
+            </div>
+
+            <div class="secret-panel">
+              <div class="secret-panel-head">
+                <div>
+                  <h3>OpenRouter API key</h3>
+                  <p id="savedKeyMeta" class="text-xs text-muted">No saved key.</p>
+                </div>
+                <button type="button" id="removeKeyBtn" class="btn btn-ghost btn-sm">Remove saved API key</button>
+              </div>
+              <label class="field">
+                <span>API key</span>
+                <input id="apiKey" name="apiKey" type="password" placeholder="Leave blank to keep current key" autocomplete="off" />
+              </label>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" id="saveBtn" class="btn btn-primary">Save settings</button>
+              <span id="saveStatus" class="text-xs text-muted"></span>
+            </div>
+          </form>
+        </section>
+
+        <aside class="card safety-card">
+          <h2>Safety behavior</h2>
+          <ul>
+            <li>Premium AI Repair uses these settings for provider/model defaults.</li>
+            <li>The GitHub workflow still needs its own <span class="mono">OPENROUTER_API_KEY</span> secret unless a later broker flow is added.</li>
+            <li>Suggested diffs are report-only in this first slice and do not approve or merge PRs.</li>
+            <li>Tenant-scope guardrails remain mandatory before approval.</li>
+          </ul>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" style="display:none;position:fixed;right:1rem;bottom:1rem;z-index:9999;padding:.9rem 1.1rem;border-radius:var(--radius);box-shadow:var(--shadow-lg);font-size:.9rem;"></div>
+
+  <style>
+    .settings-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:1.5rem; }
+    .eyebrow { margin:0 0 .35rem; color:var(--muted); font-size:.75rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .settings-grid { display:grid; grid-template-columns:minmax(0, 1fr) minmax(260px, 360px); gap:1rem; align-items:start; }
+    .ai-card { border-color:rgba(59,130,246,.28); background:linear-gradient(180deg, rgba(59,130,246,.08), rgba(15,23,42,.28)); }
+    .ai-form { display:flex; flex-direction:column; gap:1rem; margin-top:1rem; }
+    .field { display:flex; flex-direction:column; gap:.45rem; }
+    .field > span, .field label, .model-field > label { color:var(--text); font-size:.84rem; font-weight:650; }
+    .field input, .field select, .model-field input, .model-field select { width:100%; min-height:2.65rem; border:1px solid var(--border); border-radius:12px; background:rgba(2,6,23,.45); color:var(--text); padding:.65rem .8rem; font:inherit; }
+    .field input:focus, .field select:focus, .model-field input:focus, .model-field select:focus { outline:none; border-color:rgba(59,130,246,.7); box-shadow:0 0 0 3px rgba(59,130,246,.18); }
+    .field-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:1rem; }
+    .model-row { display:flex; gap:.65rem; align-items:center; }
+    .model-row input { flex:1; }
+    .help { margin:.35rem 0 0; color:var(--muted); font-size:.75rem; line-height:1.45; }
+    .secret-panel { padding:1rem; border:1px solid rgba(148,163,184,.22); border-radius:16px; background:rgba(15,23,42,.35); }
+    .secret-panel-head { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:.85rem; }
+    .secret-panel h3 { margin:0; font-size:1rem; }
+    .switch-row { display:flex; align-items:center; gap:.65rem; color:var(--text); font-size:.85rem; font-weight:650; }
+    .switch-row input { position:absolute; opacity:0; pointer-events:none; }
+    .switch-ui { position:relative; width:3rem; height:1.65rem; border-radius:999px; background:rgba(148,163,184,.24); border:1px solid rgba(148,163,184,.28); transition:.15s ease; }
+    .switch-ui::after { content:""; position:absolute; width:1.18rem; height:1.18rem; left:.2rem; top:.18rem; border-radius:999px; background:#fff; transition:.15s ease; }
+    .switch-row input:checked + .switch-ui { background:var(--success); border-color:var(--success); }
+    .switch-row input:checked + .switch-ui::after { transform:translateX(1.32rem); }
+    .form-actions { display:flex; align-items:center; gap:.75rem; margin-top:.25rem; }
+    .safety-card ul { margin:.75rem 0 0; padding-left:1.2rem; color:var(--muted); font-size:.86rem; line-height:1.6; }
+    .safety-card li { margin:.45rem 0; }
+    .hidden { display:none !important; }
+    @media (max-width: 880px) { .settings-grid { grid-template-columns:1fr; } .settings-header { flex-direction:column; } .field-grid { grid-template-columns:1fr; } .model-row { flex-direction:column; align-items:stretch; } }
+  </style>
+
+  <script>
+    const form = document.getElementById("aiProviderForm");
+    const toastEl = document.getElementById("toast");
+    const fields = {
+      enabled: document.getElementById("enabled"),
+      provider: document.getElementById("provider"),
+      model: document.getElementById("model"),
+      modelPicker: document.getElementById("modelPicker"),
+      reasoningEffort: document.getElementById("reasoningEffort"),
+      temperature: document.getElementById("temperature"),
+      maxOutputTokens: document.getElementById("maxOutputTokens"),
+      requestTimeoutMs: document.getElementById("requestTimeoutMs"),
+      apiKey: document.getElementById("apiKey"),
+      savedKeyMeta: document.getElementById("savedKeyMeta"),
+      saveStatus: document.getElementById("saveStatus"),
+      removeKeyBtn: document.getElementById("removeKeyBtn"),
+      refreshModelsBtn: document.getElementById("refreshModelsBtn"),
+    };
+
+    function toast(message, ok) {
+      if (!toastEl) return;
+      toastEl.textContent = message;
+      toastEl.className = ok ? "toast-ok" : "toast-err";
+      toastEl.style.display = "block";
+      setTimeout(() => (toastEl.style.display = "none"), 5000);
+    }
+
+    async function api(path, opts) {
+      const res = await fetch(path, opts);
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { ok: false, error: text || "Bad response" };
+      }
+    }
+
+    function setSettings(settings) {
+      fields.enabled.checked = settings.enabled === true;
+      fields.provider.value = settings.provider || "none";
+      fields.model.value = settings.model || "anthropic/claude-opus-4.1";
+      fields.reasoningEffort.value = settings.reasoningEffort || "medium";
+      fields.temperature.value = String(settings.temperature ?? 0.1);
+      fields.maxOutputTokens.value = String(settings.maxOutputTokens ?? 16000);
+      fields.requestTimeoutMs.value = String(settings.requestTimeoutMs ?? 120000);
+      fields.savedKeyMeta.textContent = settings.hasApiKey
+        ? "Saved key ending in " + (settings.apiKeyLast4 || "••••") + (settings.apiKeySavedAt ? " · saved " + new Date(settings.apiKeySavedAt).toLocaleString() : "")
+        : "No saved key.";
+      fields.removeKeyBtn.disabled = !settings.hasApiKey;
+    }
+
+    function readPayload(removeApiKey = false) {
+      return {
+        enabled: fields.enabled.checked,
+        provider: fields.provider.value,
+        modelSelectionMode: "manual",
+        model: fields.model.value.trim(),
+        reasoningEffort: fields.reasoningEffort.value,
+        temperature: Number(fields.temperature.value),
+        maxOutputTokens: Number(fields.maxOutputTokens.value),
+        requestTimeoutMs: Number(fields.requestTimeoutMs.value),
+        apiKey: fields.apiKey.value.trim(),
+        removeApiKey,
+      };
+    }
+
+    async function loadSettings() {
+      fields.saveStatus.textContent = "Loading…";
+      const data = await api("/api/settings/ai-provider");
+      if (data.ok) {
+        setSettings(data.settings);
+        fields.saveStatus.textContent = "";
+      } else {
+        fields.saveStatus.textContent = data.error || "Could not load settings";
+        toast(fields.saveStatus.textContent, false);
+      }
+    }
+
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      fields.saveStatus.textContent = "Saving…";
+      const data = await api("/api/settings/ai-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(readPayload(false)),
+      });
+      if (data.ok) {
+        fields.apiKey.value = "";
+        setSettings(data.settings);
+        fields.saveStatus.textContent = "Saved";
+        toast("AI provider settings saved.", true);
+      } else {
+        fields.saveStatus.textContent = data.error || "Could not save settings";
+        toast(fields.saveStatus.textContent, false);
+      }
+    });
+
+    fields.removeKeyBtn?.addEventListener("click", async () => {
+      if (!confirm("Remove the saved OpenRouter API key?")) return;
+      const data = await api("/api/settings/ai-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(readPayload(true)),
+      });
+      if (data.ok) {
+        setSettings(data.settings);
+        toast("Saved API key removed.", true);
+      } else {
+        toast(data.error || "Could not remove API key", false);
+      }
+    });
+
+    fields.refreshModelsBtn?.addEventListener("click", async () => {
+      fields.refreshModelsBtn.disabled = true;
+      fields.refreshModelsBtn.textContent = "Refreshing…";
+      const data = await api("/api/settings/openrouter-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: fields.apiKey.value.trim() }),
+      });
+      fields.refreshModelsBtn.disabled = false;
+      fields.refreshModelsBtn.textContent = "Refresh models";
+      if (!data.ok) {
+        toast(data.error || "Could not load models", false);
+        return;
+      }
+      const models = Array.isArray(data.models) ? data.models : [];
+      fields.modelPicker.innerHTML = models
+        .map((model) => '<option value="' + String(model.id).replaceAll('"', '&quot;') + '">' + String(model.name || model.id).replaceAll('<', '&lt;') + '</option>')
+        .join("");
+      fields.modelPicker.classList.toggle("hidden", models.length === 0);
+      toast("Loaded " + models.length + " OpenRouter models.", true);
+    });
+
+    fields.modelPicker?.addEventListener("change", () => {
+      fields.model.value = fields.modelPicker.value;
+    });
+
+    document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    });
+
+    loadSettings();
+  </script>
+</Layout>

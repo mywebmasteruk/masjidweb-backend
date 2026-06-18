@@ -153,7 +153,12 @@ export function getWizardNextNav(
     return { disabled: false, label: "Review next step", hint: null };
   }
 
-  return { disabled: false, label: "See what's next", hint: null };
+  return {
+    disabled: true,
+    label: "Next step",
+    hint: "Future steps stay collapsed until this update reaches them.",
+    hideNext: true,
+  };
 }
 
 /** Poll /api/updates/status while GitHub workflow or production deploy is in flight. */

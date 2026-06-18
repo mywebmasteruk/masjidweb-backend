@@ -68,6 +68,8 @@ describe("dispatchAiRepairWorkflow", () => {
           inputs: {
             pr_number: "3",
             mechanical_only: true,
+            repair_mode: "autopilot",
+            openrouter_model: "",
             copilot_escalation_mode: "none",
           },
         }),
@@ -94,7 +96,35 @@ describe("dispatchAiRepairWorkflow", () => {
           inputs: {
             pr_number: "7",
             mechanical_only: true,
+            repair_mode: "autopilot",
+            openrouter_model: "",
             copilot_escalation_mode: "issue",
+          },
+        }),
+      }),
+    );
+  });
+
+  it("dispatches Premium AI repair with model override", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await dispatchAiRepairWorkflow("token", "owner/repo", 11, {
+      repairMode: "premium_ai",
+      openrouterModel: "anthropic/test-frontier",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/owner/repo/actions/workflows/ai-repair-safe-update.yml/dispatches",
+      expect.objectContaining({
+        body: JSON.stringify({
+          ref: "main",
+          inputs: {
+            pr_number: "11",
+            mechanical_only: false,
+            repair_mode: "premium_ai",
+            openrouter_model: "anthropic/test-frontier",
+            copilot_escalation_mode: "none",
           },
         }),
       }),

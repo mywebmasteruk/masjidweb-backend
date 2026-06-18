@@ -1,7 +1,9 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
+import { getAiProviderSettings } from "../../../lib/ai-provider-settings";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import {
+  type AiRepairMode,
   type CopilotEscalationMode,
   dispatchAiRepairWorkflow,
   githubActionsWorkflowUrl,
@@ -14,6 +16,7 @@ const copilotEscalationModes = new Set<CopilotEscalationMode>([
   "issue",
   "assign",
 ]);
+const aiRepairModes = new Set<AiRepairMode>(["autopilot", "premium_ai"]);
 
 function parseCopilotEscalationMode(value: unknown): CopilotEscalationMode {
   if (typeof value !== "string" || value.trim() === "") return "none";
@@ -22,6 +25,16 @@ function parseCopilotEscalationMode(value: unknown): CopilotEscalationMode {
     throw new Error("copilotEscalationMode must be one of: none, comment, issue, assign");
   }
   return mode as CopilotEscalationMode;
+}
+
+function parseAiRepairMode(value: unknown, premiumAiRepair: unknown): AiRepairMode {
+  if (premiumAiRepair === true) return "premium_ai";
+  if (typeof value !== "string" || value.trim() === "") return "autopilot";
+  const mode = value.trim();
+  if (!aiRepairModes.has(mode as AiRepairMode)) {
+    throw new Error("repairMode must be one of: autopilot, premium_ai");
+  }
+  return mode as AiRepairMode;
 }
 
 export const POST: APIRoute = async (context) => {
@@ -45,13 +58,17 @@ export const POST: APIRoute = async (context) => {
 
   let prNumber = 0;
   let copilotEscalationMode: CopilotEscalationMode = "none";
+  let repairMode: AiRepairMode = "autopilot";
   try {
     const body = (await context.request.json()) as {
       prNumber?: number;
       copilotEscalationMode?: unknown;
+      repairMode?: unknown;
+      premiumAiRepair?: unknown;
     };
     prNumber = typeof body.prNumber === "number" ? body.prNumber : 0;
     copilotEscalationMode = parseCopilotEscalationMode(body.copilotEscalationMode);
+    repairMode = parseAiRepairMode(body.repairMode, body.premiumAiRepair);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid JSON body";
     return new Response(JSON.stringify({ ok: false, error: message }), {
@@ -70,22 +87,31 @@ export const POST: APIRoute = async (context) => {
   const { token, repo } = github;
 
   try {
+    const settings = repairMode === "premium_ai" ? await getAiProviderSettings() : null;
     const { workflowUrl } = await dispatchAiRepairWorkflow(token, repo, prNumber, {
       copilotEscalationMode,
+      repairMode,
+      openrouterModel: settings?.provider === "openrouter" && settings.enabled ? settings.model : null,
     });
     const isCopilotEscalation = copilotEscalationMode !== "none";
+    const isPremiumAiRepair = repairMode === "premium_ai";
     return new Response(
       JSON.stringify({
         ok: true,
         prNumber,
         workflowUrl,
         copilotEscalationMode,
+        repairMode,
         message: isCopilotEscalation
           ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
-          : "Autopilot deterministic repair started on GitHub. Refresh status in a few minutes.",
+          : isPremiumAiRepair
+            ? "Premium AI Repair started. It will produce a report artifact for blocked tenant-sensitive conflicts; it will not auto-merge or approve."
+            : "Autopilot deterministic repair started on GitHub. Refresh status in a few minutes.",
         disclaimer: isCopilotEscalation
           ? "Copilot escalation creates a constrained handoff only. It never approves, marks ready, or merges the safe-update PR."
-          : "Autopilot v2.2 regenerates known mechanical conflicts such as package-lock.json, then runs the tenant guard. Tenant-sensitive conflicts stay blocked with an invariant report until a developer resolves them.",
+          : isPremiumAiRepair
+            ? "Premium AI Repair uses OpenRouter with OPENROUTER_REPAIR_MODEL and is currently report-only: suggested diffs are not applied automatically until safety can be proven."
+            : "Autopilot v2.2 regenerates known mechanical conflicts such as package-lock.json, then runs the tenant guard. Tenant-sensitive conflicts stay blocked with an invariant report until a developer resolves them.",
       }),
       { headers: json },
     );

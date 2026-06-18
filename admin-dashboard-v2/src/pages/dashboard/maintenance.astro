@@ -25,6 +25,10 @@ const cleanupDeletesUnassigned =
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
           Maintenance
         </a>
+        <a href="/dashboard/settings/ai" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 16v-2m8-6h-2M6 12H4m13.657-5.657l-1.414 1.414M7.757 16.243l-1.414 1.414m0-11.314l1.414 1.414m8.486 8.486l1.414 1.414"/><circle cx="12" cy="12" r="3"/></svg>
+          Settings
+        </a>
       </nav>
       <div class="sidebar-footer">
         <button id="logoutBtn" class="sidebar-link" style="width:100%;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;">
@@ -611,6 +615,24 @@ const cleanupDeletesUnassigned =
       font-size: .78rem;
       line-height: 1.55;
       color: var(--text);
+    }
+    .mw-advanced-actions {
+      margin-top: .85rem;
+    }
+    .mw-advanced-actions summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 650;
+    }
+    .mw-advanced-actions summary:hover {
+      color: var(--text);
+    }
+    .mw-advanced-actions-body {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-top: .65rem;
     }
     .mw-ai-repair-meta {
       margin: .5rem 0 0;
@@ -1430,11 +1452,12 @@ const cleanupDeletesUnassigned =
       return (
         '<div class="mw-ai-repair-panel">' +
         '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Retry Autopilot</strong> above to start deterministic repair on GitHub (rerere + package-lock regeneration where safe). If Autopilot reports tenant-sensitive conflicts, it uploads an invariant report and a developer is required. Production is not merged until you approve.</p>' +
-        '<div class="mw-ai-repair-actions">' +
-        '<button type="button" id="copilotEscalationBtn" class="btn btn-primary btn-sm">Escalate to Copilot</button>' +
+        '<details class="mw-advanced-actions"><summary>Advanced actions</summary>' +
+        '<div class="mw-advanced-actions-body">' +
+        '<button type="button" id="copilotEscalationBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
         '<button type="button" id="assignCopilotBtn" class="btn btn-ghost btn-sm">Assign Copilot</button>' +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
-        "</div>" +
+        "</div></details>" +
         '<div id="aiRepairResult" class="mw-ai-repair-result' +
         hidden +
         loading +
@@ -1466,7 +1489,9 @@ const cleanupDeletesUnassigned =
       const state = window.currentAdminUpdateState || {};
       const prNumber = typeof state.prNumber === "number" ? state.prNumber : null;
       const copilotEscalationMode = opts.copilotEscalationMode || "none";
+      const repairMode = opts.repairMode || "autopilot";
       const isCopilotEscalation = copilotEscalationMode !== "none";
+      const isPremiumAiRepair = repairMode === "premium_ai";
       if (!prNumber) {
         toast("No active safe-update PR to repair.", false);
         return;
@@ -1475,33 +1500,38 @@ const cleanupDeletesUnassigned =
       const nowBtn = document.getElementById("runAiRepairNowBtn");
       const issueBtn = document.getElementById("copilotEscalationBtn");
       const issueNowBtn = document.getElementById("copilotEscalationNowBtn");
+      const premiumBtn = document.getElementById("premiumAiRepairNowBtn");
       const assignBtn = document.getElementById("assignCopilotBtn");
       const resultEl = document.getElementById("aiRepairResult");
-      const activeBtn = isCopilotEscalation
-        ? copilotEscalationMode === "assign"
-          ? assignBtn
-          : issueBtn || issueNowBtn
-        : runBtn || nowBtn;
-      const buttons = [runBtn, nowBtn, issueBtn, issueNowBtn, assignBtn].filter(Boolean);
+      const activeBtn = isPremiumAiRepair
+        ? premiumBtn
+        : isCopilotEscalation
+          ? copilotEscalationMode === "assign"
+            ? assignBtn
+            : issueBtn || issueNowBtn
+          : runBtn || nowBtn;
+      const buttons = [runBtn, nowBtn, issueBtn, issueNowBtn, premiumBtn, assignBtn].filter(Boolean);
       buttons.forEach((button) => {
         button.disabled = true;
       });
       if (activeBtn) {
-        activeBtn.textContent = isCopilotEscalation ? "Escalating…" : "Starting…";
+        activeBtn.textContent = isPremiumAiRepair ? "Starting premium…" : isCopilotEscalation ? "Escalating…" : "Starting…";
       }
       window.aiRepairLoading = true;
       if (resultEl) {
         resultEl.classList.remove("hidden");
         resultEl.classList.add("is-loading");
-        resultEl.innerHTML = isCopilotEscalation
-          ? "<pre>Dispatching Copilot escalation workflow…</pre>"
-          : "<pre>Dispatching GitHub Actions repair…</pre>";
+        resultEl.innerHTML = isPremiumAiRepair
+          ? "<pre>Dispatching Premium AI Repair report workflow…</pre>"
+          : isCopilotEscalation
+            ? "<pre>Dispatching Copilot escalation workflow…</pre>"
+            : "<pre>Dispatching GitHub Actions repair…</pre>";
       }
 
       const res = await api("/api/updates/ai-repair", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prNumber, copilotEscalationMode }),
+        body: JSON.stringify({ prNumber, copilotEscalationMode, repairMode }),
       });
 
       window.aiRepairLoading = false;
@@ -1510,6 +1540,7 @@ const cleanupDeletesUnassigned =
       });
       if (runBtn) runBtn.textContent = "Retry Autopilot";
       if (nowBtn) nowBtn.textContent = state.actionLabel || "Retry Autopilot";
+      if (premiumBtn) premiumBtn.textContent = "Premium AI Repair";
       if (issueBtn) issueBtn.textContent = "Escalate to Copilot";
       if (issueNowBtn) issueNowBtn.textContent = "Escalate to Copilot";
       if (assignBtn) assignBtn.textContent = "Assign Copilot";
@@ -1525,7 +1556,9 @@ const cleanupDeletesUnassigned =
             ? res.message
             : isCopilotEscalation
               ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
-              : "Autopilot mechanical repair started on GitHub.";
+              : isPremiumAiRepair
+                ? "Premium AI Repair report started on GitHub."
+                : "Autopilot mechanical repair started on GitHub.";
         window.lastAiRepairReply = message;
         window.lastAiRepairModel = "";
         const workflowLink =
@@ -1539,7 +1572,7 @@ const cleanupDeletesUnassigned =
             ? '<p class="mw-ai-repair-meta text-xs text-muted">' + escapeHtml(res.disclaimer) + "</p>"
             : "";
         resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
-        toast(isCopilotEscalation ? "Copilot escalation requested." : "Automated repair started on GitHub.", true);
+        toast(isCopilotEscalation ? "Copilot escalation requested." : isPremiumAiRepair ? "Premium AI Repair started." : "Automated repair started on GitHub.", true);
         aiRepairWatchActive = true;
         await fetchAiRepairStatus();
         startAiRepairPolling();
@@ -1551,7 +1584,9 @@ const cleanupDeletesUnassigned =
           ? res.error
           : isCopilotEscalation
             ? "Copilot escalation failed. Check GitHub Actions on the builder repo."
-            : "Automated repair failed. Check GitHub Actions on the builder repo or wait for the CTO bot email.";
+            : isPremiumAiRepair
+              ? "Premium AI Repair failed. Check the workflow report/logs on the builder repo."
+              : "Automated repair failed. Check GitHub Actions on the builder repo or wait for the CTO bot email.";
       const workflowLink =
         typeof res.workflowUrl === "string"
           ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
@@ -1642,7 +1677,9 @@ const cleanupDeletesUnassigned =
             '">' +
             '<button type="button" class="mw-stepper-node" data-goto-step="' +
             escapeAttr(step) +
-            '" aria-current="' +
+            '"' +
+            (step > workflowStep ? " disabled" : "") +
+            ' aria-current="' +
             (step === viewedStep ? "step" : "false") +
             '">' +
             escapeHtml(stepperNodeContent(phase, step, workflowStep)) +
@@ -1707,7 +1744,12 @@ const cleanupDeletesUnassigned =
       }
       if (action.kind === "repair" && adminState && adminState.canCopyPrompt) {
         html +=
-          '<button type="button" id="copilotEscalationNowBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>';
+          '<button type="button" id="premiumAiRepairNowBtn" class="btn btn-ghost btn-sm">Premium AI Repair</button>';
+        html +=
+          '<details class="mw-advanced-actions"><summary>Advanced actions</summary><div class="mw-advanced-actions-body">' +
+          '<button type="button" id="copilotEscalationNowBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
+          '<button type="button" id="copyAiRepairPromptNowBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
+          "</div></details>";
       }
       if (adminState && adminState.prUrl) {
         html +=
@@ -1829,7 +1871,12 @@ const cleanupDeletesUnassigned =
       if (viewedStep < workflowStep) {
         return { disabled: false, label: "Review next step", hint: null, hideNext: false };
       }
-      return { disabled: false, label: "See what's next", hint: null, hideNext: false };
+      return {
+        disabled: true,
+        label: "Next step",
+        hint: "Future steps stay collapsed until this update reaches them.",
+        hideNext: true,
+      };
     }
 
     function renderWizardNav(viewedStep, workflowStep, adminState, versionLine) {
@@ -2234,7 +2281,10 @@ const cleanupDeletesUnassigned =
 
       const gotoBtn = target.closest("[data-goto-step]");
       if (gotoBtn instanceof HTMLElement && gotoBtn.dataset.gotoStep) {
-        refreshCoreUpdateView(parseInt(gotoBtn.dataset.gotoStep, 10));
+        const nextStep = parseInt(gotoBtn.dataset.gotoStep, 10);
+        const workflowStep = getWorkflowStep((window.currentAdminUpdateState && window.currentAdminUpdateState.phases) || []);
+        if (nextStep > workflowStep) return;
+        refreshCoreUpdateView(nextStep);
         return;
       }
 
@@ -2253,7 +2303,12 @@ const cleanupDeletesUnassigned =
         return;
       }
 
-      if (target.id === "copyAiRepairPromptBtn" || target.closest("#copyAiRepairPromptBtn")) {
+      if (
+        target.id === "copyAiRepairPromptBtn" ||
+        target.closest("#copyAiRepairPromptBtn") ||
+        target.id === "copyAiRepairPromptNowBtn" ||
+        target.closest("#copyAiRepairPromptNowBtn")
+      ) {
         copyAiRepairPrompt();
         return;
       }
@@ -2287,6 +2342,11 @@ const cleanupDeletesUnassigned =
 
       if (target.id === "copilotEscalationNowBtn" || target.closest("#copilotEscalationNowBtn")) {
         runAiRepair({ copilotEscalationMode: "issue" });
+        return;
+      }
+
+      if (target.id === "premiumAiRepairNowBtn" || target.closest("#premiumAiRepairNowBtn")) {
+        runAiRepair({ repairMode: "premium_ai" });
         return;
       }
 

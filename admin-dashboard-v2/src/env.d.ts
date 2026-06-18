@@ -25,6 +25,12 @@ interface ImportMetaEnv {
   readonly OPENROUTER_API_KEY?: string;
   /** OpenRouter model id (default anthropic/claude-sonnet-4). */
   readonly OPENROUTER_MODEL?: string;
+  /** Server-side encryption secret for saved admin AI provider API keys. */
+  readonly ADMIN_AI_SETTINGS_ENCRYPTION_KEY?: string;
+  /** Optional OpenRouter referer header for model/API calls. */
+  readonly OPENROUTER_SITE_URL?: string;
+  /** Optional OpenRouter app title header for model/API calls. */
+  readonly OPENROUTER_APP_NAME?: string;
   /** Base domain for tenant subdomains (e.g. masjidweb.com). */
   readonly TENANT_DOMAIN_SUFFIX: string;
   /** @deprecated Optional legacy global builder URL. Builder lives at `https://{slug}.<TENANT_DOMAIN_SUFFIX>/ycode`. */
