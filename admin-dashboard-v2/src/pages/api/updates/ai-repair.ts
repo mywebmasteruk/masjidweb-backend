@@ -2,11 +2,27 @@ import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import {
+  type CopilotEscalationMode,
   dispatchAiRepairWorkflow,
   githubActionsWorkflowUrl,
 } from "../../../lib/github-safe-update";
 
 const json = { "Content-Type": "application/json" } as const;
+const copilotEscalationModes = new Set<CopilotEscalationMode>([
+  "none",
+  "comment",
+  "issue",
+  "assign",
+]);
+
+function parseCopilotEscalationMode(value: unknown): CopilotEscalationMode {
+  if (typeof value !== "string" || value.trim() === "") return "none";
+  const mode = value.trim();
+  if (!copilotEscalationModes.has(mode as CopilotEscalationMode)) {
+    throw new Error("copilotEscalationMode must be one of: none, comment, issue, assign");
+  }
+  return mode as CopilotEscalationMode;
+}
 
 export const POST: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
@@ -28,11 +44,17 @@ export const POST: APIRoute = async (context) => {
   }
 
   let prNumber = 0;
+  let copilotEscalationMode: CopilotEscalationMode = "none";
   try {
-    const body = (await context.request.json()) as { prNumber?: number };
+    const body = (await context.request.json()) as {
+      prNumber?: number;
+      copilotEscalationMode?: unknown;
+    };
     prNumber = typeof body.prNumber === "number" ? body.prNumber : 0;
-  } catch {
-    return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
+    copilotEscalationMode = parseCopilotEscalationMode(body.copilotEscalationMode);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid JSON body";
+    return new Response(JSON.stringify({ ok: false, error: message }), {
       status: 400,
       headers: json,
     });
@@ -48,16 +70,22 @@ export const POST: APIRoute = async (context) => {
   const { token, repo } = github;
 
   try {
-    const { workflowUrl } = await dispatchAiRepairWorkflow(token, repo, prNumber);
+    const { workflowUrl } = await dispatchAiRepairWorkflow(token, repo, prNumber, {
+      copilotEscalationMode,
+    });
+    const isCopilotEscalation = copilotEscalationMode !== "none";
     return new Response(
       JSON.stringify({
         ok: true,
         prNumber,
         workflowUrl,
-        message:
-          "Autopilot deterministic repair started on GitHub. Refresh status in a few minutes.",
-        disclaimer:
-          "Autopilot v2.1 regenerates known mechanical conflicts such as package-lock.json, then runs the tenant guard. Tenant-sensitive conflicts stay blocked with an invariant report until a developer resolves them.",
+        copilotEscalationMode,
+        message: isCopilotEscalation
+          ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
+          : "Autopilot deterministic repair started on GitHub. Refresh status in a few minutes.",
+        disclaimer: isCopilotEscalation
+          ? "Copilot escalation creates a constrained handoff only. It never approves, marks ready, or merges the safe-update PR."
+          : "Autopilot v2.2 regenerates known mechanical conflicts such as package-lock.json, then runs the tenant guard. Tenant-sensitive conflicts stay blocked with an invariant report until a developer resolves them.",
       }),
       { headers: json },
     );

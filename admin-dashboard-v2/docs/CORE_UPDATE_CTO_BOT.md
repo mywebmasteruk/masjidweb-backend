@@ -7,7 +7,7 @@ Plain-language guide for running weekly Ycode core updates **without a human CTO
 1. **Optional:** click **Prepare safe update** any time (or wait for **Monday 06:00 UTC** automatic run).
 2. **Read emails** from MasjidWeb updates.
 3. When the dashboard shows **green — Ready for you**, open the **preview link**, then click **Approve merge**.
-4. If **red — Do not approve**, wait for another email or click **Run automated fix** once.
+4. If **red — Do not approve**, click **Retry Autopilot** once for deterministic repair. If it stays blocked, click **Escalate to Copilot** to create the constrained GitHub handoff; approval remains blocked until CI is green.
 
 You never merge code on GitHub yourself.
 
@@ -19,7 +19,8 @@ You never merge code on GitHub yourself.
 | Mechanical repair | GitHub `Mechanical repair safe update PR` (rerere + lockfile + Autopilot v2.2 tenant invariant reports for page-fetcher and collection service) |
 | Operator follow-up | GitHub `Core update operator` after each prepare |
 | Ready email | GitHub `Core update notify ready` when CI is green |
-| Escalation | Cursor Automation (cloud) when repair/CI fails — optional |
+| Copilot escalation | Admin button dispatches `ai-repair-safe-update.yml` with `copilot_escalation_mode=issue`; optional **Assign Copilot** uses `assign` only when Copilot coding agent is enabled |
+| Cursor escalation | Cursor Automation (cloud) when repair/CI fails — optional |
 
 ## One-time setup
 

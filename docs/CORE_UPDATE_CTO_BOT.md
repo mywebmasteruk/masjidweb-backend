@@ -56,7 +56,7 @@ When Autopilot says **“blocked this update to protect tenant data”**, it fou
 Use the buttons this way:
 
 - **Retry Autopilot** — safe once when lockfiles or known deterministic checks may clear. Autopilot v2.2 uploads a repair report showing fixed files, blocked files, reason groups (`known resolver unavailable`, `tenant invariant failed`, `conflict markers remain`), and the next developer action. For `lib/page-fetcher.ts` and `lib/services/collectionService.ts`, v2.2 explains the exact missing tenant invariant instead of generic blocking.
-- **Escalate to Copilot** — in GitHub Actions, rerun `Mechanical repair safe update PR` for the PR and choose `copilot_escalation_mode=comment`, `issue`, or `assign`. `assign` uses GitHub’s `@copilot` issue assignment when enabled; otherwise use `comment` or `issue` and assign manually in GitHub. This never approves or merges.
+- **Escalate to Copilot** — click the Admin Maintenance button to dispatch `Mechanical repair safe update PR` with `copilot_escalation_mode=issue`. It creates/updates a constrained GitHub issue/comment for Copilot or a developer. Use **Assign Copilot** only when GitHub Copilot coding agent is enabled for the repository. This never approves or merges.
 - **Defer Update** — use when you do not need the update today.
 - **Developer required** — use when Autopilot names tenant-sensitive conflicts. A developer or Copilot-created draft PR must resolve the PR and run tenant-scope checks before approval.
 

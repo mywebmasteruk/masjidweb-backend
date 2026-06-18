@@ -230,7 +230,7 @@ export function buildCoreUpdateNowAction(
   if (opts?.aiRepairInFlight) {
     return {
       kind: "repair",
-      headline: "AI repair in progress",
+      headline: "Autopilot in progress",
       detail:
         opts.aiRepairDetail ||
         "GitHub Actions is resolving conflicts and verifying the build. This page updates automatically.",

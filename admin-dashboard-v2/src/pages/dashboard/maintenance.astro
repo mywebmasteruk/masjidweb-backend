@@ -846,7 +846,7 @@ const cleanupDeletesUnassigned =
       if (opts?.aiRepairInFlight) {
         return {
           kind: "repair",
-          headline: "Automated repair in progress",
+          headline: "Autopilot in progress",
           detail:
             opts.aiRepairDetail ||
             "GitHub Actions is resolving conflicts and verifying the build. This page updates automatically.",
@@ -1431,6 +1431,8 @@ const cleanupDeletesUnassigned =
         '<div class="mw-ai-repair-panel">' +
         '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Retry Autopilot</strong> above to start deterministic repair on GitHub (rerere + package-lock regeneration where safe). If Autopilot reports tenant-sensitive conflicts, it uploads an invariant report and a developer is required. Production is not merged until you approve.</p>' +
         '<div class="mw-ai-repair-actions">' +
+        '<button type="button" id="copilotEscalationBtn" class="btn btn-primary btn-sm">Escalate to Copilot</button>' +
+        '<button type="button" id="assignCopilotBtn" class="btn btn-ghost btn-sm">Assign Copilot</button>' +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
         "</div>" +
         '<div id="aiRepairResult" class="mw-ai-repair-result' +
@@ -1460,37 +1462,57 @@ const cleanupDeletesUnassigned =
       }
     }
 
-    async function runAiRepair() {
+    async function runAiRepair(opts = {}) {
       const state = window.currentAdminUpdateState || {};
       const prNumber = typeof state.prNumber === "number" ? state.prNumber : null;
+      const copilotEscalationMode = opts.copilotEscalationMode || "none";
+      const isCopilotEscalation = copilotEscalationMode !== "none";
       if (!prNumber) {
         toast("No active safe-update PR to repair.", false);
         return;
       }
       const runBtn = document.getElementById("runAiRepairBtn");
+      const nowBtn = document.getElementById("runAiRepairNowBtn");
+      const issueBtn = document.getElementById("copilotEscalationBtn");
+      const issueNowBtn = document.getElementById("copilotEscalationNowBtn");
+      const assignBtn = document.getElementById("assignCopilotBtn");
       const resultEl = document.getElementById("aiRepairResult");
-      if (runBtn) {
-        runBtn.disabled = true;
-        runBtn.textContent = "Starting…";
+      const activeBtn = isCopilotEscalation
+        ? copilotEscalationMode === "assign"
+          ? assignBtn
+          : issueBtn || issueNowBtn
+        : runBtn || nowBtn;
+      const buttons = [runBtn, nowBtn, issueBtn, issueNowBtn, assignBtn].filter(Boolean);
+      buttons.forEach((button) => {
+        button.disabled = true;
+      });
+      if (activeBtn) {
+        activeBtn.textContent = isCopilotEscalation ? "Escalating…" : "Starting…";
       }
       window.aiRepairLoading = true;
       if (resultEl) {
         resultEl.classList.remove("hidden");
         resultEl.classList.add("is-loading");
-        resultEl.innerHTML = "<pre>Dispatching GitHub Actions repair…</pre>";
+        resultEl.innerHTML = isCopilotEscalation
+          ? "<pre>Dispatching Copilot escalation workflow…</pre>"
+          : "<pre>Dispatching GitHub Actions repair…</pre>";
       }
 
       const res = await api("/api/updates/ai-repair", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prNumber }),
+        body: JSON.stringify({ prNumber, copilotEscalationMode }),
       });
 
       window.aiRepairLoading = false;
-      if (runBtn) {
-        runBtn.disabled = false;
-        runBtn.textContent = "Retry Autopilot";
-      }
+      buttons.forEach((button) => {
+        button.disabled = false;
+      });
+      if (runBtn) runBtn.textContent = "Retry Autopilot";
+      if (nowBtn) nowBtn.textContent = state.actionLabel || "Retry Autopilot";
+      if (issueBtn) issueBtn.textContent = "Escalate to Copilot";
+      if (issueNowBtn) issueNowBtn.textContent = "Escalate to Copilot";
+      if (assignBtn) assignBtn.textContent = "Assign Copilot";
 
       if (!resultEl) return;
 
@@ -1501,7 +1523,9 @@ const cleanupDeletesUnassigned =
         const message =
           typeof res.message === "string"
             ? res.message
-            : "Autopilot mechanical repair started on GitHub.";
+            : isCopilotEscalation
+              ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
+              : "Autopilot mechanical repair started on GitHub.";
         window.lastAiRepairReply = message;
         window.lastAiRepairModel = "";
         const workflowLink =
@@ -1515,7 +1539,7 @@ const cleanupDeletesUnassigned =
             ? '<p class="mw-ai-repair-meta text-xs text-muted">' + escapeHtml(res.disclaimer) + "</p>"
             : "";
         resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
-        toast("Automated repair started on GitHub.", true);
+        toast(isCopilotEscalation ? "Copilot escalation requested." : "Automated repair started on GitHub.", true);
         aiRepairWatchActive = true;
         await fetchAiRepairStatus();
         startAiRepairPolling();
@@ -1525,7 +1549,9 @@ const cleanupDeletesUnassigned =
       const err =
         typeof res.error === "string"
           ? res.error
-          : "Automated repair failed. Check GitHub Actions on the builder repo or wait for the CTO bot email.";
+          : isCopilotEscalation
+            ? "Copilot escalation failed. Check GitHub Actions on the builder repo."
+            : "Automated repair failed. Check GitHub Actions on the builder repo or wait for the CTO bot email.";
       const workflowLink =
         typeof res.workflowUrl === "string"
           ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
@@ -1678,6 +1704,10 @@ const cleanupDeletesUnassigned =
           ">" +
           escapeHtml(action.primaryLabel) +
           "</button>";
+      }
+      if (action.kind === "repair" && adminState && adminState.canCopyPrompt) {
+        html +=
+          '<button type="button" id="copilotEscalationNowBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>';
       }
       if (adminState && adminState.prUrl) {
         html +=
@@ -2228,6 +2258,16 @@ const cleanupDeletesUnassigned =
         return;
       }
 
+      if (target.id === "copilotEscalationBtn" || target.closest("#copilotEscalationBtn")) {
+        runAiRepair({ copilotEscalationMode: "issue" });
+        return;
+      }
+
+      if (target.id === "assignCopilotBtn" || target.closest("#assignCopilotBtn")) {
+        runAiRepair({ copilotEscalationMode: "assign" });
+        return;
+      }
+
       if (target.id === "prepareSafeUpdateBtn" || target.closest("#prepareSafeUpdateBtn")) {
         if (window.coreUpdatePrepareInFlight) return;
         if (!confirm("Prepare a safe Ycode update now? Production will not change immediately.")) return;
@@ -2242,6 +2282,11 @@ const cleanupDeletesUnassigned =
 
       if (target.id === "runAiRepairNowBtn" || target.closest("#runAiRepairNowBtn")) {
         runAiRepair();
+        return;
+      }
+
+      if (target.id === "copilotEscalationNowBtn" || target.closest("#copilotEscalationNowBtn")) {
+        runAiRepair({ copilotEscalationMode: "issue" });
         return;
       }
 

@@ -40,7 +40,7 @@ flowchart TD
 ### Step details
 
 1. **Prepare** — Admin Maintenance → **Prepare safe update** → GitHub Actions `Create safe Ycode update PR` (`sync-upstream.yml`).
-2. **Fix** — Only if merge conflicts or CI fails. Use **Run AI repair** or resolve manually. Do not approve while blocked.
+2. **Fix** — Only if merge conflicts or CI fails. Use **Retry Autopilot** for deterministic repair, or **Escalate to Copilot** to dispatch `ai-repair-safe-update.yml` with `copilot_escalation_mode=issue`. Use **Assign Copilot** only when the repository has GitHub Copilot coding agent enabled. Do not approve while blocked.
 3. **Preview** — Open **homepage preview** on Netlify deploy preview (not `{slug}.masjidweb.com`). Optionally test `/ycode` builder login.
 4. **Approve** — **Approve merge** when CI is green and preview looks good. Records a **reversible checkpoint** (see below).
 

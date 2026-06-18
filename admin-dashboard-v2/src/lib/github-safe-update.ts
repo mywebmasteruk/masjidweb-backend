@@ -145,25 +145,31 @@ export function describeAiRepairRun(run: AiRepairWorkflowRun | null | undefined)
   return "Automated repair workflow completed. Refresh status to see whether the pull request is ready.";
 }
 
+export type CopilotEscalationMode = "none" | "comment" | "issue" | "assign";
+
 export async function dispatchAiRepairWorkflow(
   token: string,
   repo: string,
   prNumber: number,
+  opts?: { copilotEscalationMode?: CopilotEscalationMode },
 ): Promise<{ workflowUrl: string }> {
   if (!Number.isFinite(prNumber) || prNumber < 1) {
     throw new Error("Invalid pull request number");
   }
+
+  const copilotEscalationMode = opts?.copilotEscalationMode ?? "none";
 
   const res = await fetch(
     `${GH}/repos/${repo}/actions/workflows/ai-repair-safe-update.yml/dispatches`,
     {
       method: "POST",
       headers: headers(token),
-        body: JSON.stringify({
+      body: JSON.stringify({
         ref: "main",
         inputs: {
           pr_number: String(prNumber),
           mechanical_only: true,
+          copilot_escalation_mode: copilotEscalationMode,
         },
       }),
     },

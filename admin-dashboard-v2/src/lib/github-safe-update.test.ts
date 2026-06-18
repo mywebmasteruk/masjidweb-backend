@@ -65,12 +65,39 @@ describe("dispatchAiRepairWorkflow", () => {
         },
         body: JSON.stringify({
           ref: "main",
-          inputs: { pr_number: "3", mechanical_only: true },
+          inputs: {
+            pr_number: "3",
+            mechanical_only: true,
+            copilot_escalation_mode: "none",
+          },
         }),
       },
     );
     expect(result.workflowUrl).toBe(
       "https://github.com/owner/repo/actions/workflows/ai-repair-safe-update.yml",
+    );
+  });
+
+  it("dispatches ai-repair workflow with Copilot escalation mode", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await dispatchAiRepairWorkflow("token", "owner/repo", 7, {
+      copilotEscalationMode: "issue",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/owner/repo/actions/workflows/ai-repair-safe-update.yml/dispatches",
+      expect.objectContaining({
+        body: JSON.stringify({
+          ref: "main",
+          inputs: {
+            pr_number: "7",
+            mechanical_only: true,
+            copilot_escalation_mode: "issue",
+          },
+        }),
+      }),
     );
   });
 
