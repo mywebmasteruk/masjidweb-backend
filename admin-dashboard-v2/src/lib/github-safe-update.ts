@@ -152,7 +152,11 @@ export async function dispatchAiRepairWorkflow(
   token: string,
   repo: string,
   prNumber: number,
-  opts?: { copilotEscalationMode?: CopilotEscalationMode; repairMode?: AiRepairMode; openrouterModel?: string | null },
+  opts?: {
+    copilotEscalationMode?: CopilotEscalationMode;
+    repairMode?: AiRepairMode;
+    openrouterModel?: string | null;
+  },
 ): Promise<{ workflowUrl: string }> {
   if (!Number.isFinite(prNumber) || prNumber < 1) {
     throw new Error("Invalid pull request number");

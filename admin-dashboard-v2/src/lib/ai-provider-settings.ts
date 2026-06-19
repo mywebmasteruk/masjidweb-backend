@@ -55,6 +55,19 @@ type AiProviderSettingsRow = {
 };
 
 const DEFAULT_MODEL = "anthropic/claude-opus-4.1";
+const OPENROUTER_MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
+
+export function isValidOpenRouterModelId(model: string | null | undefined): boolean {
+  return typeof model === "string" && OPENROUTER_MODEL_ID_PATTERN.test(model.trim());
+}
+
+export function assertValidOpenRouterModelId(model: string | null | undefined): void {
+  if (!isValidOpenRouterModelId(model)) {
+    throw new Error(
+      "OpenRouter model must be a model ID such as anthropic/claude-opus-4.1, not a display name.",
+    );
+  }
+}
 
 function defaultSettings(): AiProviderSettingsPublic {
   return {
@@ -150,9 +163,13 @@ function numberInRange(value: unknown, fallback: number, min: number, max: numbe
 
 export function normalizeAiProviderSettingsInput(body: Record<string, unknown>): AiProviderSettingsInput {
   const provider = parseProvider(body.provider);
+  const enabled = body.enabled === true;
   const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
+  if (enabled && provider === "openrouter") {
+    assertValidOpenRouterModelId(model);
+  }
   return {
-    enabled: body.enabled === true,
+    enabled,
     provider,
     modelSelectionMode: "manual",
     model,

@@ -1,6 +1,9 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
-import { getAiProviderSettings } from "../../../lib/ai-provider-settings";
+import {
+  assertValidOpenRouterModelId,
+  getAiProviderSettings,
+} from "../../../lib/ai-provider-settings";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import {
   type AiRepairMode,
@@ -88,10 +91,14 @@ export const POST: APIRoute = async (context) => {
 
   try {
     const settings = repairMode === "premium_ai" ? await getAiProviderSettings() : null;
+    const openrouterModel = settings?.provider === "openrouter" && settings.enabled ? settings.model : null;
+    if (repairMode === "premium_ai" && openrouterModel) {
+      assertValidOpenRouterModelId(openrouterModel);
+    }
     const { workflowUrl } = await dispatchAiRepairWorkflow(token, repo, prNumber, {
       copilotEscalationMode,
       repairMode,
-      openrouterModel: settings?.provider === "openrouter" && settings.enabled ? settings.model : null,
+      openrouterModel,
     });
     const isCopilotEscalation = copilotEscalationMode !== "none";
     const isPremiumAiRepair = repairMode === "premium_ai";
