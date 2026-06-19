@@ -68,8 +68,9 @@ import SidebarBrand from "../../../components/SidebarBrand.astro";
 
             <label class="field">
               <span>Model selection mode</span>
-              <select id="modelSelectionMode" name="modelSelectionMode" disabled>
-                <option value="manual">Manual</option>
+              <select id="modelSelectionMode" name="modelSelectionMode">
+                <option value="latest_claude_frontier">Latest Claude frontier (recommended)</option>
+                <option value="manual">Manual model ID</option>
               </select>
             </label>
 
@@ -80,7 +81,7 @@ import SidebarBrand from "../../../components/SidebarBrand.astro";
                 <button type="button" id="refreshModelsBtn" class="btn btn-ghost btn-sm">Refresh models</button>
               </div>
               <select id="modelPicker" class="hidden" aria-label="OpenRouter model list"></select>
-              <p class="help">Use the OpenRouter model ID (for example, anthropic/claude-opus-4.1), not the display name.</p>
+              <p class="help">Recommended mode resolves the newest Claude Opus/Sonnet frontier model from OpenRouter at runtime. Manual mode must use an OpenRouter model ID, not a display name.</p>
             </div>
 
             <div class="field-grid">
@@ -135,7 +136,7 @@ import SidebarBrand from "../../../components/SidebarBrand.astro";
           <ul>
             <li>Premium AI Repair uses these settings for provider/model defaults.</li>
             <li>The GitHub workflow still needs its own <span class="mono">OPENROUTER_API_KEY</span> secret unless a later broker flow is added.</li>
-            <li>Suggested diffs are report-only in this first slice and do not approve or merge PRs.</li>
+            <li>Premium AI can apply guarded patches to the safe-update PR branch, then checks must pass before anything can be approved.</li>
             <li>Tenant-scope guardrails remain mandatory before approval.</li>
           </ul>
         </aside>
@@ -181,6 +182,7 @@ import SidebarBrand from "../../../components/SidebarBrand.astro";
     const fields = {
       enabled: document.getElementById("enabled"),
       provider: document.getElementById("provider"),
+      modelSelectionMode: document.getElementById("modelSelectionMode"),
       model: document.getElementById("model"),
       modelPicker: document.getElementById("modelPicker"),
       reasoningEffort: document.getElementById("reasoningEffort"),
@@ -215,6 +217,7 @@ import SidebarBrand from "../../../components/SidebarBrand.astro";
     function setSettings(settings) {
       fields.enabled.checked = settings.enabled === true;
       fields.provider.value = settings.provider || "none";
+      fields.modelSelectionMode.value = settings.modelSelectionMode || "latest_claude_frontier";
       fields.model.value = settings.model || "anthropic/claude-opus-4.1";
       fields.reasoningEffort.value = settings.reasoningEffort || "medium";
       fields.temperature.value = String(settings.temperature ?? 0.1);
@@ -230,7 +233,7 @@ import SidebarBrand from "../../../components/SidebarBrand.astro";
       return {
         enabled: fields.enabled.checked,
         provider: fields.provider.value,
-        modelSelectionMode: "manual",
+        modelSelectionMode: fields.modelSelectionMode.value,
         model: fields.model.value.trim(),
         reasoningEffort: fields.reasoningEffort.value,
         temperature: Number(fields.temperature.value),

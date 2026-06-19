@@ -235,10 +235,10 @@ export function buildCoreUpdateNowAction(
   if (opts?.aiRepairInFlight) {
     return {
       kind: "repair",
-      headline: "Autopilot in progress",
+      headline: "Premium AI update running",
       detail:
         opts.aiRepairDetail ||
-        "GitHub Actions is resolving conflicts and verifying the build. This page updates automatically.",
+        "Premium AI is repairing the PR branch and running tenant safety checks. This page updates automatically.",
       primaryLabel: null,
       primaryDisabled: true,
       showSpinner: true,
@@ -281,11 +281,11 @@ export function buildCoreUpdateNowAction(
       headline: adminState.title || "Fix required before preview",
       detail:
         adminState.nextActionText ||
-        "Retry Autopilot once for mechanical fixes, defer the update, or ask a developer to resolve the pull request.",
-      primaryLabel: adminState.actionLabel || "Retry Autopilot",
+        "Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.",
+      primaryLabel: adminState.actionLabel || "Run Premium AI Update",
       primaryDisabled: false,
       showSpinner: false,
-      reassurance: "Autopilot blocks red updates to protect tenant data. Do not approve until conflicts and checks are resolved.",
+      reassurance: "Production approval stays locked. Do not approve until Premium AI repairs, tenant checks, build, and normal PR CI are green.",
     };
   }
 

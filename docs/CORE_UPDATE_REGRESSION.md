@@ -108,10 +108,11 @@ The post-merge audit re-checked the highest-risk MasjidWeb seams from
 
 These are **process / coverage gaps**, not confirmed production regressions:
 
-1. **AI repair success is not the same as PR safety green.**
-   `ai-repair-safe-update.yml` verifies the build and completeness script, but
-   it does **not** run the full tenant vitest safety suite itself. Approval must
-   still wait for the normal PR checks to finish green.
+1. **Premium AI repair success is not the same as PR safety green.**
+   `ai-repair-safe-update.yml` now applies guarded Premium AI patches only when
+   they parse cleanly and pass completeness, tenant guard, tenant isolation,
+   type-check, tenant tests, and build inside the workflow. Approval must still
+   wait for the normal PR checks to finish green.
 2. **Accept-invite / standalone-route behavior is still mostly manual.**
    The fragile flow is documented and partially covered, but we still rely on
    preview smoke for `/ycode/accept-invite`, magic-link handoff, and standalone

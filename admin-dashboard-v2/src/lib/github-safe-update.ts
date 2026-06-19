@@ -163,7 +163,7 @@ export async function dispatchAiRepairWorkflow(
   }
 
   const copilotEscalationMode = opts?.copilotEscalationMode ?? "none";
-  const repairMode = opts?.repairMode ?? "autopilot";
+  const repairMode = opts?.repairMode ?? "premium_ai";
   const openrouterModel = opts?.openrouterModel?.trim() ?? "";
 
   const res = await fetch(

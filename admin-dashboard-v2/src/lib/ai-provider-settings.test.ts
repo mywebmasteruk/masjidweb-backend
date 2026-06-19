@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isValidOpenRouterModelId, normalizeAiProviderSettingsInput } from "./ai-provider-settings";
+import {
+  isValidOpenRouterModelId,
+  normalizeAiProviderSettingsInput,
+  workflowOpenRouterModelInput,
+} from "./ai-provider-settings";
 
 describe("normalizeAiProviderSettingsInput", () => {
   it("normalizes OpenRouter settings and clamps numeric fields", () => {
@@ -17,7 +21,7 @@ describe("normalizeAiProviderSettingsInput", () => {
     expect(input).toMatchObject({
       enabled: true,
       provider: "openrouter",
-      modelSelectionMode: "manual",
+      modelSelectionMode: "latest_claude_frontier",
       model: "anthropic/frontier",
       reasoningEffort: "high",
       temperature: 2,
@@ -50,14 +54,27 @@ describe("normalizeAiProviderSettingsInput", () => {
     });
   });
 
-  it("rejects OpenRouter display names when the provider is enabled", () => {
+  it("rejects OpenRouter display names when manual mode is enabled", () => {
     expect(() =>
       normalizeAiProviderSettingsInput({
         enabled: true,
         provider: "openrouter",
+        modelSelectionMode: "manual",
         model: "Anthropic: Claude Fable Latest",
       }),
     ).toThrow("OpenRouter model must be a model ID");
+  });
+
+  it("allows latest Claude frontier mode without a fixed model ID", () => {
+    const input = normalizeAiProviderSettingsInput({
+      enabled: true,
+      provider: "openrouter",
+      modelSelectionMode: "latest_claude_frontier",
+      model: "Anthropic: Claude Fable Latest",
+    });
+
+    expect(input.modelSelectionMode).toBe("latest_claude_frontier");
+    expect(workflowOpenRouterModelInput(input)).toBe("latest_claude_frontier");
   });
 
   it("recognizes OpenRouter model IDs", () => {

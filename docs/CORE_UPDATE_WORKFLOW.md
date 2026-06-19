@@ -40,7 +40,7 @@ flowchart TD
 ### Step details
 
 1. **Prepare** — Admin Maintenance → **Prepare safe update** → GitHub Actions `Create safe Ycode update PR` (`sync-upstream.yml`).
-2. **Fix** — Only if merge conflicts or CI fails. Use **Retry Autopilot** for deterministic repair, or **Escalate to Copilot** to dispatch `ai-repair-safe-update.yml` with `copilot_escalation_mode=issue`. Use **Assign Copilot** only when the repository has GitHub Copilot coding agent enabled. Do not approve while blocked.
+2. **Fix** — Only if merge conflicts or CI fails. Use **Run Premium AI Update** from Admin Maintenance. It dispatches `ai-repair-safe-update.yml` with `repair_mode=premium_ai`, asks OpenRouter for strict unified diffs, applies them only to the safe-update PR branch when they parse cleanly, then runs tenant guards, type-check, build, and normal PR CI before approval can unlock. Deterministic Autopilot, Copilot escalation, and prompt copy live under Advanced details. Do not approve while blocked.
 3. **Preview** — Open **homepage preview** on Netlify deploy preview (not `{slug}.masjidweb.com`). Optionally test `/ycode` builder login.
 4. **Approve** — **Approve merge** when CI is green and preview looks good. Records a **reversible checkpoint** (see below).
 
@@ -83,6 +83,21 @@ Deterministic repair and guard behavior:
 - For high-risk repository/publish/page-fetcher/collection-service seams, fails closed unless a registered deterministic strategy can prove the required tenant-scope invariants. The report names the exact missing invariant and why it cannot auto-repair.
 - v2.2 does not broad-merge `lib/page-fetcher.ts` or `lib/services/collectionService.ts`; it gives exact classification for missing host/subdomain tenant resolution, untenant-scoped service-role table reads, missing Knex tenant filters, remaining conflict markers, or missing seam resolver extraction.
 - Does not perform broad text munging in tenant-sensitive files.
+
+### Premium AI repair path
+
+Premium AI is now the primary blocked-update repair path. The admin dashboard sends `repair_mode=premium_ai` by default and uses OpenRouter model selection `latest_claude_frontier` unless a manual model ID is configured.
+
+The workflow:
+
+1. Runs deterministic Autopilot first for known mechanical fixes.
+2. If still blocked, checks `OPENROUTER_API_KEY` early and fails with a clear setup message when missing.
+3. Resolves `latest_claude_frontier` from OpenRouter `/api/v1/models`, preferring Claude Opus/Sonnet frontier IDs, then falling back to the configured repair model.
+4. Requests strict JSON containing unified diffs.
+5. Applies patches only to conflicted files on the PR branch after path validation and `git apply --check`.
+6. Rejects patches with conflict markers, malformed/truncated code, invalid `getSupabaseAdmin(tenantId)`, missing tenant invariants, or disallowed file paths.
+7. Runs completeness checks, Autopilot guard, tenant isolation, type-check, tenant tests, and build before committing and pushing.
+8. Never merges or approves the PR. Approval remains gated by normal PR CI and preview review.
 
 ### Optional Copilot escalation
 

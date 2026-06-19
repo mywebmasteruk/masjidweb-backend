@@ -82,10 +82,10 @@ describe("describeAdminUpdateState", () => {
     });
 
     expect(result.status).toBe("blocked_needs_resolution");
-    expect(result.title).toBe("Autopilot blocked this update");
+    expect(result.title).toBe("Premium AI update needed");
     expect(result.description).toContain("protect tenant data");
-    expect(result.actionLabel).toBe("Retry Autopilot");
-    expect(result.nextActionText).toContain("defer the update");
+    expect(result.actionLabel).toBe("Run Premium AI Update");
+    expect(result.nextActionText).toContain("run tenant safety checks");
     expect(result.canApprove).toBe(false);
     expect(result.canCopyPrompt).toBe(true);
     expect(result.trafficLight).toBe("red");

@@ -819,7 +819,7 @@ const cleanupDeletesUnassigned =
       if (light === "green") {
         hint = "Preview the site, then click Approve merge. Production stays unchanged until you approve.";
       } else if (light === "red") {
-        hint = adminState.autopilotBlockedReason || "Autopilot blocked this update to protect tenant data. Retry Autopilot once, defer the update, or ask a developer.";
+        hint = adminState.autopilotBlockedReason || "Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.";
       } else if (adminState.status === "preparing" || adminState.status === "deploying") {
         hint = "The CTO bot is working. This page refreshes automatically.";
       }
@@ -914,11 +914,11 @@ const cleanupDeletesUnassigned =
           headline: adminState.title || "Fix required before preview",
           detail:
             adminState.nextActionText ||
-            "Retry Autopilot once for mechanical fixes, defer the update, or ask a developer to resolve the pull request.",
-          primaryLabel: adminState.actionLabel || "Retry Autopilot",
+            "Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.",
+          primaryLabel: adminState.actionLabel || "Run Premium AI Update",
           primaryDisabled: false,
           showSpinner: false,
-          reassurance: "Autopilot blocks red updates to protect tenant data. Do not approve until conflicts and checks are resolved.",
+          reassurance: "Production approval stays locked until Premium AI repairs, tenant checks, build, and normal PR CI are green.",
         };
       }
 
@@ -1451,9 +1451,11 @@ const cleanupDeletesUnassigned =
       }
       return (
         '<div class="mw-ai-repair-panel">' +
-        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Use <strong>Retry Autopilot</strong> above to start deterministic repair on GitHub (rerere + package-lock regeneration where safe). If Autopilot reports tenant-sensitive conflicts, it uploads an invariant report and a developer is required. Production is not merged until you approve.</p>' +
-        '<details class="mw-advanced-actions"><summary>Advanced actions</summary>' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Premium AI repairs the safe-update PR branch, runs tenant safety checks, and leaves approval locked until green. Production is not merged until you approve.</p>' +
+        '<p class="mw-ai-repair-meta"><a href="/dashboard/settings/ai">AI Provider Settings</a></p>' +
+        '<details class="mw-advanced-actions"><summary>Advanced details</summary>' +
         '<div class="mw-advanced-actions-body">' +
+        '<button type="button" id="runAiRepairBtn" class="btn btn-ghost btn-sm">Retry deterministic Autopilot</button>' +
         '<button type="button" id="copilotEscalationBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
         '<button type="button" id="assignCopilotBtn" class="btn btn-ghost btn-sm">Assign Copilot</button>' +
         '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
@@ -1489,7 +1491,7 @@ const cleanupDeletesUnassigned =
       const state = window.currentAdminUpdateState || {};
       const prNumber = typeof state.prNumber === "number" ? state.prNumber : null;
       const copilotEscalationMode = opts.copilotEscalationMode || "none";
-      const repairMode = opts.repairMode || "autopilot";
+      const repairMode = opts.repairMode || "premium_ai";
       const isCopilotEscalation = copilotEscalationMode !== "none";
       const isPremiumAiRepair = repairMode === "premium_ai";
       if (!prNumber) {
@@ -1504,7 +1506,7 @@ const cleanupDeletesUnassigned =
       const assignBtn = document.getElementById("assignCopilotBtn");
       const resultEl = document.getElementById("aiRepairResult");
       const activeBtn = isPremiumAiRepair
-        ? premiumBtn
+        ? nowBtn || premiumBtn
         : isCopilotEscalation
           ? copilotEscalationMode === "assign"
             ? assignBtn
@@ -1522,7 +1524,7 @@ const cleanupDeletesUnassigned =
         resultEl.classList.remove("hidden");
         resultEl.classList.add("is-loading");
         resultEl.innerHTML = isPremiumAiRepair
-          ? "<pre>Dispatching Premium AI Repair report workflow…</pre>"
+          ? "<pre>Dispatching Premium AI patch repair workflow…</pre>"
           : isCopilotEscalation
             ? "<pre>Dispatching Copilot escalation workflow…</pre>"
             : "<pre>Dispatching GitHub Actions repair…</pre>";
@@ -1538,9 +1540,9 @@ const cleanupDeletesUnassigned =
       buttons.forEach((button) => {
         button.disabled = false;
       });
-      if (runBtn) runBtn.textContent = "Retry Autopilot";
-      if (nowBtn) nowBtn.textContent = state.actionLabel || "Retry Autopilot";
-      if (premiumBtn) premiumBtn.textContent = "Premium AI Repair";
+      if (runBtn) runBtn.textContent = "Retry deterministic Autopilot";
+      if (nowBtn) nowBtn.textContent = state.actionLabel || "Run Premium AI Update";
+      if (premiumBtn) premiumBtn.textContent = "Run Premium AI Update";
       if (issueBtn) issueBtn.textContent = "Escalate to Copilot";
       if (issueNowBtn) issueNowBtn.textContent = "Escalate to Copilot";
       if (assignBtn) assignBtn.textContent = "Assign Copilot";
@@ -1557,7 +1559,7 @@ const cleanupDeletesUnassigned =
             : isCopilotEscalation
               ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
               : isPremiumAiRepair
-                ? "Premium AI Repair report started on GitHub."
+                ? "Premium AI Repair started on GitHub."
                 : "Autopilot mechanical repair started on GitHub.";
         window.lastAiRepairReply = message;
         window.lastAiRepairModel = "";
@@ -1744,11 +1746,11 @@ const cleanupDeletesUnassigned =
       }
       if (action.kind === "repair" && adminState && adminState.canCopyPrompt) {
         html +=
-          '<button type="button" id="premiumAiRepairNowBtn" class="btn btn-ghost btn-sm">Premium AI Repair</button>';
-        html +=
-          '<details class="mw-advanced-actions"><summary>Advanced actions</summary><div class="mw-advanced-actions-body">' +
+          '<details class="mw-advanced-actions"><summary>Advanced details</summary><div class="mw-advanced-actions-body">' +
+          '<button type="button" id="runAiRepairBtn" class="btn btn-ghost btn-sm">Retry deterministic Autopilot</button>' +
           '<button type="button" id="copilotEscalationNowBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
           '<button type="button" id="copyAiRepairPromptNowBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
+          '<a class="btn btn-ghost btn-sm" href="/dashboard/settings/ai">AI Provider Settings</a>' +
           "</div></details>";
       }
       if (adminState && adminState.prUrl) {
@@ -2299,7 +2301,7 @@ const cleanupDeletesUnassigned =
       }
 
       if (target.id === "runAiRepairBtn" || target.closest("#runAiRepairBtn")) {
-        runAiRepair();
+        runAiRepair({ repairMode: "autopilot" });
         return;
       }
 
@@ -2336,7 +2338,7 @@ const cleanupDeletesUnassigned =
       }
 
       if (target.id === "runAiRepairNowBtn" || target.closest("#runAiRepairNowBtn")) {
-        runAiRepair();
+        runAiRepair({ repairMode: "premium_ai" });
         return;
       }
 
@@ -2369,10 +2371,10 @@ const cleanupDeletesUnassigned =
         const viewed = window.coreUpdateViewedStep || 2;
         if (viewed !== 2) {
           refreshCoreUpdateView(2);
-          setTimeout(() => runAiRepair(), 0);
+          setTimeout(() => runAiRepair({ repairMode: "premium_ai" }), 0);
           return;
         }
-        await runAiRepair();
+        await runAiRepair({ repairMode: "premium_ai" });
         return;
       }
 

@@ -1,8 +1,8 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import {
-  assertValidOpenRouterModelId,
   getAiProviderSettings,
+  workflowOpenRouterModelInput,
 } from "../../../lib/ai-provider-settings";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import {
@@ -32,7 +32,7 @@ function parseCopilotEscalationMode(value: unknown): CopilotEscalationMode {
 
 function parseAiRepairMode(value: unknown, premiumAiRepair: unknown): AiRepairMode {
   if (premiumAiRepair === true) return "premium_ai";
-  if (typeof value !== "string" || value.trim() === "") return "autopilot";
+  if (typeof value !== "string" || value.trim() === "") return "premium_ai";
   const mode = value.trim();
   if (!aiRepairModes.has(mode as AiRepairMode)) {
     throw new Error("repairMode must be one of: autopilot, premium_ai");
@@ -61,7 +61,7 @@ export const POST: APIRoute = async (context) => {
 
   let prNumber = 0;
   let copilotEscalationMode: CopilotEscalationMode = "none";
-  let repairMode: AiRepairMode = "autopilot";
+  let repairMode: AiRepairMode = "premium_ai";
   try {
     const body = (await context.request.json()) as {
       prNumber?: number;
@@ -91,9 +91,28 @@ export const POST: APIRoute = async (context) => {
 
   try {
     const settings = repairMode === "premium_ai" ? await getAiProviderSettings() : null;
-    const openrouterModel = settings?.provider === "openrouter" && settings.enabled ? settings.model : null;
-    if (repairMode === "premium_ai" && openrouterModel) {
-      assertValidOpenRouterModelId(openrouterModel);
+    const openrouterModel = settings?.provider === "openrouter" && settings.enabled
+      ? workflowOpenRouterModelInput(settings)
+      : null;
+    if (repairMode === "premium_ai" && (!settings || settings.provider !== "openrouter" || !settings.enabled)) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Premium AI Repair needs OpenRouter enabled in AI Provider Settings before it can run.",
+          settingsUrl: "/dashboard/settings/ai",
+        }),
+        { status: 400, headers: json },
+      );
+    }
+    if (repairMode === "premium_ai" && settings && !settings.hasApiKey && !process.env["OPENROUTER_API_KEY"]?.trim()) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Premium AI Repair needs an OpenRouter API key configured. Save one in AI Provider Settings and add OPENROUTER_API_KEY as a GitHub Actions secret for the builder repo.",
+          settingsUrl: "/dashboard/settings/ai",
+        }),
+        { status: 400, headers: json },
+      );
     }
     const { workflowUrl } = await dispatchAiRepairWorkflow(token, repo, prNumber, {
       copilotEscalationMode,
@@ -112,13 +131,13 @@ export const POST: APIRoute = async (context) => {
         message: isCopilotEscalation
           ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
           : isPremiumAiRepair
-            ? "Premium AI Repair started. It will produce a report artifact for blocked tenant-sensitive conflicts; it will not auto-merge or approve."
+            ? "Premium AI Repair started. It will repair the PR branch, run tenant safety checks, and leave approval locked until green."
             : "Autopilot deterministic repair started on GitHub. Refresh status in a few minutes.",
         disclaimer: isCopilotEscalation
           ? "Copilot escalation creates a constrained handoff only. It never approves, marks ready, or merges the safe-update PR."
           : isPremiumAiRepair
-            ? "Premium AI Repair uses OpenRouter with OPENROUTER_REPAIR_MODEL and is currently report-only: suggested diffs are not applied automatically until safety can be proven."
-            : "Autopilot v2.2 regenerates known mechanical conflicts such as package-lock.json, then runs the tenant guard. Tenant-sensitive conflicts stay blocked with an invariant report until a developer resolves them.",
+            ? "Premium AI uses OpenRouter with the selected model directive. It can apply patches to the PR branch only after parsing and tenant-guard validation; it never merges or approves production."
+            : "Autopilot regenerates known mechanical conflicts such as package-lock.json, then runs the tenant guard. Tenant-sensitive conflicts stay blocked with an invariant report until resolved.",
       }),
       { headers: json },
     );

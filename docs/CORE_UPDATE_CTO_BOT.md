@@ -7,7 +7,7 @@ Plain-language guide for Ycode core updates without a human CTO (daily schedule 
 1. Optional: click **Prepare safe update** (or wait for **daily 06:00 UTC** automatic run).
 2. Read **email alerts** from MasjidWeb.
 3. When Maintenance shows **green — Ready for you**, open the preview link, then click **Approve merge**.
-4. If **red — Do not approve**, read the Autopilot reason. Click **Retry Autopilot** once for deterministic fixes such as lockfile regeneration, choose **Defer Update**, or ask a developer when it says tenant data is protected.
+4. If **red — Do not approve**, click **Run Premium AI Update**. Premium AI repairs the PR branch, runs tenant safety checks, and keeps approval locked until everything is green. Advanced details still include deterministic Autopilot, Copilot escalation, and copy-prompt options.
 
 You never merge on GitHub yourself.
 
@@ -17,7 +17,8 @@ You never merge on GitHub yourself.
 |------|------|
 | Daily prepare | 06:00 UTC every day |
 | Autopilot classification | Every safe-update PR; writes LOW/MEDIUM/HIGH report and blocked reason |
-| Deterministic repair | Auto after prepare when merge has conflicts; or Retry Autopilot. Regenerates known mechanical conflicts such as `package-lock.json`; blocks high-risk tenant seams with an invariant report. |
+| Premium AI repair | Primary red-state action from Admin Maintenance. Uses OpenRouter latest Claude frontier by default, applies safe unified diffs to the PR branch only, then runs tenant guards, type-check, build, and PR CI before approval can unlock. |
+| Deterministic repair | Runs before Premium AI and remains available under Advanced details. Regenerates known mechanical conflicts such as `package-lock.json`; blocks high-risk tenant seams with an invariant report. |
 | Autopilot guard | Fails if conflict markers or tenant-scope invariants are unsafe |
 | Ready email | When CI turns green |
 | Copilot escalation | Optional after deterministic repair blocks; creates a constrained PR comment/issue and can assign `@copilot` only when requested |
@@ -55,10 +56,10 @@ When Autopilot says **“blocked this update to protect tenant data”**, it fou
 
 Use the buttons this way:
 
-- **Retry Autopilot** — safe once when lockfiles or known deterministic checks may clear. Autopilot v2.2 uploads a repair report showing fixed files, blocked files, reason groups (`known resolver unavailable`, `tenant invariant failed`, `conflict markers remain`), and the next developer action. For `lib/page-fetcher.ts` and `lib/services/collectionService.ts`, v2.2 explains the exact missing tenant invariant instead of generic blocking.
-- **Escalate to Copilot** — click the Admin Maintenance button to dispatch `Mechanical repair safe update PR` with `copilot_escalation_mode=issue`. It creates/updates a constrained GitHub issue/comment for Copilot or a developer. Use **Assign Copilot** only when GitHub Copilot coding agent is enabled for the repository. This never approves or merges.
-- **Defer Update** — use when you do not need the update today.
-- **Developer required** — use when Autopilot names tenant-sensitive conflicts. A developer or Copilot-created draft PR must resolve the PR and run tenant-scope checks before approval.
+- **Run Premium AI Update** — primary red-state button. It asks the latest Claude frontier model through OpenRouter for strict patches, applies them only when they parse and pass tenant guards, and never approves or merges.
+- **Advanced details → Retry deterministic Autopilot** — use when you specifically want only mechanical retry behavior such as lockfile regeneration.
+- **Advanced details → Escalate to Copilot** — dispatches `Mechanical repair safe update PR` with `copilot_escalation_mode=issue`. It creates/updates a constrained GitHub issue/comment for Copilot or a developer. Use **Assign Copilot** only when GitHub Copilot coding agent is enabled for the repository. This never approves or merges.
+- **Developer required** — use when Premium AI cannot return/apply a safe patch or tenant guards fail. A developer or Copilot-created draft PR must resolve the PR and run tenant-scope checks before approval.
 
 ## Revert to weekly
 

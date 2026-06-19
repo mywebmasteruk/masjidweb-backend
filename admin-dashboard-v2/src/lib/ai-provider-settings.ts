@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { getServiceSupabase } from "./supabase-server";
 
 export type AiProvider = "none" | "openrouter";
-export type ModelSelectionMode = "manual";
+export type ModelSelectionMode = "latest_claude_frontier" | "manual";
 export type ReasoningEffort = "low" | "medium" | "high";
 
 export type AiProviderSettingsInput = {
@@ -55,6 +55,7 @@ type AiProviderSettingsRow = {
 };
 
 const DEFAULT_MODEL = "anthropic/claude-opus-4.1";
+export const LATEST_CLAUDE_FRONTIER_MODEL_SELECTION = "latest_claude_frontier" as const;
 const OPENROUTER_MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
 
 export function isValidOpenRouterModelId(model: string | null | undefined): boolean {
@@ -69,11 +70,26 @@ export function assertValidOpenRouterModelId(model: string | null | undefined): 
   }
 }
 
+export function parseModelSelectionMode(value: unknown): ModelSelectionMode {
+  return value === "manual" ? "manual" : LATEST_CLAUDE_FRONTIER_MODEL_SELECTION;
+}
+
+export function workflowOpenRouterModelInput(settings: {
+  modelSelectionMode: ModelSelectionMode;
+  model: string | null;
+}): string {
+  if (settings.modelSelectionMode === LATEST_CLAUDE_FRONTIER_MODEL_SELECTION) {
+    return LATEST_CLAUDE_FRONTIER_MODEL_SELECTION;
+  }
+  assertValidOpenRouterModelId(settings.model);
+  return settings.model as string;
+}
+
 function defaultSettings(): AiProviderSettingsPublic {
   return {
     enabled: false,
     provider: "none",
-    modelSelectionMode: "manual",
+    modelSelectionMode: LATEST_CLAUDE_FRONTIER_MODEL_SELECTION,
     model: DEFAULT_MODEL,
     reasoningEffort: "medium",
     temperature: 0.1,
@@ -131,7 +147,7 @@ function toPublic(row: AiProviderSettingsRow | null): AiProviderSettingsPublic {
   return {
     enabled: row.enabled,
     provider: row.provider,
-    modelSelectionMode: row.model_selection_mode,
+    modelSelectionMode: parseModelSelectionMode(row.model_selection_mode),
     model: row.model,
     reasoningEffort: row.reasoning_effort,
     temperature: Number(row.temperature),
@@ -164,14 +180,15 @@ function numberInRange(value: unknown, fallback: number, min: number, max: numbe
 export function normalizeAiProviderSettingsInput(body: Record<string, unknown>): AiProviderSettingsInput {
   const provider = parseProvider(body.provider);
   const enabled = body.enabled === true;
+  const modelSelectionMode = parseModelSelectionMode(body.modelSelectionMode);
   const model = typeof body.model === "string" && body.model.trim() ? body.model.trim() : null;
-  if (enabled && provider === "openrouter") {
+  if (enabled && provider === "openrouter" && modelSelectionMode === "manual") {
     assertValidOpenRouterModelId(model);
   }
   return {
     enabled,
     provider,
-    modelSelectionMode: "manual",
+    modelSelectionMode,
     model,
     reasoningEffort: parseReasoningEffort(body.reasoningEffort),
     temperature: numberInRange(body.temperature, 0.1, 0, 2),

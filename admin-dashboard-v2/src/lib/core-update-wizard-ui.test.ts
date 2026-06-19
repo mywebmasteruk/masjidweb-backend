@@ -257,7 +257,7 @@ describe("core-update-wizard-ui", () => {
     expect(now.reassurance).toMatch(/Do not click Prepare again/);
   });
 
-  it("shows retry Autopilot action when update is blocked", () => {
+  it("shows Premium AI action when update is blocked", () => {
     const admin = describeAdminUpdateState({
       ok: true,
       activeSafeUpdate: {
@@ -277,8 +277,8 @@ describe("core-update-wizard-ui", () => {
     });
     const now = buildCoreUpdateNowAction(admin);
     expect(now.kind).toBe("repair");
-    expect(now.primaryLabel).toBe("Retry Autopilot");
-    expect(now.reassurance).toContain("protect tenant data");
+    expect(now.primaryLabel).toBe("Run Premium AI Update");
+    expect(now.reassurance).toContain("approval stays locked");
   });
 
   it("shows single prepare action when update is available", () => {

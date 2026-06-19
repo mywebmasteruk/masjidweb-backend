@@ -159,14 +159,14 @@ function blockedDescription(input: AdminSafeUpdateSummary): string {
     return input.autopilotBlockedReason;
   }
   if (input.autopilotRisk === "HIGH") {
-    return "Autopilot blocked this update to protect tenant data. A developer must review tenant-sensitive conflicts before preview or approval.";
+    return "Premium AI repair is needed for tenant-sensitive conflicts. It will preserve tenant safety checks and keep approval locked until green.";
   }
   return "The safe update pull request has merge conflicts in MasjidWeb-customized areas. Production is unchanged. Fix conflicts before preview or approval.";
 }
 
 function blockedNextAction(input: AdminSafeUpdateSummary): string {
   const risk = input.autopilotRisk ? ` Autopilot classified this as ${input.autopilotRisk} risk.` : "";
-  return `Retry Autopilot once for deterministic fixes such as lockfile regeneration, defer the update, or ask a developer to resolve PR #${input.number}.${risk} Do not approve while red.`;
+  return `Run Premium AI Update for PR #${input.number}. Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.${risk} Do not approve while red.`;
 }
 
 function buildAgentPrompt(input: AdminSafeUpdateSummary, reason: string): string {
@@ -269,8 +269,8 @@ export function buildUpdatePhases(
     ),
     phase(
       2,
-      "Automated fix if needed",
-      "The CTO bot runs mechanical repair on GitHub. If status stays red, wait for email or refresh — do not approve.",
+      "Premium AI repair if needed",
+      "Premium AI repairs the PR branch, then tenant safety checks and CI decide whether preview can unlock. If status stays red, do not approve.",
     ),
     phase(
       3,
@@ -426,10 +426,10 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       const reason = blockedDescription(active);
       return withPr(active, {
         status: "blocked_needs_resolution",
-        title: active.autopilotRisk === "HIGH" ? "Autopilot blocked this update" : "Merge test found conflicts",
+        title: active.autopilotRisk === "HIGH" ? "Premium AI update needed" : "Merge test found conflicts",
         description: reason,
         productionStatus: "Production unchanged",
-        actionLabel: "Retry Autopilot",
+        actionLabel: "Run Premium AI Update",
         nextActionText: blockedNextAction(active),
         agentPrompt: buildAgentPrompt(active, reason),
         canPrepare: false,
@@ -446,8 +446,8 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The prepared update failed automated checks. Production is unchanged. Do not approve until checks pass.",
         productionStatus: "Production unchanged",
-        actionLabel: "Run automated fix",
-        nextActionText: `Checks failed for PR #${active.number}. The CTO bot will email you. Retry automated fix or wait — do not approve while red.`,
+        actionLabel: "Fix with Premium AI",
+        nextActionText: `Checks failed for PR #${active.number}. Run Premium AI Update or wait for the CTO bot email — do not approve while red.`,
         agentPrompt: buildAgentPrompt(active, "Safety checks failed"),
         canPrepare: false,
         canApprove: false,

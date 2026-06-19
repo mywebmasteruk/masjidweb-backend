@@ -47,7 +47,7 @@ describe("dispatchAiRepairWorkflow", () => {
     vi.restoreAllMocks();
   });
 
-  it("dispatches ai-repair workflow with pr_number input", async () => {
+  it("dispatches Premium AI repair workflow by default", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 204 });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -67,8 +67,8 @@ describe("dispatchAiRepairWorkflow", () => {
           ref: "main",
           inputs: {
             pr_number: "3",
-            mechanical_only: true,
-            repair_mode: "autopilot",
+            mechanical_only: false,
+            repair_mode: "premium_ai",
             openrouter_model: "",
             copilot_escalation_mode: "none",
           },
@@ -85,6 +85,7 @@ describe("dispatchAiRepairWorkflow", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await dispatchAiRepairWorkflow("token", "owner/repo", 7, {
+      repairMode: "autopilot",
       copilotEscalationMode: "issue",
     });
 
