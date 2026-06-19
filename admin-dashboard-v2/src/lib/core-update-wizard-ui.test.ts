@@ -277,8 +277,8 @@ describe("core-update-wizard-ui", () => {
     });
     const now = buildCoreUpdateNowAction(admin);
     expect(now.kind).toBe("repair");
-    expect(now.primaryLabel).toBe("Run Premium AI Update");
-    expect(now.reassurance).toContain("approval stays locked");
+    expect(now.primaryLabel).toBe("Fix with Premium AI");
+    expect(now.reassurance).toContain("Approval stays locked");
   });
 
   it("shows single prepare action when update is available", () => {

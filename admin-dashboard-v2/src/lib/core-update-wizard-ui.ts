@@ -278,14 +278,14 @@ export function buildCoreUpdateNowAction(
   if (adminState.canCopyPrompt) {
     return {
       kind: "repair",
-      headline: adminState.title || "Fix required before preview",
+      headline: adminState.title || "Update blocked",
       detail:
         adminState.nextActionText ||
-        "Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.",
-      primaryLabel: adminState.actionLabel || "Run Premium AI Update",
+        "Fix the pull request with Premium AI. Approval stays locked until tenant safety checks, build, and normal PR CI are green.",
+      primaryLabel: adminState.actionLabel || "Fix with Premium AI",
       primaryDisabled: false,
       showSpinner: false,
-      reassurance: "Production approval stays locked. Do not approve until Premium AI repairs, tenant checks, build, and normal PR CI are green.",
+      reassurance: "Approval stays locked until Premium AI repair, tenant safety checks, build, and normal PR CI are green.",
     };
   }
 

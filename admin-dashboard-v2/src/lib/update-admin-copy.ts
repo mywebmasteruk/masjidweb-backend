@@ -102,12 +102,10 @@ function trafficLightForStatus(status: AdminUpdateStatus): {
   ) {
     return { trafficLight: "amber", trafficLightLabel: "In progress" };
   }
-  if (
-    status === "blocked_needs_resolution" ||
-    status === "checks_failed" ||
-    status === "setup_required" ||
-    status === "unknown_error"
-  ) {
+  if (status === "blocked_needs_resolution" || status === "checks_failed") {
+    return { trafficLight: "red", trafficLightLabel: "Update blocked" };
+  }
+  if (status === "setup_required" || status === "unknown_error") {
     return { trafficLight: "red", trafficLightLabel: "Do not approve" };
   }
   return { trafficLight: "amber", trafficLightLabel: "No action needed" };
@@ -165,8 +163,7 @@ function blockedDescription(input: AdminSafeUpdateSummary): string {
 }
 
 function blockedNextAction(input: AdminSafeUpdateSummary): string {
-  const risk = input.autopilotRisk ? ` Autopilot classified this as ${input.autopilotRisk} risk.` : "";
-  return `Run Premium AI Update for PR #${input.number}. Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.${risk} Do not approve while red.`;
+  return `Fix PR #${input.number} with Premium AI. Approval stays locked until repair, tenant safety checks, build, and normal PR CI are green.`;
 }
 
 function buildAgentPrompt(input: AdminSafeUpdateSummary, reason: string): string {
@@ -426,10 +423,10 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       const reason = blockedDescription(active);
       return withPr(active, {
         status: "blocked_needs_resolution",
-        title: active.autopilotRisk === "HIGH" ? "Premium AI update needed" : "Merge test found conflicts",
+        title: "Update blocked",
         description: reason,
         productionStatus: "Production unchanged",
-        actionLabel: "Run Premium AI Update",
+        actionLabel: "Fix with Premium AI",
         nextActionText: blockedNextAction(active),
         agentPrompt: buildAgentPrompt(active, reason),
         canPrepare: false,
@@ -447,7 +444,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
           "The prepared update failed automated checks. Production is unchanged. Do not approve until checks pass.",
         productionStatus: "Production unchanged",
         actionLabel: "Fix with Premium AI",
-        nextActionText: `Checks failed for PR #${active.number}. Run Premium AI Update or wait for the CTO bot email — do not approve while red.`,
+        nextActionText: `Fix PR #${active.number} with Premium AI. Approval stays locked until checks are green.`,
         agentPrompt: buildAgentPrompt(active, "Safety checks failed"),
         canPrepare: false,
         canApprove: false,

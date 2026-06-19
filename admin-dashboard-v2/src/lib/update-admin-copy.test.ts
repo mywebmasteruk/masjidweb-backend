@@ -82,13 +82,14 @@ describe("describeAdminUpdateState", () => {
     });
 
     expect(result.status).toBe("blocked_needs_resolution");
-    expect(result.title).toBe("Premium AI update needed");
+    expect(result.title).toBe("Update blocked");
     expect(result.description).toContain("protect tenant data");
-    expect(result.actionLabel).toBe("Run Premium AI Update");
-    expect(result.nextActionText).toContain("run tenant safety checks");
+    expect(result.actionLabel).toBe("Fix with Premium AI");
+    expect(result.nextActionText).toContain("Approval stays locked");
     expect(result.canApprove).toBe(false);
     expect(result.canCopyPrompt).toBe(true);
     expect(result.trafficLight).toBe("red");
+    expect(result.trafficLightLabel).toBe("Update blocked");
     expect(result.phases.find((p) => p.step === 2)?.status).toBe("current");
     expect(result.agentPrompt).toContain("Safe update PR: #1");
   });

@@ -147,6 +147,18 @@ const cleanupDeletesUnassigned =
       border-radius: var(--radius);
       background: rgba(15, 23, 42, .28);
     }
+    .core-update-state.is-blocked {
+      display: grid;
+      gap: .85rem;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+    .core-update-state.is-blocked .core-update-traffic,
+    .core-update-state.is-blocked .mw-now-action,
+    .core-update-state.is-blocked .mw-blocked-advanced {
+      margin: 0;
+    }
     .core-update-topline {
       display: flex;
       flex-wrap: wrap;
@@ -179,6 +191,8 @@ const cleanupDeletesUnassigned =
       border-radius: calc(var(--radius) - 1px);
       border: 1px solid rgba(148, 163, 184, .28);
       background: rgba(15, 23, 42, .35);
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
     .core-update-traffic.is-green {
       border-color: rgba(34, 197, 94, .35);
@@ -203,6 +217,10 @@ const cleanupDeletesUnassigned =
     .core-update-traffic.is-green .core-update-traffic-dot { color: var(--success); }
     .core-update-traffic.is-amber .core-update-traffic-dot { color: var(--warning); }
     .core-update-traffic.is-red .core-update-traffic-dot { color: var(--danger, #ef4444); }
+    .core-update-traffic-main {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
     .core-update-traffic-label {
       margin: 0;
       font-size: .95rem;
@@ -221,6 +239,12 @@ const cleanupDeletesUnassigned =
       border-radius: calc(var(--radius) - 1px);
       border: 1px solid rgba(59, 130, 246, .35);
       background: linear-gradient(180deg, rgba(59, 130, 246, .12), rgba(59, 130, 246, .04));
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .mw-now-action.is-repair {
+      border-color: rgba(59, 130, 246, .38);
+      background: linear-gradient(180deg, rgba(59, 130, 246, .14), rgba(15, 23, 42, .2));
     }
     .mw-now-action.is-waiting {
       border-color: rgba(148, 163, 184, .35);
@@ -266,6 +290,20 @@ const cleanupDeletesUnassigned =
       gap: .5rem;
       margin-top: .85rem;
       align-items: center;
+    }
+    .mw-secondary-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      padding: .2rem 0;
+      color: var(--muted);
+      font-size: .82rem;
+      font-weight: 650;
+      text-decoration: none;
+    }
+    .mw-secondary-link:hover {
+      color: var(--text);
+      text-decoration: underline;
     }
     .mw-now-spinner {
       width: .95rem;
@@ -634,6 +672,74 @@ const cleanupDeletesUnassigned =
       gap: .5rem;
       margin-top: .65rem;
     }
+    .mw-blocked-advanced {
+      border: 1px solid rgba(148, 163, 184, .18);
+      border-radius: calc(var(--radius) - 1px);
+      background: rgba(15, 23, 42, .18);
+      overflow: hidden;
+    }
+    .mw-blocked-advanced > summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      padding: .72rem .9rem;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: .82rem;
+      font-weight: 650;
+      list-style: none;
+    }
+    .mw-blocked-advanced > summary::-webkit-details-marker {
+      display: none;
+    }
+    .mw-blocked-advanced > summary::after {
+      content: "+";
+      flex-shrink: 0;
+      width: 1.35rem;
+      height: 1.35rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, .28);
+      color: var(--text);
+    }
+    .mw-blocked-advanced[open] > summary::after {
+      content: "−";
+    }
+    .mw-blocked-advanced > summary:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, .03);
+    }
+    .mw-blocked-advanced-body {
+      display: grid;
+      gap: .75rem;
+      padding: .85rem .9rem .95rem;
+      border-top: 1px solid rgba(148, 163, 184, .14);
+    }
+    .mw-locked-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+    }
+    .mw-locked-chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: .2rem .55rem;
+      border: 1px solid rgba(148, 163, 184, .2);
+      background: rgba(148, 163, 184, .08);
+      color: var(--muted);
+      font-size: .72rem;
+      font-weight: 650;
+    }
+    .mw-advanced-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: .78rem;
+      line-height: 1.5;
+    }
     .mw-ai-repair-meta {
       margin: .5rem 0 0;
       font-size: .72rem;
@@ -819,7 +925,7 @@ const cleanupDeletesUnassigned =
       if (light === "green") {
         hint = "Preview the site, then click Approve merge. Production stays unchanged until you approve.";
       } else if (light === "red") {
-        hint = adminState.autopilotBlockedReason || "Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.";
+        hint = adminState.description || adminState.autopilotBlockedReason || "Fix the PR with Premium AI. Approval stays locked until checks are green.";
       } else if (adminState.status === "preparing" || adminState.status === "deploying") {
         hint = "The CTO bot is working. This page refreshes automatically.";
       }
@@ -828,7 +934,7 @@ const cleanupDeletesUnassigned =
         escapeAttr(light) +
         '" role="status" aria-live="polite">' +
         '<span class="core-update-traffic-dot" aria-hidden="true"></span>' +
-        '<div><p class="core-update-traffic-label">' +
+        '<div class="core-update-traffic-main"><p class="core-update-traffic-label">' +
         escapeHtml(label) +
         "</p>" +
         '<p class="core-update-traffic-hint">' +
@@ -911,14 +1017,14 @@ const cleanupDeletesUnassigned =
       if (adminState.canCopyPrompt) {
         return {
           kind: "repair",
-          headline: adminState.title || "Fix required before preview",
+          headline: adminState.title || "Update blocked",
           detail:
             adminState.nextActionText ||
-            "Premium AI will repair the PR, run tenant safety checks, and leave approval locked until green.",
-          primaryLabel: adminState.actionLabel || "Run Premium AI Update",
+            "Fix the pull request with Premium AI. Approval stays locked until tenant safety checks, build, and normal PR CI are green.",
+          primaryLabel: adminState.actionLabel || "Fix with Premium AI",
           primaryDisabled: false,
           showSpinner: false,
-          reassurance: "Production approval stays locked until Premium AI repairs, tenant checks, build, and normal PR CI are green.",
+          reassurance: "Approval stays locked until Premium AI repair, tenant safety checks, build, and normal PR CI are green.",
         };
       }
 
@@ -1415,13 +1521,21 @@ const cleanupDeletesUnassigned =
       return Boolean(phase && (phase.status === "current" || phase.status === "done"));
     }
 
+    function isBlockedUpdateState(adminState) {
+      return Boolean(
+        adminState &&
+          adminState.canCopyPrompt &&
+          (adminState.status === "blocked_needs_resolution" || adminState.status === "checks_failed"),
+      );
+    }
+
     function shouldShowAiRepairBlock(adminState, viewedStep) {
-      if (!adminState?.canCopyPrompt) return false;
+      if (!adminState?.canCopyPrompt || isBlockedUpdateState(adminState)) return false;
       const workflowStep = getWorkflowStep(adminState.phases || []);
       return viewedStep === 2 || (viewedStep === workflowStep && workflowStep === 2);
     }
 
-    function renderAiRepairPanelHtml(aiRepairRun, aiRepairSummary) {
+    function renderAiRepairResultHtml(aiRepairRun, aiRepairSummary) {
       const saved = window.lastAiRepairReply || "";
       const liveSummary = aiRepairSummary || "";
       const showPanel = saved || liveSummary || aiRepairRun;
@@ -1450,23 +1564,29 @@ const cleanupDeletesUnassigned =
           "</pre>";
       }
       return (
-        '<div class="mw-ai-repair-panel">' +
-        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Premium AI repairs the safe-update PR branch, runs tenant safety checks, and leaves approval locked until green. Production is not merged until you approve.</p>' +
-        '<p class="mw-ai-repair-meta"><a href="/dashboard/settings/ai">AI Provider Settings</a></p>' +
-        '<details class="mw-advanced-actions"><summary>Advanced details</summary>' +
-        '<div class="mw-advanced-actions-body">' +
-        '<button type="button" id="runAiRepairBtn" class="btn btn-ghost btn-sm">Retry deterministic Autopilot</button>' +
-        '<button type="button" id="copilotEscalationBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
-        '<button type="button" id="assignCopilotBtn" class="btn btn-ghost btn-sm">Assign Copilot</button>' +
-        '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
-        "</div></details>" +
         '<div id="aiRepairResult" class="mw-ai-repair-result' +
         hidden +
         loading +
         outcomeClass +
         '">' +
         statusHtml +
-        "</div></div>"
+        "</div>"
+      );
+    }
+
+    function renderAiRepairPanelHtml(aiRepairRun, aiRepairSummary) {
+      return (
+        '<div class="mw-ai-repair-panel">' +
+        '<p class="text-xs text-muted" style="margin:0;line-height:1.55;">Premium AI repairs the safe-update PR branch, runs tenant safety checks, and leaves approval locked until green. Production is not merged until you approve.</p>' +
+        '<details class="mw-advanced-actions"><summary>Advanced repair options</summary>' +
+        '<div class="mw-advanced-actions-body">' +
+        '<button type="button" id="runAiRepairBtn" class="btn btn-ghost btn-sm">Retry deterministic Autopilot</button>' +
+        '<button type="button" id="copilotEscalationBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
+        '<button type="button" id="assignCopilotBtn" class="btn btn-ghost btn-sm">Assign Copilot</button>' +
+        '<button type="button" id="copyAiRepairPromptBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
+        "</div></details>" +
+        renderAiRepairResultHtml(aiRepairRun, aiRepairSummary) +
+        "</div>"
       );
     }
 
@@ -1541,8 +1661,8 @@ const cleanupDeletesUnassigned =
         button.disabled = false;
       });
       if (runBtn) runBtn.textContent = "Retry deterministic Autopilot";
-      if (nowBtn) nowBtn.textContent = state.actionLabel || "Run Premium AI Update";
-      if (premiumBtn) premiumBtn.textContent = "Run Premium AI Update";
+      if (nowBtn) nowBtn.textContent = state.actionLabel || "Fix with Premium AI";
+      if (premiumBtn) premiumBtn.textContent = "Fix with Premium AI";
       if (issueBtn) issueBtn.textContent = "Escalate to Copilot";
       if (issueNowBtn) issueNowBtn.textContent = "Escalate to Copilot";
       if (assignBtn) assignBtn.textContent = "Assign Copilot";
@@ -1559,7 +1679,7 @@ const cleanupDeletesUnassigned =
             : isCopilotEscalation
               ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
               : isPremiumAiRepair
-                ? "Premium AI Repair started on GitHub."
+                ? "Premium AI repair started on GitHub."
                 : "Autopilot mechanical repair started on GitHub.";
         window.lastAiRepairReply = message;
         window.lastAiRepairModel = "";
@@ -1574,7 +1694,7 @@ const cleanupDeletesUnassigned =
             ? '<p class="mw-ai-repair-meta text-xs text-muted">' + escapeHtml(res.disclaimer) + "</p>"
             : "";
         resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
-        toast(isCopilotEscalation ? "Copilot escalation requested." : isPremiumAiRepair ? "Premium AI Repair started." : "Automated repair started on GitHub.", true);
+        toast(isCopilotEscalation ? "Copilot escalation requested." : isPremiumAiRepair ? "Premium AI repair started." : "Automated repair started on GitHub.", true);
         aiRepairWatchActive = true;
         await fetchAiRepairStatus();
         startAiRepairPolling();
@@ -1587,7 +1707,7 @@ const cleanupDeletesUnassigned =
           : isCopilotEscalation
             ? "Copilot escalation failed. Check GitHub Actions on the builder repo."
             : isPremiumAiRepair
-              ? "Premium AI Repair failed. Check the workflow report/logs on the builder repo."
+              ? "Premium AI repair failed. Check the workflow report/logs on the builder repo."
               : "Automated repair failed. Check GitHub Actions on the builder repo or wait for the CTO bot email.";
       const workflowLink =
         typeof res.workflowUrl === "string"
@@ -1595,7 +1715,13 @@ const cleanupDeletesUnassigned =
             escapeHtml(res.workflowUrl) +
             '" target="_blank" rel="noopener noreferrer">Workflow</a></p>'
           : "";
-      resultEl.innerHTML = workflowLink + "<pre>" + escapeHtml(err) + "</pre>";
+      const settingsLink =
+        typeof res.settingsUrl === "string"
+          ? '<p class="mw-ai-repair-meta text-xs text-muted"><a class="btn btn-ghost btn-sm" href="' +
+            escapeAttr(res.settingsUrl) +
+            '">Open AI Provider Settings</a></p>'
+          : "";
+      resultEl.innerHTML = workflowLink + settingsLink + "<pre>" + escapeHtml(err) + "</pre>";
       toast(err, false);
     }
 
@@ -1719,7 +1845,8 @@ const cleanupDeletesUnassigned =
       if (action.kind === "idle") return "";
 
       const waitingClass = action.showSpinner ? " is-waiting" : "";
-      let html = '<div class="mw-now-action' + waitingClass + '" role="status" aria-live="polite">';
+      const repairClass = action.kind === "repair" ? " is-repair" : "";
+      let html = '<div class="mw-now-action' + waitingClass + repairClass + '" role="status" aria-live="polite">';
       html += '<p class="mw-now-action-label">Your next action</p>';
       html += '<h3 class="mw-now-action-headline">';
       if (action.showSpinner) html += '<span class="mw-now-spinner" aria-hidden="true"></span>';
@@ -1744,16 +1871,12 @@ const cleanupDeletesUnassigned =
           escapeHtml(action.primaryLabel) +
           "</button>";
       }
-      if (action.kind === "repair" && adminState && adminState.canCopyPrompt) {
+      if (action.kind === "repair" && adminState && adminState.prUrl) {
         html +=
-          '<details class="mw-advanced-actions"><summary>Advanced details</summary><div class="mw-advanced-actions-body">' +
-          '<button type="button" id="runAiRepairBtn" class="btn btn-ghost btn-sm">Retry deterministic Autopilot</button>' +
-          '<button type="button" id="copilotEscalationNowBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
-          '<button type="button" id="copyAiRepairPromptNowBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
-          '<a class="btn btn-ghost btn-sm" href="/dashboard/settings/ai">AI Provider Settings</a>' +
-          "</div></details>";
-      }
-      if (adminState && adminState.prUrl) {
+          '<a class="mw-secondary-link" href="' +
+          escapeAttr(adminState.prUrl) +
+          '" target="_blank" rel="noopener noreferrer">Open pull request</a>';
+      } else if (adminState && adminState.prUrl) {
         html +=
           '<a class="btn btn-ghost btn-sm" href="' +
           escapeAttr(adminState.prUrl) +
@@ -1881,6 +2004,53 @@ const cleanupDeletesUnassigned =
       };
     }
 
+    function renderBlockedAdvancedPanel(adminState, data, versionLine) {
+      const repairResultHtml = renderAiRepairResultHtml(window.currentAiRepairRun, window.currentAiRepairSummary);
+      const prLink = adminState?.prUrl
+        ? '<a class="btn btn-ghost btn-sm" href="' +
+          escapeAttr(adminState.prUrl) +
+          '" target="_blank" rel="noopener noreferrer">Open pull request</a>'
+        : "";
+      const versionHtml = versionLine
+        ? '<p class="mw-step-footer-meta text-xs text-muted">' + escapeHtml(versionLine) + "</p>"
+        : "";
+      const stepsHtml =
+        '<div class="mw-locked-chips" aria-label="Locked future steps">' +
+        '<span class="mw-locked-chip">Preview locked</span>' +
+        '<span class="mw-locked-chip">Approval locked</span>' +
+        '<span class="mw-locked-chip">Production unchanged</span>' +
+        "</div>";
+      const workflowRun = window.currentAiRepairRun?.htmlUrl
+        ? '<p class="mw-advanced-note"><a href="' +
+          escapeAttr(window.currentAiRepairRun.htmlUrl) +
+          '" target="_blank" rel="noopener noreferrer">Open latest repair workflow</a></p>'
+        : "";
+      const previewTenant = data?.previewTenant?.slug
+        ? '<p class="mw-advanced-note">Preview tenant: <span class="mono">' +
+          escapeHtml(data.previewTenant.slug) +
+          "</span></p>"
+        : "";
+      return (
+        '<details class="mw-blocked-advanced"><summary>Advanced repair options</summary>' +
+        '<div class="mw-blocked-advanced-body">' +
+        stepsHtml +
+        '<p class="mw-advanced-note">Use these only if Premium AI needs manual help. Routine workflow details stay hidden by default.</p>' +
+        '<div class="mw-advanced-actions-body">' +
+        '<button type="button" id="runAiRepairBtn" class="btn btn-ghost btn-sm">Retry deterministic Autopilot</button>' +
+        '<button type="button" id="copilotEscalationNowBtn" class="btn btn-ghost btn-sm">Escalate to Copilot</button>' +
+        '<button type="button" id="assignCopilotBtn" class="btn btn-ghost btn-sm">Assign Copilot</button>' +
+        '<button type="button" id="copyAiRepairPromptNowBtn" class="btn btn-ghost btn-sm">Copy prompt</button>' +
+        '<a class="btn btn-ghost btn-sm" href="/dashboard/settings/ai">AI Provider Settings</a>' +
+        prLink +
+        "</div>" +
+        repairResultHtml +
+        workflowRun +
+        previewTenant +
+        versionHtml +
+        "</div></details>"
+      );
+    }
+
     function renderWizardNav(viewedStep, workflowStep, adminState, versionLine) {
       const backDisabled = viewedStep <= 1;
       const nextNav = getWizardNextNav(viewedStep, workflowStep, adminState);
@@ -1940,7 +2110,8 @@ const cleanupDeletesUnassigned =
       const productionPillClass = adminState.productionStatus === "Deploy pending" ? " pending" : "";
       const versionLine = buildVersionLine(data);
 
-      let html = '<div class="core-update-state" data-viewed-step="' + escapeAttr(step) + '">';
+      const blockedState = isBlockedUpdateState(adminState);
+      let html = '<div class="core-update-state' + (blockedState ? " is-blocked" : "") + '" data-viewed-step="' + escapeAttr(step) + '">';
       html += renderTrafficLightBanner(adminState);
       html +=
         '<div class="core-update-topline"><span class="core-update-pill' +
@@ -1957,9 +2128,13 @@ const cleanupDeletesUnassigned =
           window.currentAiRepairRun,
           window.currentAiRepairSummary,
         );
-        html += renderStepper(phases, step, workflowStep);
-        html += renderStepPanel(adminState, data, step);
-        html += renderWizardNav(step, workflowStep, adminState, versionLine);
+        if (blockedState) {
+          html += renderBlockedAdvancedPanel(adminState, data, versionLine);
+        } else {
+          html += renderStepper(phases, step, workflowStep);
+          html += renderStepPanel(adminState, data, step);
+          html += renderWizardNav(step, workflowStep, adminState, versionLine);
+        }
       } else {
         html += '<h3 class="core-update-headline">' + escapeHtml(adminState.title) + "</h3>";
         html += '<p class="core-update-guide">' + escapeHtml(adminState.description) + "</p>";
