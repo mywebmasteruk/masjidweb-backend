@@ -53,7 +53,7 @@ describe("describeAdminUpdateState", () => {
     expect(result.phases.find((p) => p.step === 1)?.status).toBe("current");
   });
 
-  it("fails closed when release or fork version cannot be verified", () => {
+  it("fails closed when release or fork version cannot be verified and no safe PR exists", () => {
     const result = describeAdminUpdateState({
       ok: true,
       releaseAheadOfForkPackage: false,
@@ -65,6 +65,7 @@ describe("describeAdminUpdateState", () => {
     expect(result.status).toBe("unknown_error");
     expect(result.trafficLight).toBe("red");
     expect(result.canPrepare).toBe(false);
+    expect(result.canApprove).toBe(false);
     expect(result.description).toContain("could not verify");
   });
 
@@ -111,6 +112,38 @@ describe("describeAdminUpdateState", () => {
     expect(result.trafficLightLabel).toBe("Update blocked");
     expect(result.phases.find((p) => p.step === 2)?.status).toBe("current");
     expect(result.agentPrompt).toContain("Safe update PR: #1");
+  });
+
+  it("shows active blocked PR action when semver lookup is unavailable", () => {
+    const result = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: false,
+      latestReleaseVersion: null,
+      forkPackageVersion: null,
+      deployedPackageVersion: "1.20.0",
+      activeSafeUpdate: {
+        ...basePr,
+        number: 23,
+        title: "chore: review Ycode core update to 68d57f5",
+        url: "https://github.com/mywebmasteruk/ycode-mw-tenant/pull/23",
+        isDraft: true,
+        mergeable: true,
+        mergeableState: "unstable",
+        ciStatus: "failure",
+        labels: ["safe-ycode-update", "needs-developer-review", "tenant-sensitive-update"],
+        autopilotStatus: "blocked",
+        autopilotRisk: "HIGH",
+        autopilotBlockedReason: "Autopilot blocked this update to protect tenant data: 8 conflict(s) are in tenant-sensitive files.",
+      },
+    });
+
+    expect(result.status).toBe("blocked_needs_resolution");
+    expect(result.title).toBe("Update blocked");
+    expect(result.description).toContain("protect tenant data");
+    expect(result.actionLabel).toBe("Fix with Premium AI");
+    expect(result.nextActionText).toContain("PR #23");
+    expect(result.canApprove).toBe(false);
+    expect(result.canCopyPrompt).toBe(true);
   });
 
   it("allows preview when draft PR is clean and checks pass", () => {

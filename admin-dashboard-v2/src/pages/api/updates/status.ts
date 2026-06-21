@@ -119,7 +119,16 @@ export const GET: APIRoute = async (context) => {
           withTimeout(getUpdateStatus(token, repo), 8_000, "GitHub fork status"),
           { behindBy: 0, aheadBy: 0, upstreamRepo: "unknown", lastPush: null },
         ),
-        withTimeout(getReleaseSemverVsFork(token, repo, productionBranch), 12_000, "GitHub release status"),
+        fallbackOnError(
+          withTimeout(getReleaseSemverVsFork(token, repo, productionBranch), 12_000, "GitHub release status"),
+          {
+            latestReleaseVersion: null,
+            forkPackageVersion: null,
+            packageJsonRefUsed: productionBranch,
+            releaseAheadOfForkPackage: false,
+            releaseUrl: null,
+          },
+        ),
         withTimeout(listSyncPRs(token, repo, [productionBranch]), 8_000, "GitHub safe-update PR status"),
         fallbackOnError(resolvePreviewTenantContext(requestedPreviewSlug), {
           slug: requestedPreviewSlug?.trim() || "masjidemo1",

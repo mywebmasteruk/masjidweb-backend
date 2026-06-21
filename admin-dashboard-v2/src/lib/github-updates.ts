@@ -182,6 +182,11 @@ export async function getReleaseSemverVsFork(
         rel.tag_name?.replace(/^v/, "")?.trim() || null;
       releaseUrl = rel.html_url ?? null;
     }
+
+    if (!latestReleaseVersion) {
+      latestReleaseVersion = await fetchPackageJsonVersion(token, YCODE_UPSTREAM_REPO, "main");
+      releaseUrl = null;
+    }
   } catch {
     return {
       latestReleaseVersion: null,
