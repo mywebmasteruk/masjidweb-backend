@@ -335,6 +335,10 @@ export function netlifyDeployPreviewUrlForPr(prNumber: number): string {
   return `https://deploy-preview-${prNumber}--${siteSlug}.netlify.app`;
 }
 
+export function isFailingCheckConclusion(conclusion: string | null | undefined): boolean {
+  return conclusion === "failure" || conclusion === "timed_out" || conclusion === "action_required";
+}
+
 function deployPreviewUrlFromCheckRuns(
   checkRuns: { name?: string | null; details_url?: string | null }[],
 ): string | null {
@@ -376,7 +380,7 @@ async function getHeadCiAndPreview(
       }[];
     };
     if (data.total_count > 0) {
-      const hasFailure = data.check_runs.some((c) => c.conclusion === "failure");
+      const hasFailure = data.check_runs.some((c) => isFailingCheckConclusion(c.conclusion));
       if (hasFailure) {
         return {
           ciStatus: "failure",
@@ -562,7 +566,7 @@ async function getHeadCheckStatus(
     check_runs: { conclusion: string | null; status: string }[];
   };
   if (data.total_count > 0) {
-    const hasFailure = data.check_runs.some((c) => c.conclusion === "failure");
+    const hasFailure = data.check_runs.some((c) => isFailingCheckConclusion(c.conclusion));
     if (hasFailure) return "failure";
 
     const allDone = data.check_runs.every((c) => c.status === "completed");

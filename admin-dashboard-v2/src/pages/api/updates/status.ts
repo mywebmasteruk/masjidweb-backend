@@ -46,6 +46,23 @@ function wasRepublished(createdAt: string | null, publishedAt: string | null): b
   return published - created > 5 * 60 * 1000;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    }),
+  ]);
+}
+
+async function fallbackOnError<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await promise;
+  } catch {
+    return fallback;
+  }
+}
+
 function plainEnglishChangelog(title: string | null, republished: boolean): string[] {
   const firstLine = title?.split("\n").map((line) => line.trim()).find(Boolean) ?? null;
   const normalized = firstLine
@@ -89,13 +106,15 @@ export const GET: APIRoute = async (context) => {
     const requestedPreviewSlug = context.url.searchParams.get("previewTenantSlug");
     const [status, semver, syncPRs, previewTenant, previewTenantOptions, reversibleCheckpoint] =
       await Promise.all([
-      getUpdateStatus(token, repo),
-      getReleaseSemverVsFork(token, repo, productionBranch),
-      listSyncPRs(token, repo, [productionBranch]),
-      resolvePreviewTenantContext(requestedPreviewSlug),
-      listActivePreviewTenantOptions(),
-      getLatestReversibleCheckpoint().catch(() => null),
-    ]);
+        getUpdateStatus(token, repo),
+        getReleaseSemverVsFork(token, repo, productionBranch),
+        listSyncPRs(token, repo, [productionBranch]),
+        fallbackOnError(resolvePreviewTenantContext(requestedPreviewSlug), {
+          slug: requestedPreviewSlug?.trim() || "masjidemo1",
+        }),
+        fallbackOnError(listActivePreviewTenantOptions(), []),
+        fallbackOnError(getLatestReversibleCheckpoint(), null),
+      ]);
 
     let deployedPackageVersion: string | null = null;
     let deployCommitRef: string | null = null;
@@ -118,21 +137,23 @@ export const GET: APIRoute = async (context) => {
           );
         }
 
-        const publishedDeploys = await listProductionBranchDeploys(
-          netlifyToken,
-          nlSite,
-          productionBranch,
-          { maxItems: 100 },
+        const publishedDeploys = await withTimeout(
+          listProductionBranchDeploys(netlifyToken, nlSite, productionBranch, { maxItems: 25 }),
+          10_000,
+          "Netlify deploy history",
         );
         const allHistoryRows = await Promise.all(
           publishedDeploys.map(async (d) => {
             let version: string | null = null;
             if (d.commitRef) {
-              try {
-                version = await fetchPackageJsonVersion(token, repo, d.commitRef);
-              } catch {
-                version = null;
-              }
+              version = await fallbackOnError(
+                withTimeout(
+                  fetchPackageJsonVersion(token, repo, d.commitRef),
+                  2_000,
+                  "GitHub package version lookup",
+                ),
+                null,
+              );
             }
             const republished = wasRepublished(d.createdAt ?? null, d.publishedAt ?? null);
             return {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compareVersions,
+  isFailingCheckConclusion,
   isSupersededSafeUpdatePullRequest,
   isSupersededSafeUpdateVersion,
 } from "./github-updates";
@@ -14,6 +15,16 @@ describe("compareVersions (aligned with ycode-masjidweb check-updates)", () => {
   });
   it("older patch", () => {
     expect(compareVersions("0.9.1", "0.9.2")).toBe(-1);
+  });
+});
+
+describe("isFailingCheckConclusion", () => {
+  it("treats action-required checks as failures", () => {
+    expect(isFailingCheckConclusion("action_required")).toBe(true);
+  });
+
+  it("does not treat neutral informational checks as failures", () => {
+    expect(isFailingCheckConclusion("neutral")).toBe(false);
   });
 });
 
