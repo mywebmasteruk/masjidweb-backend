@@ -1102,7 +1102,16 @@ const cleanupDeletesUnassigned =
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const res = await fetch(path, { ...opts, signal: controller.signal });
+        const res = await fetch(path, {
+          ...opts,
+          cache: "no-store",
+          credentials: "same-origin",
+          headers: {
+            "Cache-Control": "no-cache",
+            ...(opts && opts.headers ? opts.headers : {}),
+          },
+          signal: controller.signal,
+        });
         const text = await res.text();
         try {
           return JSON.parse(text);
@@ -2229,7 +2238,10 @@ const cleanupDeletesUnassigned =
 
       const previewSlug = getStoredPreviewTenantSlug();
       const statusUrl =
-        "/api/updates/status?previewTenantSlug=" + encodeURIComponent(previewSlug);
+        "/api/updates/status?previewTenantSlug=" +
+        encodeURIComponent(previewSlug) +
+        "&ts=" +
+        encodeURIComponent(String(Date.now()));
       const data = await api(statusUrl);
       if (!silent && btn) {
         btn.disabled = false;

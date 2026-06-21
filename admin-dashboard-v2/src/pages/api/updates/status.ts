@@ -47,12 +47,15 @@ function wasRepublished(createdAt: string | null, publishedAt: string | null): b
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+      timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
     }),
-  ]);
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 async function fallbackOnError<T>(promise: Promise<T>, fallback: T): Promise<T> {
@@ -61,6 +64,18 @@ async function fallbackOnError<T>(promise: Promise<T>, fallback: T): Promise<T> 
   } catch {
     return fallback;
   }
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store, max-age=0, must-revalidate",
+      Pragma: "no-cache",
+      Vary: "Cookie, Authorization",
+    },
+  });
 }
 
 function plainEnglishChangelog(title: string | null, republished: boolean): string[] {
@@ -85,18 +100,12 @@ function plainEnglishChangelog(title: string | null, republished: boolean): stri
 
 export const GET: APIRoute = async (context) => {
   if (!(await isAuthorized(context))) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
   }
 
   const github = getGithubUpdatesConfig();
   if (!github) {
-    return new Response(
-      JSON.stringify({ error: "GITHUB_TOKEN or GITHUB_REPO not configured" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+    return jsonResponse({ ok: false, error: "GITHUB_TOKEN or GITHUB_REPO not configured" }, 500);
   }
 
   const { token, repo } = github;
@@ -106,9 +115,15 @@ export const GET: APIRoute = async (context) => {
     const requestedPreviewSlug = context.url.searchParams.get("previewTenantSlug");
     const [status, semver, syncPRs, previewTenant, previewTenantOptions, reversibleCheckpoint] =
       await Promise.all([
-        getUpdateStatus(token, repo),
-        getReleaseSemverVsFork(token, repo, productionBranch),
-        listSyncPRs(token, repo, [productionBranch]),
+        fallbackOnError(
+          withTimeout(getUpdateStatus(token, repo), 8_000, "GitHub fork status"),
+          { behindBy: 0, aheadBy: 0, upstreamRepo: "unknown", lastPush: null },
+        ),
+        withTimeout(getReleaseSemverVsFork(token, repo, productionBranch), 12_000, "GitHub release status"),
+        fallbackOnError(
+          withTimeout(listSyncPRs(token, repo, [productionBranch]), 8_000, "GitHub safe-update PR status"),
+          [],
+        ),
         fallbackOnError(resolvePreviewTenantContext(requestedPreviewSlug), {
           slug: requestedPreviewSlug?.trim() || "masjidemo1",
         }),
@@ -125,15 +140,22 @@ export const GET: APIRoute = async (context) => {
     const nlSite = netlifyBuilderSiteId();
     if (netlifyToken && nlSite) {
       try {
-        const deploys = await listRecentDeploys(netlifyToken, nlSite, 25);
+        const deploys = await withTimeout(
+          listRecentDeploys(netlifyToken, nlSite, 25),
+          8_000,
+          "Netlify current deploy status",
+        );
         const cur = deploys.find((d) => d.isCurrent && d.state === "ready");
         if (cur?.commitRef) {
           deployCommitRef = cur.commitRef;
           deployBranch = cur.branch;
-          deployedPackageVersion = await fetchPackageJsonVersion(
-            token,
-            repo,
-            cur.commitRef,
+          deployedPackageVersion = await fallbackOnError(
+            withTimeout(
+              fetchPackageJsonVersion(token, repo, cur.commitRef),
+              2_000,
+              "GitHub current package version lookup",
+            ),
+            null,
           );
         }
 
@@ -186,11 +208,13 @@ export const GET: APIRoute = async (context) => {
         compareVersions(semver.forkPackageVersion, deployedPackageVersion) > 0,
     );
 
-    const safeUpdatePr = await pickActiveSafeUpdatePr(
-      token,
-      repo,
-      syncPRs,
-      productionBranch,
+    const safeUpdatePr = await fallbackOnError(
+      withTimeout(
+        pickActiveSafeUpdatePr(token, repo, syncPRs, productionBranch),
+        8_000,
+        "GitHub active safe-update PR status",
+      ),
+      null,
     );
 
     const activeSafeUpdate = safeUpdatePr
@@ -231,19 +255,11 @@ export const GET: APIRoute = async (context) => {
       previewTenantOptions,
     };
 
-    return new Response(
-      JSON.stringify({
-        ...statusPayload,
-        adminState: describeAdminUpdateState(statusPayload),
-      }),
-      {
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return jsonResponse({
+      ...statusPayload,
+      adminState: describeAdminUpdateState(statusPayload),
+    });
   } catch (e) {
-    return new Response(
-      JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
+    return jsonResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 };
