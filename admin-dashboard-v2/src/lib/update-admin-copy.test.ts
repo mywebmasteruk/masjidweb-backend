@@ -14,6 +14,7 @@ describe("describeAdminUpdateState", () => {
       ok: true,
       releaseAheadOfForkPackage: true,
       latestReleaseVersion: "1.7.0",
+      forkPackageVersion: "1.6.1",
       deployedPackageVersion: "1.6.1",
     });
 
@@ -30,6 +31,7 @@ describe("describeAdminUpdateState", () => {
       ok: true,
       releaseAheadOfForkPackage: false,
       latestReleaseVersion: "1.6.1",
+      forkPackageVersion: "1.6.1",
       deployedPackageVersion: "1.6.1",
     });
 
@@ -37,7 +39,7 @@ describe("describeAdminUpdateState", () => {
     expect(result.canPrepare).toBe(false);
   });
 
-  it("shows up to date when only an upstream patch is ahead and live matches git main", () => {
+  it("keeps upstream patch releases actionable", () => {
     const result = describeAdminUpdateState({
       ok: true,
       releaseAheadOfForkPackage: true,
@@ -46,9 +48,24 @@ describe("describeAdminUpdateState", () => {
       deployedPackageVersion: "1.10.0",
     });
 
-    expect(result.status).toBe("up_to_date");
+    expect(result.status).toBe("update_available");
+    expect(result.canPrepare).toBe(true);
+    expect(result.phases.find((p) => p.step === 1)?.status).toBe("current");
+  });
+
+  it("fails closed when release or fork version cannot be verified", () => {
+    const result = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: false,
+      latestReleaseVersion: null,
+      forkPackageVersion: null,
+      deployedPackageVersion: "1.10.0",
+    });
+
+    expect(result.status).toBe("unknown_error");
+    expect(result.trafficLight).toBe("red");
     expect(result.canPrepare).toBe(false);
-    expect(result.phases).toEqual([]);
+    expect(result.description).toContain("could not verify");
   });
 
   it("still shows update available when fork main is behind upstream on minor version", () => {
@@ -68,6 +85,8 @@ describe("describeAdminUpdateState", () => {
     const result = describeAdminUpdateState({
       ok: true,
       releaseAheadOfForkPackage: true,
+      latestReleaseVersion: "1.23.1",
+      forkPackageVersion: "1.20.0",
       activeSafeUpdate: {
         ...basePr,
         isDraft: true,
@@ -97,6 +116,8 @@ describe("describeAdminUpdateState", () => {
   it("allows preview when draft PR is clean and checks pass", () => {
     const result = describeAdminUpdateState({
       ok: true,
+      latestReleaseVersion: "1.23.1",
+      forkPackageVersion: "1.20.0",
       activeSafeUpdate: {
         ...basePr,
         number: 2,
@@ -128,6 +149,8 @@ describe("describeAdminUpdateState", () => {
   it("does not treat needs-developer-review as merge conflicts when PR is mergeable", () => {
     const result = describeAdminUpdateState({
       ok: true,
+      latestReleaseVersion: "1.23.1",
+      forkPackageVersion: "1.20.0",
       activeSafeUpdate: {
         ...basePr,
         number: 3,
@@ -147,6 +170,8 @@ describe("describeAdminUpdateState", () => {
   it("allows approval when safe PR is mergeable and checks pass", () => {
     const result = describeAdminUpdateState({
       ok: true,
+      latestReleaseVersion: "1.23.1",
+      forkPackageVersion: "1.20.0",
       activeSafeUpdate: {
         ...basePr,
         number: 3,
@@ -167,6 +192,8 @@ describe("describeAdminUpdateState", () => {
   it("tells admins to wait while checks are pending", () => {
     const result = describeAdminUpdateState({
       ok: true,
+      latestReleaseVersion: "1.23.1",
+      forkPackageVersion: "1.20.0",
       activeSafeUpdate: {
         ...basePr,
         number: 4,

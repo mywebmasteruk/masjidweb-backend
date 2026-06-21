@@ -120,10 +120,7 @@ export const GET: APIRoute = async (context) => {
           { behindBy: 0, aheadBy: 0, upstreamRepo: "unknown", lastPush: null },
         ),
         withTimeout(getReleaseSemverVsFork(token, repo, productionBranch), 12_000, "GitHub release status"),
-        fallbackOnError(
-          withTimeout(listSyncPRs(token, repo, [productionBranch]), 8_000, "GitHub safe-update PR status"),
-          [],
-        ),
+        withTimeout(listSyncPRs(token, repo, [productionBranch]), 8_000, "GitHub safe-update PR status"),
         fallbackOnError(resolvePreviewTenantContext(requestedPreviewSlug), {
           slug: requestedPreviewSlug?.trim() || "masjidemo1",
         }),
@@ -208,13 +205,10 @@ export const GET: APIRoute = async (context) => {
         compareVersions(semver.forkPackageVersion, deployedPackageVersion) > 0,
     );
 
-    const safeUpdatePr = await fallbackOnError(
-      withTimeout(
-        pickActiveSafeUpdatePr(token, repo, syncPRs, productionBranch),
-        8_000,
-        "GitHub active safe-update PR status",
-      ),
-      null,
+    const safeUpdatePr = await withTimeout(
+      pickActiveSafeUpdatePr(token, repo, syncPRs, productionBranch),
+      8_000,
+      "GitHub active safe-update PR status",
     );
 
     const activeSafeUpdate = safeUpdatePr
