@@ -141,8 +141,12 @@ describe("listSyncPRs and pickActiveSafeUpdatePr", () => {
   });
 
   it("finds an active safe-update PR when compare status is unknown", async () => {
-    const fetchMock = vi.fn(async (url: string | URL) => {
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const href = String(url);
+      const isAuthed = Boolean((init?.headers as Record<string, string> | undefined)?.Authorization);
+      if (isAuthed && href.startsWith("https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/")) {
+        return new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });
+      }
       if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/pulls?base=main&state=open&per_page=30") {
         return new Response(JSON.stringify([
           {

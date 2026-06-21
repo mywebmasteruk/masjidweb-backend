@@ -46,9 +46,8 @@ export async function getUpdateStatus(
   token: string,
   repo: string,
 ): Promise<ForkStatus> {
-  const repoRes = await fetch(`${GH}/repos/${normalizeBuilderRepo(repo)}`, {
-    headers: headers(token),
-  });
+  const normalizedRepo = normalizeBuilderRepo(repo);
+  const repoRes = await fetchWithPublicFallback(`${GH}/repos/${normalizedRepo}`, token);
   if (!repoRes.ok) throw new Error(`GitHub get repo: ${repoRes.status}`);
   const repoData = (await repoRes.json()) as {
     parent?: { full_name: string; default_branch: string };
@@ -62,14 +61,13 @@ export async function getUpdateStatus(
 
   const upstream = repoData.parent.full_name;
   const upstreamOwner = upstream.split("/")[0];
-  const normalizedRepo = normalizeBuilderRepo(repo);
   const forkOwner = normalizedRepo.split("/")[0];
   const base = repoData.parent.default_branch;
   const head = repoData.default_branch;
 
-  const cmpRes = await fetch(
+  const cmpRes = await fetchWithPublicFallback(
     `${GH}/repos/${normalizedRepo}/compare/${upstreamOwner}:${base}...${forkOwner}:${head}`,
-    { headers: headers(token) },
+    token,
   );
   if (!cmpRes.ok) throw new Error(`GitHub compare: ${cmpRes.status}`);
   const cmp = (await cmpRes.json()) as {
@@ -468,9 +466,9 @@ export async function listSyncPRs(
   const prs: SyncPR[] = [];
 
   for (const base of branches) {
-    const res = await fetch(
+    const res = await fetchWithPublicFallback(
       `${GH}/repos/${normalizedRepo}/pulls?base=${base}&state=open&per_page=30`,
-      { headers: headers(token) },
+      token,
     );
     if (!res.ok) continue;
     const list = (await res.json()) as {
@@ -489,9 +487,10 @@ export async function listSyncPRs(
     }[];
 
     for (const pr of list) {
-      const detailRes = await fetch(`${GH}/repos/${normalizedRepo}/pulls/${pr.number}`, {
-        headers: headers(token),
-      });
+      const detailRes = await fetchWithPublicFallback(
+        `${GH}/repos/${normalizedRepo}/pulls/${pr.number}`,
+        token,
+      );
       let mergeable = pr.mergeable;
       let mergeableState: string | null = pr.mergeable_state ?? null;
       let headSha = pr.head.sha;
@@ -689,9 +688,9 @@ export async function fetchBranchHeadSha(
   repo: string,
   branch: string,
 ): Promise<string | null> {
-  const res = await fetch(
-    `${GH}/repos/${repo}/git/ref/heads/${encodeURIComponent(branch.trim())}`,
-    { headers: headers(token) },
+  const res = await fetchWithPublicFallback(
+    `${GH}/repos/${normalizeBuilderRepo(repo)}/git/ref/heads/${encodeURIComponent(branch.trim())}`,
+    token,
   );
   if (!res.ok) return null;
   const data = (await res.json()) as { object?: { sha?: string } };
