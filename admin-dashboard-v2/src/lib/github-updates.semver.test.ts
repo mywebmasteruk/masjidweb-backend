@@ -3,8 +3,12 @@ import {
   compareVersions,
   getReleaseSemverVsFork,
   isFailingCheckConclusion,
+  isSafeUpdatePullRequest,
   isSupersededSafeUpdatePullRequest,
   isSupersededSafeUpdateVersion,
+  listSyncPRs,
+  normalizeBuilderRepo,
+  pickActiveSafeUpdatePr,
 } from "./github-updates";
 
 describe("compareVersions (aligned with ycode-masjidweb check-updates)", () => {
@@ -66,6 +70,134 @@ describe("getReleaseSemverVsFork", () => {
     expect(result.forkPackageVersion).toBe("1.20.0");
     expect(result.releaseAheadOfForkPackage).toBe(true);
     expect(result.releaseUrl).toBeNull();
+  });
+
+  it("reads package versions from canonical public repos when legacy repo metadata fails", async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = String(url);
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant") {
+        return new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });
+      }
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/contents/package.json?ref=main") {
+        return packageJsonResponse("1.20.0");
+      }
+      if (href === "https://api.github.com/repos/ycode/ycode/releases/latest") {
+        return new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 });
+      }
+      if (href === "https://api.github.com/repos/ycode/ycode/contents/package.json?ref=main") {
+        return packageJsonResponse("1.23.1");
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getReleaseSemverVsFork(
+      "bad-token",
+      "mywebmasteruk/ycode-masjidweb",
+      "main",
+    );
+
+    expect(result.forkPackageRepoUsed).toBe("mywebmasteruk/ycode-mw-tenant");
+    expect(result.latestReleaseVersion).toBe("1.23.1");
+    expect(result.forkPackageVersion).toBe("1.20.0");
+    expect(result.releaseAheadOfForkPackage).toBe(true);
+  });
+});
+
+describe("normalizeBuilderRepo", () => {
+  it("maps the removed legacy builder repo to the active fork", () => {
+    expect(normalizeBuilderRepo("mywebmasteruk/ycode-masjidweb")).toBe("mywebmasteruk/ycode-mw-tenant");
+  });
+});
+
+describe("isSafeUpdatePullRequest", () => {
+  it("recognizes hyphenated safe-update titles and tenant-sensitive labels", () => {
+    expect(
+      isSafeUpdatePullRequest({
+        number: 23,
+        title: "safe-update upstream Ycode",
+        base: "main",
+        state: "open",
+        createdAt: "2026-06-21T00:00:00Z",
+        headSha: "sha",
+        isDraft: false,
+        labels: ["tenant-sensitive-update"],
+        mergeable: null,
+        mergeableState: null,
+        ciStatus: "unknown",
+        htmlUrl: "https://github.com/mywebmasteruk/ycode-mw-tenant/pull/23",
+        autopilotStatus: null,
+        autopilotRisk: null,
+        autopilotBlockedReason: null,
+        deployPreviewUrl: null,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("listSyncPRs and pickActiveSafeUpdatePr", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("finds an active safe-update PR when compare status is unknown", async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = String(url);
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/pulls?base=main&state=open&per_page=30") {
+        return new Response(JSON.stringify([
+          {
+            number: 23,
+            title: "safe-update upstream Ycode",
+            base: { ref: "main" },
+            state: "open",
+            draft: false,
+            labels: [{ name: "safe-ycode-update" }],
+            created_at: "2026-06-21T00:00:00Z",
+            mergeable: null,
+            mergeable_state: "unknown",
+            head: { sha: "pr-sha" },
+            html_url: "https://github.com/mywebmasteruk/ycode-mw-tenant/pull/23",
+            body: "Status: Needs review\nRisk: MEDIUM",
+          },
+        ]));
+      }
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/pulls/23") {
+        return new Response(JSON.stringify({
+          mergeable: null,
+          mergeable_state: "unknown",
+          head: { sha: "pr-sha" },
+        }));
+      }
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/commits/pr-sha/check-runs") {
+        return new Response(JSON.stringify({ total_count: 0, check_runs: [] }));
+      }
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/commits/pr-sha/status") {
+        return new Response(JSON.stringify({ state: "pending", statuses: [] }));
+      }
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/git/ref/heads/main") {
+        return new Response(JSON.stringify({ object: { sha: "main-sha" } }));
+      }
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/contents/package.json?ref=main-sha") {
+        return packageJsonResponse("1.20.0");
+      }
+      if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/contents/package.json?ref=pr-sha") {
+        return packageJsonResponse("1.23.1");
+      }
+      return new Response(`unexpected ${href}`, { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const prs = await listSyncPRs("token", "mywebmasteruk/ycode-masjidweb", ["main"]);
+    const active = await pickActiveSafeUpdatePr(
+      "token",
+      "mywebmasteruk/ycode-masjidweb",
+      prs,
+      "main",
+    );
+
+    expect(prs).toHaveLength(1);
+    expect(active?.number).toBe(23);
+    expect(active?.mergeableState).toBe("unknown");
   });
 });
 

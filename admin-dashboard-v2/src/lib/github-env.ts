@@ -1,3 +1,4 @@
+import { normalizeBuilderRepo } from "./github-updates";
 import { readServerEnv } from "./server-env";
 
 export type GithubUpdatesConfig = {
@@ -10,5 +11,5 @@ export function getGithubUpdatesConfig(): GithubUpdatesConfig | null {
   const token = readServerEnv("GITHUB_TOKEN");
   const repo = readServerEnv("GITHUB_REPO");
   if (!token || !repo) return null;
-  return { token, repo };
+  return { token, repo: normalizeBuilderRepo(repo) };
 }

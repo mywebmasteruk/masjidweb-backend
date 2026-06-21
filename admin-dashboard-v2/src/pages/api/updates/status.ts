@@ -6,6 +6,7 @@ import {
   getReleaseSemverVsFork,
   getUpdateStatus,
   listSyncPRs,
+  normalizeBuilderRepo,
   pickActiveSafeUpdatePr,
 } from "../../../lib/github-updates";
 import {
@@ -58,10 +59,18 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-async function fallbackOnError<T>(promise: Promise<T>, fallback: T): Promise<T> {
+async function fallbackOnError<T>(
+  promise: Promise<T>,
+  fallback: T,
+  diagnostics?: string[],
+  label?: string,
+): Promise<T> {
   try {
     return await promise;
-  } catch {
+  } catch (error) {
+    if (diagnostics && label) {
+      diagnostics.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return fallback;
   }
 }
@@ -112,24 +121,40 @@ export const GET: APIRoute = async (context) => {
 
   try {
     const productionBranch = githubProductionBranch();
+    const repoUsed = normalizeBuilderRepo(repo);
+    const diagnostics: string[] = [];
+    if (repoUsed !== repo) {
+      diagnostics.push(`Normalized legacy GITHUB_REPO ${repo} to ${repoUsed}.`);
+    }
     const requestedPreviewSlug = context.url.searchParams.get("previewTenantSlug");
     const [status, semver, syncPRs, previewTenant, previewTenantOptions, reversibleCheckpoint] =
       await Promise.all([
         fallbackOnError(
-          withTimeout(getUpdateStatus(token, repo), 8_000, "GitHub fork status"),
+          withTimeout(getUpdateStatus(token, repoUsed), 8_000, "GitHub fork status"),
           { behindBy: 0, aheadBy: 0, upstreamRepo: "unknown", lastPush: null },
+          diagnostics,
+          "GitHub fork status",
         ),
         fallbackOnError(
-          withTimeout(getReleaseSemverVsFork(token, repo, productionBranch), 12_000, "GitHub release status"),
+          withTimeout(getReleaseSemverVsFork(token, repoUsed, productionBranch), 12_000, "GitHub release status"),
           {
             latestReleaseVersion: null,
             forkPackageVersion: null,
+            forkPackageRepoUsed: repoUsed,
             packageJsonRefUsed: productionBranch,
             releaseAheadOfForkPackage: false,
             releaseUrl: null,
+            diagnostics: ["GitHub release status failed before semver fallback completed."],
           },
+          diagnostics,
+          "GitHub release status",
         ),
-        withTimeout(listSyncPRs(token, repo, [productionBranch]), 8_000, "GitHub safe-update PR status"),
+        fallbackOnError(
+          withTimeout(listSyncPRs(token, repoUsed, [productionBranch]), 8_000, "GitHub safe-update PR status"),
+          [],
+          diagnostics,
+          "GitHub safe-update PR status",
+        ),
         fallbackOnError(resolvePreviewTenantContext(requestedPreviewSlug), {
           slug: requestedPreviewSlug?.trim() || "masjidemo1",
         }),
@@ -157,7 +182,7 @@ export const GET: APIRoute = async (context) => {
           deployBranch = cur.branch;
           deployedPackageVersion = await fallbackOnError(
             withTimeout(
-              fetchPackageJsonVersion(token, repo, cur.commitRef),
+              fetchPackageJsonVersion(token, repoUsed, cur.commitRef),
               2_000,
               "GitHub current package version lookup",
             ),
@@ -176,7 +201,7 @@ export const GET: APIRoute = async (context) => {
             if (d.commitRef) {
               version = await fallbackOnError(
                 withTimeout(
-                  fetchPackageJsonVersion(token, repo, d.commitRef),
+                  fetchPackageJsonVersion(token, repoUsed, d.commitRef),
                   2_000,
                   "GitHub package version lookup",
                 ),
@@ -215,7 +240,7 @@ export const GET: APIRoute = async (context) => {
     );
 
     const safeUpdatePr = await withTimeout(
-      pickActiveSafeUpdatePr(token, repo, syncPRs, productionBranch),
+      pickActiveSafeUpdatePr(token, repoUsed, syncPRs, productionBranch),
       8_000,
       "GitHub active safe-update PR status",
     );
@@ -250,6 +275,7 @@ export const GET: APIRoute = async (context) => {
       activeSafeUpdate,
       updateHistory,
       reversibleCheckpoint,
+      diagnostics: [...diagnostics, ...semver.diagnostics],
     };
 
     const statusPayload = {
@@ -263,6 +289,10 @@ export const GET: APIRoute = async (context) => {
       adminState: describeAdminUpdateState(statusPayload),
     });
   } catch (e) {
-    return jsonResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
+    return jsonResponse({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      diagnostics: ["GitHub update status failed closed before partial status could be built."],
+    }, 500);
   }
 };

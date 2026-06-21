@@ -5,12 +5,32 @@ const GH = "https://api.github.com";
 /** Official Ycode repo — must match tenant `checkForUpdates` upstream. */
 export const YCODE_UPSTREAM_REPO = "ycode/ycode";
 
-function headers(token: string): HeadersInit {
+/** Canonical MasjidWeb builder fork. Legacy envs may still point at ycode-masjidweb. */
+export const MASJIDWEB_BUILDER_REPO = "mywebmasteruk/ycode-mw-tenant";
+
+const LEGACY_BUILDER_REPOS = new Set([
+  "mywebmasteruk/ycode-masjidweb",
+]);
+
+export function normalizeBuilderRepo(repo: string): string {
+  const normalized = repo.trim();
+  return LEGACY_BUILDER_REPOS.has(normalized) ? MASJIDWEB_BUILDER_REPO : normalized;
+}
+
+function headers(token?: string): HeadersInit {
   return {
-    Authorization: `Bearer ${token}`,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
+}
+
+async function fetchWithPublicFallback(url: string, token: string): Promise<Response> {
+  const authed = await fetch(url, { headers: headers(token) });
+  if (authed.ok || (authed.status !== 401 && authed.status !== 403)) {
+    return authed;
+  }
+  return fetch(url, { headers: headers() });
 }
 
 // ── Fork status ──────────────────────────────────────────────────────────────
@@ -26,7 +46,7 @@ export async function getUpdateStatus(
   token: string,
   repo: string,
 ): Promise<ForkStatus> {
-  const repoRes = await fetch(`${GH}/repos/${repo}`, {
+  const repoRes = await fetch(`${GH}/repos/${normalizeBuilderRepo(repo)}`, {
     headers: headers(token),
   });
   if (!repoRes.ok) throw new Error(`GitHub get repo: ${repoRes.status}`);
@@ -42,12 +62,13 @@ export async function getUpdateStatus(
 
   const upstream = repoData.parent.full_name;
   const upstreamOwner = upstream.split("/")[0];
-  const forkOwner = repo.split("/")[0];
+  const normalizedRepo = normalizeBuilderRepo(repo);
+  const forkOwner = normalizedRepo.split("/")[0];
   const base = repoData.parent.default_branch;
   const head = repoData.default_branch;
 
   const cmpRes = await fetch(
-    `${GH}/repos/${repo}/compare/${upstreamOwner}:${base}...${forkOwner}:${head}`,
+    `${GH}/repos/${normalizedRepo}/compare/${upstreamOwner}:${base}...${forkOwner}:${head}`,
     { headers: headers(token) },
   );
   if (!cmpRes.ok) throw new Error(`GitHub compare: ${cmpRes.status}`);
@@ -88,9 +109,9 @@ export async function fetchPackageJsonVersion(
   forkRepo: string,
   ref: string,
 ): Promise<string | null> {
-  const pkgRes = await fetch(
-    `${GH}/repos/${forkRepo}/contents/package.json?ref=${encodeURIComponent(ref.trim())}`,
-    { headers: headers(token) },
+  const pkgRes = await fetchWithPublicFallback(
+    `${GH}/repos/${normalizeBuilderRepo(forkRepo)}/contents/package.json?ref=${encodeURIComponent(ref.trim())}`,
+    token,
   );
   if (!pkgRes.ok) return null;
   const raw = (await pkgRes.json()) as {
@@ -124,11 +145,14 @@ export function compareVersions(a: string, b: string): number {
 export interface ReleaseSemverVsFork {
   latestReleaseVersion: string | null;
   forkPackageVersion: string | null;
+  /** GitHub repo used to read the fork package.json after legacy repo normalization. */
+  forkPackageRepoUsed: string;
   /** Git branch (or ref) used to read `package.json` for semver (production deploy branch, not necessarily the repo default). */
   packageJsonRefUsed: string;
   /** True when latest GitHub Release tag is newer than `version` in fork package.json (matches tenant Settings → Updates). */
   releaseAheadOfForkPackage: boolean;
   releaseUrl: string | null;
+  diagnostics: string[];
 }
 
 /**
@@ -144,57 +168,70 @@ export async function getReleaseSemverVsFork(
   packageJsonRef?: string,
 ): Promise<ReleaseSemverVsFork> {
   const refDesired = packageJsonRef?.trim();
+  const forkPackageRepoUsed = normalizeBuilderRepo(forkRepo);
+  const diagnostics: string[] = [];
   let latestReleaseVersion: string | null = null;
   let forkPackageVersion: string | null = null;
   let releaseUrl: string | null = null;
   let packageJsonRefUsed = refDesired || "main";
 
+  if (forkPackageRepoUsed !== forkRepo.trim()) {
+    diagnostics.push(`Normalized legacy GITHUB_REPO ${forkRepo.trim()} to ${forkPackageRepoUsed}.`);
+  }
+
   try {
-    const metaRes = await fetch(`${GH}/repos/${forkRepo}`, {
-      headers: headers(token),
-    });
-    if (!metaRes.ok) {
-      return {
-        latestReleaseVersion: null,
-        forkPackageVersion: null,
-        packageJsonRefUsed: refDesired || "main",
-        releaseAheadOfForkPackage: false,
-        releaseUrl: null,
-      };
+    const metaRes = await fetchWithPublicFallback(`${GH}/repos/${forkPackageRepoUsed}`, token);
+    if (metaRes.ok) {
+      const meta = (await metaRes.json()) as { default_branch?: string };
+      const defaultBranch = (meta.default_branch || "main").trim();
+      packageJsonRefUsed = (refDesired || defaultBranch).trim();
+    } else {
+      diagnostics.push(`Could not read fork repo metadata (${metaRes.status}); using ${packageJsonRefUsed}.`);
     }
-    const meta = (await metaRes.json()) as { default_branch?: string };
-    const defaultBranch = (meta.default_branch || "main").trim();
-    const branch = (packageJsonRef?.trim() || defaultBranch).trim();
-    packageJsonRefUsed = branch;
+  } catch (error) {
+    diagnostics.push(`Could not read fork repo metadata: ${error instanceof Error ? error.message : String(error)}.`);
+  }
 
-    forkPackageVersion = await fetchPackageJsonVersion(token, forkRepo, branch);
+  forkPackageVersion = await fetchPackageJsonVersion(token, forkPackageRepoUsed, packageJsonRefUsed);
+  if (!forkPackageVersion && packageJsonRefUsed !== "main") {
+    diagnostics.push(`Could not read fork package.json at ${packageJsonRefUsed}; retrying main.`);
+    forkPackageVersion = await fetchPackageJsonVersion(token, MASJIDWEB_BUILDER_REPO, "main");
+    if (forkPackageVersion) packageJsonRefUsed = "main";
+  }
+  if (!forkPackageVersion && forkPackageRepoUsed !== MASJIDWEB_BUILDER_REPO) {
+    diagnostics.push(`Could not read fork package.json from ${forkPackageRepoUsed}; retrying ${MASJIDWEB_BUILDER_REPO}.`);
+    forkPackageVersion = await fetchPackageJsonVersion(token, MASJIDWEB_BUILDER_REPO, "main");
+    if (forkPackageVersion) packageJsonRefUsed = "main";
+  }
 
-    const relRes = await fetch(
+  try {
+    const relRes = await fetchWithPublicFallback(
       `${GH}/repos/${YCODE_UPSTREAM_REPO}/releases/latest`,
-      { headers: headers(token) },
+      token,
     );
     if (relRes.ok) {
       const rel = (await relRes.json()) as {
         tag_name?: string;
         html_url?: string;
       };
-      latestReleaseVersion =
-        rel.tag_name?.replace(/^v/, "")?.trim() || null;
+      latestReleaseVersion = rel.tag_name?.replace(/^v/, "")?.trim() || null;
       releaseUrl = rel.html_url ?? null;
+    } else {
+      diagnostics.push(`Could not read latest upstream release (${relRes.status}); falling back to upstream package.json.`);
     }
+  } catch (error) {
+    diagnostics.push(`Could not read latest upstream release: ${error instanceof Error ? error.message : String(error)}.`);
+  }
 
-    if (!latestReleaseVersion) {
-      latestReleaseVersion = await fetchPackageJsonVersion(token, YCODE_UPSTREAM_REPO, "main");
-      releaseUrl = null;
-    }
-  } catch {
-    return {
-      latestReleaseVersion: null,
-      forkPackageVersion: null,
-      packageJsonRefUsed: refDesired || "main",
-      releaseAheadOfForkPackage: false,
-      releaseUrl: null,
-    };
+  if (!latestReleaseVersion) {
+    latestReleaseVersion = await fetchPackageJsonVersion(token, YCODE_UPSTREAM_REPO, "main");
+    releaseUrl = null;
+  }
+  if (!latestReleaseVersion) {
+    diagnostics.push(`Could not read upstream package.json from ${YCODE_UPSTREAM_REPO}@main.`);
+  }
+  if (!forkPackageVersion) {
+    diagnostics.push(`Could not read fork package.json from ${forkPackageRepoUsed}@${packageJsonRefUsed}.`);
   }
 
   const releaseAheadOfForkPackage = Boolean(
@@ -206,9 +243,11 @@ export async function getReleaseSemverVsFork(
   return {
     latestReleaseVersion,
     forkPackageVersion,
+    forkPackageRepoUsed,
     packageJsonRefUsed,
     releaseAheadOfForkPackage,
     releaseUrl,
+    diagnostics,
   };
 }
 
@@ -370,9 +409,9 @@ async function getHeadCiAndPreview(
   ciStatus: "success" | "failure" | "pending" | "unknown";
   deployPreviewUrl: string | null;
 }> {
-  const res = await fetch(
-    `${GH}/repos/${repo}/commits/${sha}/check-runs`,
-    { headers: headers(token) },
+  const res = await fetchWithPublicFallback(
+    `${GH}/repos/${normalizeBuilderRepo(repo)}/commits/${sha}/check-runs`,
+    token,
   );
   if (res.ok) {
     const data = (await res.json()) as {
@@ -421,6 +460,7 @@ export async function listSyncPRs(
   /** If omitted, uses {@link DEFAULT_SYNC_PR_BASE_BRANCHES}. */
   baseBranches?: string[],
 ): Promise<SyncPR[]> {
+  const normalizedRepo = normalizeBuilderRepo(repo);
   const branches =
     baseBranches && baseBranches.length > 0
       ? baseBranches
@@ -429,7 +469,7 @@ export async function listSyncPRs(
 
   for (const base of branches) {
     const res = await fetch(
-      `${GH}/repos/${repo}/pulls?base=${base}&state=open&per_page=5`,
+      `${GH}/repos/${normalizedRepo}/pulls?base=${base}&state=open&per_page=30`,
       { headers: headers(token) },
     );
     if (!res.ok) continue;
@@ -449,7 +489,7 @@ export async function listSyncPRs(
     }[];
 
     for (const pr of list) {
-      const detailRes = await fetch(`${GH}/repos/${repo}/pulls/${pr.number}`, {
+      const detailRes = await fetch(`${GH}/repos/${normalizedRepo}/pulls/${pr.number}`, {
         headers: headers(token),
       });
       let mergeable = pr.mergeable;
@@ -467,7 +507,7 @@ export async function listSyncPRs(
       }
       const { ciStatus, deployPreviewUrl } = await getHeadCiAndPreview(
         token,
-        repo,
+        normalizedRepo,
         headSha,
         pr.number,
       );
@@ -494,10 +534,14 @@ export async function listSyncPRs(
 }
 
 export function isSafeUpdatePullRequest(pr: SyncPR): boolean {
+  const normalizedLabels = pr.labels.map((label) => label.toLowerCase());
+  const title = pr.title.toLowerCase();
   return (
-    pr.labels.includes("safe-ycode-update") ||
-    pr.title.toLowerCase().includes("ycode") ||
-    pr.title.toLowerCase().includes("safe update")
+    normalizedLabels.includes("safe-ycode-update") ||
+    normalizedLabels.includes("tenant-sensitive-update") ||
+    title.includes("ycode") ||
+    title.includes("safe update") ||
+    title.includes("safe-update")
   );
 }
 
@@ -533,19 +577,20 @@ export async function pickActiveSafeUpdatePr(
   prs: SyncPR[],
   productionBranch: string,
 ): Promise<SyncPR | null> {
+  const normalizedRepo = normalizeBuilderRepo(repo);
   const candidates = prs
     .filter(isSafeUpdatePullRequest)
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   if (candidates.length === 0) return null;
 
-  const mainSha = await fetchBranchHeadSha(token, repo, productionBranch);
+  const mainSha = await fetchBranchHeadSha(token, normalizedRepo, productionBranch);
   const mainVersion = mainSha
-    ? await fetchPackageJsonVersion(token, repo, mainSha)
+    ? await fetchPackageJsonVersion(token, normalizedRepo, mainSha)
     : null;
 
   for (const pr of candidates) {
     const headVersion = pr.headSha
-      ? await fetchPackageJsonVersion(token, repo, pr.headSha)
+      ? await fetchPackageJsonVersion(token, normalizedRepo, pr.headSha)
       : null;
     if (isSupersededSafeUpdatePullRequest(pr, mainSha, headVersion, mainVersion)) {
       continue;
@@ -561,9 +606,9 @@ async function getHeadCheckStatus(
   repo: string,
   sha: string,
 ): Promise<"success" | "failure" | "pending" | "unknown"> {
-  const res = await fetch(
-    `${GH}/repos/${repo}/commits/${sha}/check-runs`,
-    { headers: headers(token) },
+  const res = await fetchWithPublicFallback(
+    `${GH}/repos/${normalizeBuilderRepo(repo)}/commits/${sha}/check-runs`,
+    token,
   );
   if (!res.ok) return "unknown";
   const data = (await res.json()) as {
@@ -578,9 +623,9 @@ async function getHeadCheckStatus(
     return allDone ? "success" : "pending";
   }
 
-  const stRes = await fetch(
-    `${GH}/repos/${repo}/commits/${sha}/status`,
-    { headers: headers(token) },
+  const stRes = await fetchWithPublicFallback(
+    `${GH}/repos/${normalizeBuilderRepo(repo)}/commits/${sha}/status`,
+    token,
   );
   if (!stRes.ok) return "pending";
   const st = (await stRes.json()) as {
