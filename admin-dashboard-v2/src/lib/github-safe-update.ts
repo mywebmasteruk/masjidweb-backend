@@ -1,5 +1,15 @@
 const GH = "https://api.github.com";
 const AI_REPAIR_WORKFLOW_FILE = "ai-repair-safe-update.yml";
+
+export class GithubWorkflowDispatchError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "GithubWorkflowDispatchError";
+  }
+}
 const AI_REPAIR_STAGE_NAMES = [
   "Dispatching workflow",
   "Deterministic Autopilot repair",
@@ -32,7 +42,7 @@ export async function dispatchSafeUpdateWorkflow(token: string, repo: string): P
   );
 
   if (!res.ok) {
-    throw new Error(`GitHub workflow dispatch failed: ${res.status}`);
+    throw new GithubWorkflowDispatchError(`GitHub workflow dispatch failed: ${res.status}`, res.status);
   }
 }
 
@@ -452,7 +462,10 @@ export async function dispatchAiRepairWorkflow(
   );
 
   if (!res.ok) {
-    throw new Error(`GitHub AI repair workflow dispatch failed: ${res.status}`);
+    throw new GithubWorkflowDispatchError(
+      `GitHub AI repair workflow dispatch failed: ${res.status}`,
+      res.status,
+    );
   }
 
   return {

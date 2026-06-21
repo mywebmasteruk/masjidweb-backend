@@ -15,6 +15,8 @@ interface ImportMetaEnv {
    */
   readonly NETLIFY_UPDATES_DEPLOY_SITE_ID?: string;
   readonly GITHUB_TOKEN?: string;
+  /** Optional token used for workflow_dispatch calls; falls back to GITHUB_TOKEN. Requires repo access and Actions workflow permission. */
+  readonly GITHUB_WORKFLOW_TOKEN?: string;
   readonly GITHUB_REPO?: string;
   readonly GITHUB_SYNC_BRANCH?: string;
   /** Branch whose package.json semver is compared to ycode/ycode releases (default `main`). */

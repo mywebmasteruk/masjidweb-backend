@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  GithubWorkflowDispatchError,
   describeAiRepairRun,
   dispatchAiRepairWorkflow,
   dispatchSafeUpdateWorkflow,
@@ -34,12 +35,13 @@ describe("dispatchSafeUpdateWorkflow", () => {
     );
   });
 
-  it("throws a plain error when GitHub rejects the dispatch", async () => {
+  it("throws a dispatch error with status when GitHub rejects the dispatch", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 
-    await expect(dispatchSafeUpdateWorkflow("token", "owner/repo")).rejects.toThrow(
-      "GitHub workflow dispatch failed: 404",
-    );
+    await expect(dispatchSafeUpdateWorkflow("token", "owner/repo")).rejects.toMatchObject({
+      message: "GitHub workflow dispatch failed: 404",
+      status: 404,
+    });
   });
 });
 
@@ -131,6 +133,18 @@ describe("dispatchAiRepairWorkflow", () => {
         }),
       }),
     );
+  });
+
+  it("throws a dispatch error with status when GitHub rejects AI repair dispatch", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+
+    await expect(dispatchAiRepairWorkflow("token", "owner/repo", 3)).rejects.toBeInstanceOf(
+      GithubWorkflowDispatchError,
+    );
+    await expect(dispatchAiRepairWorkflow("token", "owner/repo", 3)).rejects.toMatchObject({
+      message: "GitHub AI repair workflow dispatch failed: 401",
+      status: 401,
+    });
   });
 
   it("rejects invalid pr numbers", async () => {

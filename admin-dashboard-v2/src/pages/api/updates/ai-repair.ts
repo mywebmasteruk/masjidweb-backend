@@ -8,6 +8,7 @@ import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import {
   type AiRepairMode,
   type CopilotEscalationMode,
+  GithubWorkflowDispatchError,
   dispatchAiRepairWorkflow,
   getLatestAiRepairRunAfter,
   githubActionsWorkflowUrl,
@@ -88,7 +89,7 @@ export const POST: APIRoute = async (context) => {
     );
   }
 
-  const { token, repo } = github;
+  const { token, workflowToken, repo } = github;
 
   try {
     const settings = repairMode === "premium_ai" ? await getAiProviderSettings() : null;
@@ -116,12 +117,12 @@ export const POST: APIRoute = async (context) => {
       );
     }
     const dispatchStartedAt = new Date();
-    const { workflowUrl } = await dispatchAiRepairWorkflow(token, repo, prNumber, {
+    const { workflowUrl } = await dispatchAiRepairWorkflow(workflowToken, repo, prNumber, {
       copilotEscalationMode,
       repairMode,
       openrouterModel,
     });
-    const workflowRun = await getLatestAiRepairRunAfter(token, repo, dispatchStartedAt);
+    const workflowRun = await getLatestAiRepairRunAfter(workflowToken, repo, dispatchStartedAt);
     const isCopilotEscalation = copilotEscalationMode !== "none";
     const isPremiumAiRepair = repairMode === "premium_ai";
     return new Response(
@@ -150,12 +151,20 @@ export const POST: APIRoute = async (context) => {
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to start AI repair workflow";
     const workflowUrl = githubActionsWorkflowUrl(repo, "ai-repair-safe-update.yml");
-    const hint =
-      message.includes("404") ?
-        " Ensure ai-repair-safe-update.yml is merged to main on the builder repository."
-      : "";
+    let hint = "";
+    let configIssue: string | undefined;
+    if (e instanceof GithubWorkflowDispatchError && e.status === 401) {
+      configIssue = "github_workflow_token_unauthorized";
+      hint = " Configure GITHUB_WORKFLOW_TOKEN or GITHUB_TOKEN in the admin Netlify runtime with a GitHub token that can access this repository and dispatch Actions workflows. Fine-grained tokens need Actions: Read and write plus repository contents/metadata access for the builder repo; classic tokens need repo and workflow scope. Do not use an unauthenticated fallback for workflow dispatch.";
+    } else if (e instanceof GithubWorkflowDispatchError && e.status === 403) {
+      configIssue = "github_workflow_token_forbidden";
+      hint = " The configured GitHub token can reach GitHub but is not allowed to dispatch this workflow. Grant Actions workflow write permission for the builder repo, or replace GITHUB_WORKFLOW_TOKEN/GITHUB_TOKEN with an authorized token.";
+    } else if (e instanceof GithubWorkflowDispatchError && e.status === 404) {
+      configIssue = "github_workflow_not_found_or_repo_access";
+      hint = " Ensure ai-repair-safe-update.yml is merged to main on the builder repository and the GitHub token has access to the configured GITHUB_REPO.";
+    }
     return new Response(
-      JSON.stringify({ ok: false, error: message + hint, workflowUrl }),
+      JSON.stringify({ ok: false, error: message + hint, workflowUrl, configIssue }),
       { status: 502, headers: json },
     );
   }

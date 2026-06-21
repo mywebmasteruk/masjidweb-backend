@@ -3,6 +3,7 @@ import { readServerEnv } from "./server-env";
 
 export type GithubUpdatesConfig = {
   token: string;
+  workflowToken: string;
   repo: string;
 };
 
@@ -11,5 +12,6 @@ export function getGithubUpdatesConfig(): GithubUpdatesConfig | null {
   const token = readServerEnv("GITHUB_TOKEN");
   const repo = readServerEnv("GITHUB_REPO");
   if (!token || !repo) return null;
-  return { token, repo: normalizeBuilderRepo(repo) };
+  const workflowToken = readServerEnv("GITHUB_WORKFLOW_TOKEN") ?? token;
+  return { token, workflowToken, repo: normalizeBuilderRepo(repo) };
 }

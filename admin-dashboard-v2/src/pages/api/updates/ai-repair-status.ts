@@ -32,7 +32,7 @@ export const GET: APIRoute = async (context) => {
   const prNumber = rawPrNumber ? Number.parseInt(rawPrNumber, 10) : null;
 
   try {
-    const aiRepairRun = await getActiveAiRepairRun(github.token, github.repo);
+    const aiRepairRun = await getActiveAiRepairRun(github.workflowToken, github.repo);
     return new Response(
       JSON.stringify({
         ok: true,
