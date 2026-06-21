@@ -9,6 +9,7 @@ import {
   type AiRepairMode,
   type CopilotEscalationMode,
   dispatchAiRepairWorkflow,
+  getLatestAiRepairRunAfter,
   githubActionsWorkflowUrl,
 } from "../../../lib/github-safe-update";
 
@@ -114,25 +115,30 @@ export const POST: APIRoute = async (context) => {
         { status: 400, headers: json },
       );
     }
+    const dispatchStartedAt = new Date();
     const { workflowUrl } = await dispatchAiRepairWorkflow(token, repo, prNumber, {
       copilotEscalationMode,
       repairMode,
       openrouterModel,
     });
+    const workflowRun = await getLatestAiRepairRunAfter(token, repo, dispatchStartedAt);
     const isCopilotEscalation = copilotEscalationMode !== "none";
     const isPremiumAiRepair = repairMode === "premium_ai";
     return new Response(
       JSON.stringify({
         ok: true,
         prNumber,
-        workflowUrl,
+        workflowUrl: workflowRun?.htmlUrl ?? workflowUrl,
+        workflowRunId: workflowRun?.id ?? null,
+        workflowRun,
+        workflowStatusUrl: "/api/updates/ai-repair-status",
         copilotEscalationMode,
         repairMode,
         message: isCopilotEscalation
           ? "Copilot escalation requested. GitHub issue/comment will be created; approval stays blocked until CI is green."
           : isPremiumAiRepair
-            ? "Premium AI Repair started. It will repair the PR branch, run tenant safety checks, and leave approval locked until green."
-            : "Autopilot deterministic repair started on GitHub. Refresh status in a few minutes.",
+            ? "Premium AI repair started. This page will show live GitHub Actions progress as it repairs files, runs tenant safety checks, builds, and pushes repairs."
+            : "Autopilot deterministic repair started on GitHub. This page will show live workflow progress.",
         disclaimer: isCopilotEscalation
           ? "Copilot escalation creates a constrained handoff only. It never approves, marks ready, or merges the safe-update PR."
           : isPremiumAiRepair

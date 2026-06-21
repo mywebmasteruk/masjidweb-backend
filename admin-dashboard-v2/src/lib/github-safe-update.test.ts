@@ -4,6 +4,7 @@ import {
   dispatchAiRepairWorkflow,
   dispatchSafeUpdateWorkflow,
   getActiveAiRepairRun,
+  getLatestAiRepairRunAfter,
   githubActionsWorkflowUrl,
 } from "./github-safe-update";
 
@@ -175,9 +176,32 @@ describe("getActiveAiRepairRun", () => {
         json: async () => ({
           jobs: [
             {
+              id: 1,
+              name: "ai-repair",
+              status: "in_progress",
+              conclusion: null,
+              html_url: "https://github.com/o/r/actions/runs/99/job/1",
+              started_at: "2026-05-31T08:00:30Z",
+              completed_at: null,
               steps: [
                 { name: "Run AI conflict repair", status: "in_progress", conclusion: null },
               ],
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          artifacts: [
+            {
+              id: 77,
+              name: "core-update-premium-ai-repair",
+              size_in_bytes: 1200,
+              expired: false,
+              created_at: "2026-05-31T08:01:00Z",
+              updated_at: "2026-05-31T08:01:00Z",
+              archive_download_url: "https://api.github.com/repos/o/r/actions/artifacts/77/zip",
             },
           ],
         }),
@@ -187,6 +211,42 @@ describe("getActiveAiRepairRun", () => {
     const run = await getActiveAiRepairRun("token", "o/r");
     expect(run?.currentStep).toBe("Run AI conflict repair");
     expect(run?.status).toBe("in_progress");
+    expect(run?.artifacts[0]?.name).toBe("core-update-premium-ai-repair");
+    expect(run?.stages.some((stage) => stage.status === "current")).toBe(true);
+  });
+});
+
+describe("getLatestAiRepairRunAfter", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns recent workflow-dispatch run details", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          workflow_runs: [
+            {
+              id: 100,
+              status: "queued",
+              conclusion: null,
+              html_url: "https://github.com/o/r/actions/runs/100",
+              created_at: "2026-05-31T08:00:03Z",
+              updated_at: "2026-05-31T08:00:03Z",
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ jobs: [] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ artifacts: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const run = await getLatestAiRepairRunAfter("token", "o/r", new Date("2026-05-31T08:00:00Z"));
+
+    expect(run?.id).toBe(100);
+    expect(run?.htmlUrl).toBe("https://github.com/o/r/actions/runs/100");
   });
 });
 
@@ -201,6 +261,11 @@ describe("describeAiRepairRun", () => {
         createdAt: "",
         updatedAt: "",
         currentStep: "Verify production build",
+        currentJob: "ai-repair",
+        jobs: [],
+        stages: [],
+        artifacts: [],
+        failureSummary: null,
       }),
     ).toContain("Verify production build");
     expect(
@@ -212,6 +277,11 @@ describe("describeAiRepairRun", () => {
         createdAt: "",
         updatedAt: "",
         currentStep: null,
+        currentJob: "ai-repair",
+        jobs: [],
+        stages: [],
+        artifacts: [],
+        failureSummary: "ai-repair: Run Premium AI patch repair failure",
       }),
     ).toContain("failed");
   });

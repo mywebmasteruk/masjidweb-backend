@@ -654,6 +654,123 @@ const cleanupDeletesUnassigned =
       line-height: 1.55;
       color: var(--text);
     }
+    .mw-ai-progress-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .7rem;
+    }
+    .mw-ai-progress-title {
+      margin: 0;
+      color: var(--text);
+      font-size: .9rem;
+      font-weight: 750;
+    }
+    .mw-ai-progress-subtitle {
+      margin: .25rem 0 0;
+      color: var(--muted);
+      font-size: .75rem;
+      line-height: 1.45;
+    }
+    .mw-ai-progress-pill {
+      flex-shrink: 0;
+      border-radius: 999px;
+      padding: .18rem .5rem;
+      border: 1px solid rgba(148, 163, 184, .28);
+      background: rgba(148, 163, 184, .08);
+      color: var(--muted);
+      font-size: .7rem;
+      font-weight: 750;
+      text-transform: capitalize;
+    }
+    .mw-ai-progress-pill.is-success {
+      border-color: rgba(34, 197, 94, .35);
+      color: #86efac;
+      background: rgba(34, 197, 94, .1);
+    }
+    .mw-ai-progress-pill.is-error {
+      border-color: rgba(239, 68, 68, .4);
+      color: #fca5a5;
+      background: rgba(239, 68, 68, .1);
+    }
+    .mw-ai-stage-list {
+      display: grid;
+      gap: .45rem;
+      margin: .7rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .mw-ai-stage {
+      display: grid;
+      grid-template-columns: 1.2rem minmax(0, 1fr);
+      gap: .45rem;
+      align-items: start;
+      color: var(--muted);
+      font-size: .78rem;
+    }
+    .mw-ai-stage-dot {
+      width: .72rem;
+      height: .72rem;
+      margin-top: .22rem;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, .35);
+      background: rgba(15, 23, 42, .8);
+    }
+    .mw-ai-stage.is-current .mw-ai-stage-dot {
+      border-color: rgba(59, 130, 246, .8);
+      background: rgba(59, 130, 246, .95);
+      box-shadow: 0 0 0 4px rgba(59, 130, 246, .14);
+    }
+    .mw-ai-stage.is-done .mw-ai-stage-dot {
+      border-color: rgba(34, 197, 94, .75);
+      background: rgba(34, 197, 94, .95);
+    }
+    .mw-ai-stage.is-failed .mw-ai-stage-dot {
+      border-color: rgba(239, 68, 68, .85);
+      background: rgba(239, 68, 68, .95);
+    }
+    .mw-ai-stage.is-skipped {
+      opacity: .62;
+    }
+    .mw-ai-stage-name {
+      display: block;
+      color: var(--text);
+      font-weight: 650;
+    }
+    .mw-ai-stage-detail {
+      display: block;
+      margin-top: .12rem;
+      font-size: .72rem;
+      line-height: 1.35;
+    }
+    .mw-ai-progress-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .45rem;
+      margin-top: .7rem;
+    }
+    .mw-ai-progress-details {
+      margin-top: .75rem;
+      border-top: 1px solid rgba(148, 163, 184, .16);
+      padding-top: .65rem;
+    }
+    .mw-ai-progress-details summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: .75rem;
+      font-weight: 700;
+    }
+    .mw-ai-progress-details summary:hover {
+      color: var(--text);
+    }
+    .mw-ai-progress-detail-list {
+      margin: .55rem 0 0;
+      padding-left: 1rem;
+      color: var(--muted);
+      font-size: .72rem;
+      line-height: 1.5;
+    }
     .mw-advanced-actions {
       margin-top: .85rem;
     }
@@ -1410,7 +1527,11 @@ const cleanupDeletesUnassigned =
     }
 
     async function fetchAiRepairStatus() {
-      const data = await api("/api/updates/ai-repair-status", {}, 15000);
+      const prNumber = window.currentAdminUpdateState && typeof window.currentAdminUpdateState.prNumber === "number"
+        ? window.currentAdminUpdateState.prNumber
+        : null;
+      const url = "/api/updates/ai-repair-status" + (prNumber ? "?prNumber=" + encodeURIComponent(String(prNumber)) : "");
+      const data = await api(url, {}, 15000);
       if (data.ok !== true) return false;
 
       const prevInFlight = isAiRepairInFlight(window.currentAiRepairRun);
@@ -1464,15 +1585,50 @@ const cleanupDeletesUnassigned =
     function isAiRepairInFlight(run) {
       return Boolean(
         run &&
-          (run.status === "queued" || run.status === "in_progress" || run.status === "pending"),
+          (run.status === "queued" ||
+            run.status === "in_progress" ||
+            run.status === "pending" ||
+            run.status === "requested" ||
+            run.status === "waiting"),
       );
     }
 
     function aiRepairOutcomeClass(run) {
       if (isAiRepairInFlight(run)) return "is-loading";
       if (run && run.conclusion === "success") return "is-success";
-      if (run && run.conclusion === "failure") return "is-error";
+      if (run && ["failure", "timed_out", "cancelled", "action_required"].includes(run.conclusion)) return "is-error";
       return "";
+    }
+
+    function aiRepairStatusLabel(run) {
+      if (window.aiRepairLoading) return "dispatching";
+      if (!run) return "started";
+      if (isAiRepairInFlight(run)) return run.status.replaceAll("_", " ");
+      return run.conclusion || run.status;
+    }
+
+    function aiRepairStatusPillClass(run) {
+      if (!run || isAiRepairInFlight(run)) return "";
+      if (run.conclusion === "success") return " is-success";
+      return " is-error";
+    }
+
+    function normalizeAiRepairStages(run) {
+      const fallback = [
+        "Dispatching workflow",
+        "Deterministic Autopilot repair",
+        "Premium AI repairing files one by one",
+        "Running tenant safety checks",
+        "Build/type-check",
+        "Commit/push repairs",
+        "Completed / failed",
+      ];
+      if (run && Array.isArray(run.stages) && run.stages.length > 0) return run.stages;
+      return fallback.map((name, index) => ({
+        name,
+        status: index === 0 ? "current" : "pending",
+        detail: index === 0 ? "Waiting for GitHub to create the workflow run" : null,
+      }));
     }
 
     function stopCoreUpdatePolling() {
@@ -1547,38 +1703,112 @@ const cleanupDeletesUnassigned =
     function renderAiRepairResultHtml(aiRepairRun, aiRepairSummary) {
       const saved = window.lastAiRepairReply || "";
       const liveSummary = aiRepairSummary || "";
-      const showPanel = saved || liveSummary || aiRepairRun;
+      const showPanel = saved || liveSummary || aiRepairRun || window.aiRepairLoading;
       const hidden = showPanel ? "" : " hidden";
       const loading = window.aiRepairLoading || isAiRepairInFlight(aiRepairRun) ? " is-loading" : "";
       const outcomeClass = aiRepairOutcomeClass(aiRepairRun);
-      let statusHtml = "";
-      if (liveSummary || aiRepairRun) {
-        const runLink =
-          aiRepairRun && aiRepairRun.htmlUrl
-            ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
-              escapeHtml(aiRepairRun.htmlUrl) +
-              '" target="_blank" rel="noopener noreferrer">Open this workflow run</a></p>'
-            : "";
-        statusHtml =
-          runLink +
-          "<pre>" +
-          escapeHtml(liveSummary || saved || "Checking automated repair status…") +
-          "</pre>";
-      } else if (saved) {
-        statusHtml =
-          '<p class="mw-ai-repair-meta text-xs text-muted">Last response' +
-          (window.lastAiRepairModel ? " · " + escapeHtml(window.lastAiRepairModel) : "") +
-          "</p><pre>" +
-          escapeHtml(saved) +
-          "</pre>";
-      }
+      const statusLabel = aiRepairStatusLabel(aiRepairRun);
+      const title = aiRepairRun
+        ? aiRepairRun.conclusion === "success"
+          ? "Premium AI repair completed"
+          : aiRepairRun.conclusion
+            ? "Premium AI repair needs attention"
+            : "Premium AI repair in progress"
+        : "Premium AI repair started";
+      const subtitle =
+        liveSummary || saved || "Dispatching workflow and waiting for GitHub Actions to report the first step.";
+      const stages = normalizeAiRepairStages(aiRepairRun);
+      const stagesHtml = stages
+        .map((stage) => {
+          const status = String(stage.status || "pending");
+          const detail = stage.detail ? '<span class="mw-ai-stage-detail">' + escapeHtml(stage.detail) + "</span>" : "";
+          return (
+            '<li class="mw-ai-stage is-' +
+            escapeAttr(status) +
+            '"><span class="mw-ai-stage-dot" aria-hidden="true"></span><span><span class="mw-ai-stage-name">' +
+            escapeHtml(stage.name || "Workflow step") +
+            "</span>" +
+            detail +
+            "</span></li>"
+          );
+        })
+        .join("");
+      const runLink =
+        aiRepairRun && aiRepairRun.htmlUrl
+          ? '<a class="btn btn-ghost btn-sm" href="' +
+            escapeAttr(aiRepairRun.htmlUrl) +
+            '" target="_blank" rel="noopener noreferrer">Open GitHub run</a>'
+          : "";
+      const workflowLink =
+        !aiRepairRun && window.lastAiRepairWorkflowUrl
+          ? '<a class="btn btn-ghost btn-sm" href="' +
+            escapeAttr(window.lastAiRepairWorkflowUrl) +
+            '" target="_blank" rel="noopener noreferrer">Open workflow runs</a>'
+          : "";
+      const artifacts = aiRepairRun && Array.isArray(aiRepairRun.artifacts) ? aiRepairRun.artifacts : [];
+      const artifactLinks = artifacts
+        .map(
+          (artifact) =>
+            '<a class="btn btn-ghost btn-sm" href="' +
+            escapeAttr(artifact.downloadUrl || "#") +
+            '" target="_blank" rel="noopener noreferrer">' +
+            escapeHtml(artifact.name || "Repair artifact") +
+            "</a>",
+        )
+        .join("");
+      const linksHtml = runLink || workflowLink || artifactLinks
+        ? '<div class="mw-ai-progress-links">' + runLink + workflowLink + artifactLinks + "</div>"
+        : "";
+      const jobs = aiRepairRun && Array.isArray(aiRepairRun.jobs) ? aiRepairRun.jobs : [];
+      const jobDetails = jobs
+        .map((job) => {
+          const failedSteps = Array.isArray(job.steps)
+            ? job.steps.filter((step) => step.conclusion === "failure" || step.conclusion === "timed_out")
+            : [];
+          const currentStep = Array.isArray(job.steps)
+            ? job.steps.find((step) => step.status === "in_progress" || step.status === "queued")
+            : null;
+          const suffix = failedSteps.length > 0
+            ? " — failed: " + failedSteps.map((step) => step.name).join(", ")
+            : currentStep
+              ? " — now: " + currentStep.name
+              : job.conclusion
+                ? " — " + job.conclusion
+                : " — " + job.status;
+          return "<li>" + escapeHtml(job.name + suffix) + "</li>";
+        })
+        .join("");
+      const failure = aiRepairRun?.failureSummary
+        ? '<p class="mw-ai-repair-meta"><strong>Failure summary</strong></p><pre>' +
+          escapeHtml(aiRepairRun.failureSummary) +
+          "</pre>"
+        : "";
+      const detailsHtml = jobDetails || failure
+        ? '<details class="mw-ai-progress-details"><summary>Logs, jobs, and artifacts</summary>' +
+          failure +
+          (jobDetails ? '<ul class="mw-ai-progress-detail-list">' + jobDetails + "</ul>" : "") +
+          "</details>"
+        : "";
       return (
         '<div id="aiRepairResult" class="mw-ai-repair-result' +
         hidden +
         loading +
         outcomeClass +
         '">' +
-        statusHtml +
+        '<div class="mw-ai-progress-head"><div><p class="mw-ai-progress-title">' +
+        escapeHtml(title) +
+        '</p><p class="mw-ai-progress-subtitle">' +
+        escapeHtml(subtitle) +
+        '</p></div><span class="mw-ai-progress-pill' +
+        aiRepairStatusPillClass(aiRepairRun) +
+        '">' +
+        escapeHtml(statusLabel) +
+        "</span></div>" +
+        '<ul class="mw-ai-stage-list">' +
+        stagesHtml +
+        "</ul>" +
+        linksHtml +
+        detailsHtml +
         "</div>"
       );
     }
@@ -1650,13 +1880,12 @@ const cleanupDeletesUnassigned =
       }
       window.aiRepairLoading = true;
       if (resultEl) {
-        resultEl.classList.remove("hidden");
-        resultEl.classList.add("is-loading");
-        resultEl.innerHTML = isPremiumAiRepair
-          ? "<pre>Dispatching Premium AI patch repair workflow…</pre>"
+        window.lastAiRepairReply = isPremiumAiRepair
+          ? "Premium AI repair started. Dispatching workflow…"
           : isCopilotEscalation
-            ? "<pre>Dispatching Copilot escalation workflow…</pre>"
-            : "<pre>Dispatching GitHub Actions repair…</pre>";
+            ? "Copilot escalation requested. Dispatching workflow…"
+            : "Autopilot repair started. Dispatching workflow…";
+        resultEl.outerHTML = renderAiRepairResultHtml(window.currentAiRepairRun, window.lastAiRepairReply);
       }
 
       const res = await api("/api/updates/ai-repair", {
@@ -1676,10 +1905,11 @@ const cleanupDeletesUnassigned =
       if (issueNowBtn) issueNowBtn.textContent = "Escalate to Copilot";
       if (assignBtn) assignBtn.textContent = "Assign Copilot";
 
-      if (!resultEl) return;
+      const updatedResultEl = document.getElementById("aiRepairResult");
+      if (!updatedResultEl) return;
 
-      resultEl.classList.remove("is-loading");
-      resultEl.classList.remove("hidden");
+      updatedResultEl.classList.remove("is-loading");
+      updatedResultEl.classList.remove("hidden");
 
       if (res.ok === true) {
         const message =
@@ -1692,17 +1922,10 @@ const cleanupDeletesUnassigned =
                 : "Autopilot mechanical repair started on GitHub.";
         window.lastAiRepairReply = message;
         window.lastAiRepairModel = "";
-        const workflowLink =
-          typeof res.workflowUrl === "string"
-            ? '<p class="mw-ai-repair-meta text-xs text-muted"><a href="' +
-              escapeHtml(res.workflowUrl) +
-              '" target="_blank" rel="noopener noreferrer">View workflow runs</a></p>'
-            : "";
-        const disclaimer =
-          typeof res.disclaimer === "string"
-            ? '<p class="mw-ai-repair-meta text-xs text-muted">' + escapeHtml(res.disclaimer) + "</p>"
-            : "";
-        resultEl.innerHTML = disclaimer + workflowLink + "<pre>" + escapeHtml(message) + "</pre>";
+        window.lastAiRepairWorkflowUrl = typeof res.workflowUrl === "string" ? res.workflowUrl : "";
+        window.currentAiRepairRun = res.workflowRun || window.currentAiRepairRun || null;
+        window.currentAiRepairSummary = message;
+        updatedResultEl.outerHTML = renderAiRepairResultHtml(window.currentAiRepairRun, message);
         toast(isCopilotEscalation ? "Copilot escalation requested." : isPremiumAiRepair ? "Premium AI repair started." : "Automated repair started on GitHub.", true);
         aiRepairWatchActive = true;
         await fetchAiRepairStatus();
@@ -1730,7 +1953,7 @@ const cleanupDeletesUnassigned =
             escapeAttr(res.settingsUrl) +
             '">Open AI Provider Settings</a></p>'
           : "";
-      resultEl.innerHTML = workflowLink + settingsLink + "<pre>" + escapeHtml(err) + "</pre>";
+      updatedResultEl.innerHTML = workflowLink + settingsLink + "<pre>" + escapeHtml(err) + "</pre>";
       toast(err, false);
     }
 
@@ -2286,7 +2509,7 @@ const cleanupDeletesUnassigned =
 
       refreshCoreUpdateView();
 
-      if (adminState.canCopyPrompt) {
+      if (adminState.canCopyPrompt || aiRepairWatchActive || isAiRepairInFlight(window.currentAiRepairRun)) {
         await fetchAiRepairStatus();
       } else {
         window.currentAiRepairRun = null;

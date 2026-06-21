@@ -27,11 +27,17 @@ export const GET: APIRoute = async (context) => {
     );
   }
 
+  const url = new URL(context.request.url);
+  const rawPrNumber = url.searchParams.get("prNumber");
+  const prNumber = rawPrNumber ? Number.parseInt(rawPrNumber, 10) : null;
+
   try {
     const aiRepairRun = await getActiveAiRepairRun(github.token, github.repo);
     return new Response(
       JSON.stringify({
         ok: true,
+        prNumber: Number.isFinite(prNumber) ? prNumber : null,
+        workflowUrl: aiRepairRun?.htmlUrl ?? null,
         aiRepairRun,
         aiRepairSummary: describeAiRepairRun(aiRepairRun),
       }),
