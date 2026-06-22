@@ -1,8 +1,8 @@
 /** Guidance / copy-prompt fallback only; automated repair uses GitHub Actions + opus default. */
-export const DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4";
+export const DEFAULT_OPENROUTER_MODEL = "anthropic/claude-sonnet-4.6";
 
 /** Frontier model for automated safe-update repair (builder repo workflow + OPENROUTER_MODEL). */
-export const DEFAULT_AI_REPAIR_MODEL = "anthropic/claude-opus-4";
+export const DEFAULT_AI_REPAIR_MODEL = "anthropic/claude-opus-4.8";
 
 export type OpenRouterChatOptions = {
   apiKey: string;

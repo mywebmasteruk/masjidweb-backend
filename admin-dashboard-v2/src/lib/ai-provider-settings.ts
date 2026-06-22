@@ -54,7 +54,7 @@ type AiProviderSettingsRow = {
   updated_at: string | null;
 };
 
-const DEFAULT_MODEL = "anthropic/claude-opus-4.1";
+const DEFAULT_MODEL = "anthropic/claude-opus-4.8";
 export const LATEST_CLAUDE_FRONTIER_MODEL_SELECTION = "latest_claude_frontier" as const;
 const OPENROUTER_MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._:-]*$/;
 
