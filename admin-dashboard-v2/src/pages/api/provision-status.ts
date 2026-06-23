@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
-import { isAuthorized } from "../../lib/auth-helpers";
+import { isApiAuthorized } from "../../lib/api-auth";
+import { jsonResponse } from "../../lib/api-cors";
 import { isInternalProvisionRequest } from "../../lib/provision-internal-auth";
 import { getServiceSupabase } from "../../lib/supabase-server";
 
@@ -9,21 +10,15 @@ import { getServiceSupabase } from "../../lib/supabase-server";
  */
 export const GET: APIRoute = async (context) => {
   if (
-    !(await isAuthorized(context)) &&
+    !(await isApiAuthorized(context)) &&
     !isInternalProvisionRequest(context.request)
   ) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Unauthorized" }, context.request, 401);
   }
 
   const tenantId = context.url.searchParams.get("tenantId");
   if (!tenantId) {
-    return new Response(
-      JSON.stringify({ ok: false, error: "tenantId is required" }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
+    return jsonResponse({ ok: false, error: "tenantId is required" }, context.request, 400);
   }
 
   const supabase = getServiceSupabase();
@@ -34,10 +29,7 @@ export const GET: APIRoute = async (context) => {
     .single();
 
   if (error || !tenant) {
-    return new Response(
-      JSON.stringify({ ok: false, error: error?.message ?? "Not found" }),
-      { status: 404, headers: { "Content-Type": "application/json" } },
-    );
+    return jsonResponse({ ok: false, error: error?.message ?? "Not found" }, context.request, 404);
   }
 
   // Publish state comes from provisioning audit actions.
@@ -62,8 +54,8 @@ export const GET: APIRoute = async (context) => {
     latestPublishAction === "provision_complete";
   const publishFailed = latestPublishAction === "provision_publish_failed";
 
-  return new Response(
-    JSON.stringify({
+  return jsonResponse(
+    {
       ok: true,
       tenantId: tenant.id,
       slug: tenant.slug,
@@ -71,7 +63,9 @@ export const GET: APIRoute = async (context) => {
       active: tenant.status === "active",
       publishCompleted,
       publishFailed,
-    }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
+    },
+    context.request,
   );
 };
+
+export const OPTIONS: APIRoute = async () => new Response(null, { status: 204 });

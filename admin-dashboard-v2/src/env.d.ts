@@ -62,6 +62,15 @@ interface ImportMetaEnv {
   readonly CORE_UPDATE_EMAIL_FROM?: string;
   /** Shared secret for GitHub Actions → POST /api/updates/notify and /api/isolation-check-log */
   readonly CORE_UPDATE_NOTIFY_SECRET?: string;
+  /**
+   * Shared secret for Payload (`manage.masjidweb.com`) server-to-server calls to JSON APIs.
+   * Send as header `x-payload-service-secret`. Minimum 16 characters.
+   */
+  readonly PAYLOAD_SERVICE_SECRET?: string;
+  /** Alias for PAYLOAD_SERVICE_SECRET (Payload ops bridge). */
+  readonly PAYLOAD_OPS_API_SECRET?: string;
+  /** Comma-separated browser origins allowed for CORS on /api/* (default includes manage + localhost:3003). */
+  readonly PAYLOAD_PORTAL_ORIGINS?: string;
 }
 
 interface ImportMeta {

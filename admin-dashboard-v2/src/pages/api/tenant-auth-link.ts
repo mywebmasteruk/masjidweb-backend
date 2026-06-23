@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
-import { isAuthorized } from "../../lib/auth-helpers";
+import { isApiAuthorized } from "../../lib/api-auth";
+import { jsonResponse } from "../../lib/api-cors";
 import { sendTenantAuthLink } from "../../lib/send-tenant-auth-link";
 
 const bodySchema = z.object({
@@ -16,43 +17,30 @@ function parseReturnLinkOnly(context: Parameters<APIRoute>[0], bodyReturnLink?: 
 }
 
 export const POST: APIRoute = async (context) => {
-  if (!(await isAuthorized(context))) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (!(await isApiAuthorized(context))) {
+    return jsonResponse({ error: "Unauthorized" }, context.request, 401);
   }
 
   let raw: unknown;
   try {
     raw = await context.request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Invalid JSON body" }, context.request, 400);
   }
 
   const parsed = bodySchema.safeParse(raw);
   if (!parsed.success) {
-    return new Response(
-      JSON.stringify({ ok: false, error: parsed.error.flatten().fieldErrors }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
+    return jsonResponse({ ok: false, error: parsed.error.flatten().fieldErrors }, context.request, 400);
   }
 
   try {
     const returnLinkOnly = parseReturnLinkOnly(context, parsed.data.returnLink);
     const result = await sendTenantAuthLink(parsed.data.tenantId, { returnLinkOnly });
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse(result, context.request);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
-    return new Response(JSON.stringify({ ok: false, error: message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ ok: false, error: message }, context.request, 500);
   }
 };
+
+export const OPTIONS: APIRoute = async () => new Response(null, { status: 204 });

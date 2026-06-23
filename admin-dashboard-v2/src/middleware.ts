@@ -3,6 +3,7 @@ import {
   isDashboardAllowedHost,
   wrongHostForAdminMessage,
 } from "./lib/admin-host-allowlist";
+import { corsHeadersForRequest, corsPreflightHeaders } from "./lib/api-cors";
 import { parseCookies, verifySessionToken, getSessionCookieName } from "./lib/session";
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
@@ -17,6 +18,14 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   }
 
   const path = context.url.pathname;
+  if (path.startsWith("/api/")) {
+    if (context.request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsPreflightHeaders(context.request),
+      });
+    }
+  }
   if (path.startsWith("/dashboard")) {
     const cookie = parseCookies(context.request.headers.get("cookie"));
     const token = cookie[getSessionCookieName()];
@@ -33,5 +42,11 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
       return context.redirect("/dashboard");
     }
   }
-  return next();
+  const response = await next();
+  if (path.startsWith("/api/")) {
+    for (const [key, value] of Object.entries(corsHeadersForRequest(context.request))) {
+      response.headers.set(key, value);
+    }
+  }
+  return response;
 };
