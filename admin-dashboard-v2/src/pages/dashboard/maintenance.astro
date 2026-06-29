@@ -71,6 +71,31 @@ const cleanupDeletesUnassigned =
         <div id="applyUpdateResult" class="hidden text-xs" style="margin-top:.75rem;padding:.75rem;border-radius:var(--radius);border:1px solid var(--border);"></div>
       </div>
 
+      <div class="card marketing-update-card">
+        <div class="card-header">
+          <div>
+            <h2>Marketing site (mw-web)</h2>
+            <p class="text-xs text-muted" style="margin:.35rem 0 0;line-height:1.6;">Sync the public marketing site (<a href="https://mw-web.netlify.app" target="_blank" rel="noopener noreferrer">mw-web.netlify.app</a>) with the latest Ycode release. It is a near-stock fork, so this merges upstream into <code>main</code> and Netlify redeploys automatically — no Premium AI step. If a release collides with the site's hardening commits you'll get a link to resolve it on GitHub.</p>
+          </div>
+          <button id="marketingRefreshBtn" class="btn btn-ghost btn-sm">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Refresh status
+          </button>
+        </div>
+
+        <div id="marketingStatusArea" style="margin-bottom:1rem;">
+          <div class="status-placeholder">
+            <p class="text-sm text-muted">Checking marketing site update status…</p>
+          </div>
+        </div>
+
+        <div class="flex" style="flex-wrap:wrap;gap:.75rem;align-items:center;margin-top:1rem;">
+          <button type="button" id="marketingUpdateBtn" class="btn btn-primary" disabled>Update marketing site</button>
+          <a id="marketingCompareLink" class="btn btn-ghost hidden" href="#" target="_blank" rel="noopener noreferrer">Resolve conflict on GitHub</a>
+        </div>
+        <div id="marketingUpdateResult" class="hidden text-xs" style="margin-top:.75rem;padding:.75rem;border-radius:var(--radius);border:1px solid var(--border);"></div>
+      </div>
+
       <div class="card recovery-card">
         <div class="card-header">
           <div>
@@ -2960,5 +2985,111 @@ const cleanupDeletesUnassigned =
         cleanupDomainAliasesBtn.disabled = false;
       }
     });
+  </script>
+
+  <script>
+    // ── Marketing site (mw-web) update card ──────────────────────────────────
+    // Self-contained: does not rely on the Core Update script's scope.
+    (function () {
+      const statusArea = document.getElementById("marketingStatusArea");
+      const updateBtn = document.getElementById("marketingUpdateBtn");
+      const refreshBtn = document.getElementById("marketingRefreshBtn");
+      const compareLink = document.getElementById("marketingCompareLink");
+      const resultBox = document.getElementById("marketingUpdateResult");
+      if (!statusArea || !updateBtn || !refreshBtn || !resultBox) return;
+
+      function esc(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+
+      function showResult(kind, html) {
+        resultBox.classList.remove("hidden");
+        const color =
+          kind === "ok" ? "var(--success, #16a34a)" :
+          kind === "warn" ? "var(--warning, #ca8a04)" :
+          "var(--danger, #dc2626)";
+        resultBox.style.borderColor = color;
+        resultBox.style.color = color;
+        resultBox.innerHTML = html;
+      }
+
+      function renderStatus(data) {
+        const current = data.currentVersion ? "v" + esc(data.currentVersion) : "unknown version";
+        if (data.updateAvailable) {
+          statusArea.innerHTML =
+            '<p class="text-sm" style="margin:0;"><strong>Update available.</strong> ' +
+            "The marketing site is <strong>" + esc(data.behindBy) +
+            "</strong> commit" + (data.behindBy === 1 ? "" : "s") +
+            " behind the latest Ycode upstream (current " + current + ").</p>";
+          updateBtn.disabled = false;
+          updateBtn.textContent = "Update marketing site";
+        } else {
+          statusArea.innerHTML =
+            '<p class="text-sm text-muted" style="margin:0;">Up to date with the latest Ycode upstream (' +
+            current + ").</p>";
+          updateBtn.disabled = true;
+          updateBtn.textContent = "Already up to date";
+        }
+      }
+
+      async function loadStatus() {
+        statusArea.innerHTML =
+          '<p class="text-sm text-muted" style="margin:0;">Checking marketing site update status…</p>';
+        updateBtn.disabled = true;
+        compareLink.classList.add("hidden");
+        try {
+          const res = await fetch("/api/updates/marketing-status");
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "Status check failed");
+          renderStatus(data);
+        } catch (e) {
+          statusArea.innerHTML =
+            '<p class="text-sm" style="margin:0;color:var(--danger,#dc2626);">Could not load status: ' +
+            esc(e && e.message ? e.message : e) + "</p>";
+        }
+      }
+
+      async function runUpdate() {
+        if (!confirm("Sync the marketing site (mw-web) with the latest Ycode release? This pushes to main and triggers a Netlify redeploy.")) return;
+        updateBtn.disabled = true;
+        updateBtn.textContent = "Updating…";
+        compareLink.classList.add("hidden");
+        resultBox.classList.add("hidden");
+        try {
+          const res = await fetch("/api/updates/sync-marketing", { method: "POST" });
+          const data = await res.json();
+          if (data.merged) {
+            showResult(
+              "ok",
+              "✅ " + esc(data.message || "Merged upstream changes.") +
+              " Netlify is redeploying <a href=\"https://mw-web.netlify.app\" target=\"_blank\" rel=\"noopener noreferrer\">mw-web.netlify.app</a> now.",
+            );
+            await loadStatus();
+            return;
+          }
+          if (data.httpStatus === 409 && data.compareUrl) {
+            compareLink.href = data.compareUrl;
+            compareLink.classList.remove("hidden");
+            showResult(
+              "warn",
+              "⚠️ A new release collides with the site's hardening commits, so it can't auto-merge. " +
+              "Use “Resolve conflict on GitHub” to merge it by hand, then refresh.",
+            );
+          } else {
+            showResult("error", "❌ " + esc(data.error || data.message || "Update failed."));
+          }
+          await loadStatus();
+        } catch (e) {
+          showResult("error", "❌ " + esc(e && e.message ? e.message : e));
+          await loadStatus();
+        }
+      }
+
+      updateBtn.addEventListener("click", runUpdate);
+      refreshBtn.addEventListener("click", loadStatus);
+      loadStatus();
+    })();
   </script>
 </Layout>
