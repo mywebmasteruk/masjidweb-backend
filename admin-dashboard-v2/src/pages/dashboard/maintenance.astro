@@ -143,6 +143,21 @@ const cleanupDeletesUnassigned =
           </button>
           <div id="domainCleanupResult" class="text-xs text-muted" style="margin-top:.75rem;line-height:1.5;"></div>
         </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Tenant data isolation</h2>
+            <button type="button" id="schemaDriftRefreshBtn" class="btn btn-ghost btn-sm">
+              Recheck
+            </button>
+          </div>
+          <p class="text-sm text-muted" style="margin-top:-.35rem;line-height:1.6;">
+            Checks that every database table is classified (tenant data vs global). A Ycode
+            update can add a new table that is neither isolated per masjid nor copied to new
+            masjids — this flags it before that update ships.
+          </p>
+          <div id="schemaDriftResult" class="text-xs text-muted" style="margin-top:.75rem;line-height:1.5;">Checking…</div>
+        </div>
       </div>
     </main>
   </div>
@@ -2930,6 +2945,44 @@ const cleanupDeletesUnassigned =
     });
 
     runUpdateCheck();
+
+    const schemaDriftResult = document.getElementById("schemaDriftResult");
+    const schemaDriftRefreshBtn = document.getElementById("schemaDriftRefreshBtn");
+    async function loadSchemaDrift() {
+      if (schemaDriftResult) schemaDriftResult.textContent = "Checking…";
+      if (schemaDriftRefreshBtn) schemaDriftRefreshBtn.disabled = true;
+      try {
+        const data = await api("/api/schema-drift");
+        if (!data.ok) {
+          if (schemaDriftResult) schemaDriftResult.textContent = data.error || "Check failed";
+          return;
+        }
+        if (data.clean) {
+          const total = typeof data.totalClassified === "number" ? data.totalClassified : "all";
+          if (schemaDriftResult) {
+            schemaDriftResult.style.color = "var(--success, #16a34a)";
+            schemaDriftResult.textContent = "✅ Clean — " + total + " tables classified, none unhandled.";
+          }
+        } else {
+          const lines = (data.tables || [])
+            .map((t) => "• " + t.table_name + (t.has_tenant_id ? " (has tenant_id)" : "") + " — " + t.issue)
+            .join("\n");
+          if (schemaDriftResult) {
+            schemaDriftResult.style.color = "var(--warning, #b45309)";
+            schemaDriftResult.style.whiteSpace = "pre-wrap";
+            schemaDriftResult.textContent =
+              "⚠️ " + data.count + " unhandled table(s) — classify in mw_table_policy (and isolate + clone if it holds masjid data) before approving the next update:\n" + lines;
+          }
+          toast(data.count + " unclassified table(s) found", false);
+        }
+      } catch (err) {
+        if (schemaDriftResult) schemaDriftResult.textContent = (err && err.message) || "Check failed";
+      } finally {
+        if (schemaDriftRefreshBtn) schemaDriftRefreshBtn.disabled = false;
+      }
+    }
+    schemaDriftRefreshBtn?.addEventListener("click", loadSchemaDrift);
+    loadSchemaDrift();
 
     const cleanupDomainAliasesBtn = document.getElementById("cleanupDomainAliasesBtn");
     const domainCleanupResult = document.getElementById("domainCleanupResult");
