@@ -126,6 +126,34 @@ export async function verifyTenantDemoData(
     );
   }
 
+  // Registry-driven catch-all (Phase 1, fail-closed clone coverage): flag any table
+  // classified 'clone' in public.mw_table_policy that the template has data in but the
+  // new tenant has NONE. This covers tables the explicit checks above miss
+  // (color_variables, page_folders, asset_folders, settings, translations,
+  // global_variables, …) AND any NEW table a future Ycode core update adds. Read-only;
+  // any RPC failure degrades to a warning so it never blocks provisioning.
+  try {
+    const { data: gaps, error: gapErr } = await supabase.rpc("mw_tenant_clone_gaps", {
+      p_source: tpl,
+      p_target: tenantId,
+    });
+    if (gapErr) {
+      warnings.push(`Clone coverage check unavailable (non-fatal): ${gapErr.message}`);
+    } else if (Array.isArray(gaps) && gaps.length > 0) {
+      const list = (gaps as { table_name: string; source_rows: number }[])
+        .map((g) => `${g.table_name} (template ${g.source_rows})`)
+        .join(", ");
+      warnings.push(
+        `Clone coverage — these tables hold template data but were NOT cloned to the new tenant: ${list}. ` +
+          `Extend the clone engine (ycode-template-clone.ts / clone_cms_for_tenant) before relying on this tenant.`,
+      );
+    }
+  } catch (e) {
+    warnings.push(
+      `Clone coverage check error (non-fatal): ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
   if (!options?.skipPublishedCollectionCheck) {
     await appendPublishedCollectionDemoWarning(supabase, tenantId, warnings);
   }
