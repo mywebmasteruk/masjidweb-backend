@@ -46,6 +46,7 @@ If auth or magic-link behavior is involved, also read these fragile-flow files:
 | AI repair run says success but core repo later fails mysteriously | OpenRouter response was truncated (`finish_reason=length`) or a file tail was chopped | `bash scripts/check-repair-completeness.sh` | Reject truncation, run completeness guard, require PR CI green before merge |
 | OAuth `/register` or `/token` returns 401 before handler runs | Route is public in code but missing from `PUBLIC_API_EXACT` | `npx vitest run lib/tenant/middleware-utils.test.ts` | Add OAuth DCR register/token routes to `middleware-utils.ts` allowlist |
 | Post-merge builder looks broken in several unrelated places | Upstream feature landed without matching MasjidWeb proxy / bootstrap / tenant-scope updates | Review seams in `docs/masjidweb-core-seams.md` and rerun tenant safety tests | Re-apply MasjidWeb seams in same merge; do not ship until PR CI is green |
+| Builder shows "No active users", can't invite/change roles, OR any masjid can see another masjid's data | App-path RLS enforcement (`MW_TENANT_RLS_ENFORCE`) is on and a caller needs service-role, or a real cross-tenant leak | See Incident 5 below | **Unset `MW_TENANT_RLS_ENFORCE` on Netlify + redeploy first**, diagnose after |
 
 ---
 
@@ -303,6 +304,80 @@ to `PUBLIC_API_EXACT`, while keeping `/ycode/api/oauth/authorize` protected.
    - register is public
    - token is public
    - authorize stays protected
+
+---
+
+## Incident 5: app-path RLS enforcement broke admin operations (2026-06-30)
+
+### Symptom
+
+- Builder Settings -> Users showed "No active users" / an empty list despite real users existing
+- Root symptom class: ANY `auth.admin.*` operation (invite, role change, delete user, profile
+  delete) silently returns nothing or fails, while public pages and normal CMS reads work fine
+
+### Root cause
+
+`app/(builder)/ycode/api/*` routes and repositories all shared one client factory,
+`getSupabaseAdmin()`, which always returned the **service-role** (admin, RLS-bypassing)
+client. A tenant-isolation initiative added a feature flag (`MW_TENANT_RLS_ENFORCE`) that,
+when on, makes `getSupabaseAdmin()` return a **tenant-scoped** client instead (mints a
+short-lived JWT per masjid so the database's Row-Level Security enforces isolation on the
+app's own queries, not just the anon/PostgREST path). Enabling it broke every caller that
+genuinely needs admin power — `auth.admin.listUsers`/`inviteUserByEmail`/`updateUserById`/
+`deleteUser`, `exec_sql`, global-table reads (`tenant_registry`, `mcp_oauth_*`), and
+bucket-level storage admin — because those calls silently ran with insufficient privilege
+under a tenant-scoped client instead of throwing loudly.
+
+### Files that mattered
+
+- `../ycode-mw-tenant/lib/supabase-server.ts` (the chokepoint: `getSupabaseAdmin` vs the
+  new `getSupabaseServiceRole`)
+- `../ycode-mw-tenant/lib/masjidweb/tenant-rls-client.ts` (mint + fail-safe logic)
+- `../ycode-mw-tenant/app/(builder)/ycode/api/auth/{invite,set-role,users,session}/route.ts`
+- `../ycode-mw-tenant/app/(builder)/ycode/api/profile/route.ts`
+- `../ycode-mw-tenant/app/(builder)/ycode/api/setup/status/route.ts`
+- `../ycode-mw-tenant/lib/masjidweb/bootstrap-tenant-owner.ts`
+- `../ycode-mw-tenant/lib/masjidweb/update-tenant-access.ts`
+- `../ycode-mw-tenant/lib/repositories/mcpOAuthClientRepository.ts`,
+  `mcpOAuthCodeRepository.ts`, `mcpTokenRepository.ts` (only `validateToken` and
+  `rotateRefreshToken` — the global auth-lookup functions)
+- `../ycode-mw-tenant/app/(builder)/ycode/api/devtools/reset-db/route.ts`
+
+### Fix
+
+1. **Immediate:** `netlify env:unset MW_TENANT_RLS_ENFORCE --context production` + redeploy
+   (~2-3 min) — restores exact prior behavior with zero code change.
+2. **Root fix (commit `63bc971`):** added `getSupabaseServiceRole()` — always service-role,
+   ignores the flag — and switched every admin/global-table/privileged-RPC caller to it.
+   `getSupabaseAdmin()` now only tenant-scopes genuine per-masjid data access.
+3. Re-enabled (`46b4a61`) after self-testing the exact failure path live (see below).
+
+### How to verify
+
+1. Sessionless admin canary (same mechanism as the Users page, no login needed):
+   ```bash
+   curl -s https://<any-tenant-slug>.masjidweb.com/ycode/api/setup/status
+   # expect: {"is_configured":true,"is_setup_complete":true,...} HTTP 200
+   ```
+2. Log into a tenant builder -> Settings -> Users -> confirm the user list populates.
+3. Full protocol (symptom triage, verification commands, teardown procedure, reference IDs):
+   see **`../TENANT-ISOLATION-AND-CLONE-PLAN.md` → "GO-BACK PROTOCOL — app-path RLS
+   enforcement incident response"** (project root, one level up from this repo).
+
+### Regression tests
+
+- `../ycode-mw-tenant/lib/masjidweb/tenant-rls-client.test.ts` (OFF = no-op, ON-without-key
+  fails safe)
+- `../ycode-mw-tenant/lib/mcp-token-route-tenant-context.test.ts` (extended to cover the
+  OAuth Bearer MCP route running under the token's tenant)
+
+### Process rule
+
+A flag that changes WHICH DATABASE CLIENT a shared chokepoint function returns must be
+tested against every CLASS of caller (tenant-data reads/writes, admin operations, global
+tables, storage) before being flipped on live — not just the "does the page load" read path.
+See the go-back protocol doc (linked above) section 4 for the repeatable classification
+method if a future core update adds a new caller that needs the same treatment.
 
 ---
 

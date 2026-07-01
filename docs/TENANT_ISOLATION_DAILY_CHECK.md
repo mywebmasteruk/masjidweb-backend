@@ -55,6 +55,8 @@ PR CI also runs the same script via `.github/workflows/ci-build-check.yml` (tena
 4. Read [`TENANCY.md`](TENANCY.md) and [`NATIVE_SCOPE_AUDIT.md`](NATIVE_SCOPE_AUDIT.md) before changing repository scoping.
 5. Fix the regression; do not remove tenant filters to make tests pass.
 
+**If the symptom is a LIVE outage** (Users page empty, admin ops failing, or a suspected cross-tenant leak — not a failed CI job) rather than a daily-check failure, this may be the app-path RLS enforcement flag (`MW_TENANT_RLS_ENFORCE`). See `AGENT_INCIDENT_PLAYBOOK.md` Incident 5 and the full **GO-BACK PROTOCOL** in `../../TENANT-ISOLATION-AND-CLONE-PLAN.md` (project root) — immediate action is unsetting that env var on Netlify and redeploying.
+
 
 ## Admin log history
 
