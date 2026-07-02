@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_ORG_FIELD_MAPPINGS } from "./org-field-mappings";
 import {
   filterCmsSourceItemsWithContent,
   filterTemplateFieldsToMappedCollections,
@@ -79,8 +80,10 @@ describe("resolveOrgFieldOverrides", () => {
     { id: "custom-photo", key: null, name: "photo" },
   ];
 
+  const defaultMappings = DEFAULT_ORG_FIELD_MAPPINGS;
+
   it("maps provisioning org info onto system and custom org fields", () => {
-    const overrides = resolveOrgFieldOverrides(templateOrgFields, "greenlane", {
+    const overrides = resolveOrgFieldOverrides(templateOrgFields, defaultMappings, "greenlane", {
       slug: "greenlane",
       business_name: "Green Lane Masjid",
       address: "20 Green Lane, Birmingham",
@@ -101,7 +104,7 @@ describe("resolveOrgFieldOverrides", () => {
   });
 
   it("skips blank inputs so cloned demo values remain as placeholders", () => {
-    const overrides = resolveOrgFieldOverrides(templateOrgFields, "greenlane", {
+    const overrides = resolveOrgFieldOverrides(templateOrgFields, defaultMappings, "greenlane", {
       slug: "greenlane",
       business_name: "Green Lane Masjid",
       address: "  ",
@@ -115,13 +118,37 @@ describe("resolveOrgFieldOverrides", () => {
     expect(fieldIds).toContain("custom-email");
   });
 
-  it("accepts corrected field names (address/phone) if the template typo is fixed", () => {
+  it("ignores disabled mappings and mappings with no matching field", () => {
+    const mappings = [
+      { source_field: "phone", target_field: "tel", enabled: false },
+      { source_field: "email", target_field: "no-such-field", enabled: true },
+      { source_field: "address", target_field: "addresss", enabled: true },
+    ];
+
+    const overrides = resolveOrgFieldOverrides(templateOrgFields, mappings, "greenlane", {
+      slug: "greenlane",
+      business_name: "Green Lane Masjid",
+      address: "20 Green Lane",
+      phone: "0121",
+      email: "admin@greenlane.example",
+    });
+
+    expect(Object.fromEntries(overrides)).toEqual({
+      "custom-address": "20 Green Lane",
+    });
+  });
+
+  it("matches renamed fields when the admin updates the mapping (typo fixed)", () => {
     const fields = [
       { id: "custom-address", key: null, name: "Address" },
       { id: "custom-phone", key: null, name: "Phone" },
     ];
+    const mappings = [
+      { source_field: "address", target_field: "address", enabled: true },
+      { source_field: "phone", target_field: "phone", enabled: true },
+    ];
 
-    const overrides = resolveOrgFieldOverrides(fields, "greenlane", {
+    const overrides = resolveOrgFieldOverrides(fields, mappings, "greenlane", {
       slug: "greenlane",
       business_name: "Green Lane Masjid",
       address: "20 Green Lane",

@@ -1,0 +1,289 @@
+---
+import Layout from "../../../layouts/Layout.astro";
+import SidebarBrand from "../../../components/SidebarBrand.astro";
+---
+
+<Layout title="Provisioning Settings — MasjidWeb Admin">
+  <div class="shell">
+    <aside class="sidebar">
+      <SidebarBrand />
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          Tenants
+        </a>
+        <a href="/dashboard/logs" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Logs
+        </a>
+        <a href="/dashboard/maintenance" class="sidebar-link">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          Maintenance
+        </a>
+        <a href="/dashboard/settings/ai" class="sidebar-link active">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 16v-2m8-6h-2M6 12H4m13.657-5.657l-1.414 1.414M7.757 16.243l-1.414 1.414m0-11.314l1.414 1.414m8.486 8.486l1.414 1.414"/><circle cx="12" cy="12" r="3"/></svg>
+          Settings
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="logoutBtn" class="sidebar-link" style="width:100%;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          Log out
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="settings-header">
+        <div>
+          <p class="eyebrow">Settings</p>
+          <h1>Provisioning field mappings</h1>
+          <p class="page-desc" style="margin-bottom:0;">Choose which tenant-form inputs are written into which CMS collection fields when a tenant is provisioned or its CMS is reseeded.</p>
+        </div>
+        <a href="/dashboard/settings/ai" class="btn btn-ghost">AI Provider settings</a>
+      </div>
+
+      <div class="settings-grid">
+        <section class="card map-card">
+          <div class="card-header">
+            <div>
+              <h2>Form → collection field mappings</h2>
+              <p id="sourceMeta" class="text-xs text-muted" style="margin:.35rem 0 0;">Loading…</p>
+            </div>
+          </div>
+
+          <table class="map-table">
+            <thead>
+              <tr><th>Collection</th><th>Form field</th><th>Collection field</th><th>Enabled</th><th></th></tr>
+            </thead>
+            <tbody id="mappingRows">
+              <tr><td colspan="5" class="text-muted" style="padding:.9rem;">Loading…</td></tr>
+            </tbody>
+          </table>
+
+          <form id="addForm" class="add-row">
+            <input id="addCollection" type="text" value="org" placeholder="Collection" aria-label="Collection name" required />
+            <select id="addSource" aria-label="Form field"></select>
+            <input id="addTarget" type="text" list="fieldSuggestions" placeholder="Collection field (key or name)" aria-label="Collection field" required />
+            <button type="submit" class="btn btn-primary btn-sm">Add mapping</button>
+          </form>
+          <datalist id="fieldSuggestions"></datalist>
+          <p class="help">The collection field can be a field <em>key</em> (system fields like <span class="mono">name</span>, <span class="mono">slug</span>) or a field <em>display name</em> (custom fields), matched case-insensitively. One mapping updates every field it matches.</p>
+        </section>
+
+        <aside class="card info-card">
+          <h2>How it works</h2>
+          <ul>
+            <li>During provisioning, after the template CMS is cloned, each enabled mapping overwrites the cloned item's value with the tenant's form input.</li>
+            <li>Blank form inputs are skipped — the template's demo value stays as a placeholder.</li>
+            <li>Unmapped collection fields (e.g. <span class="mono">photo</span>) keep their cloned values.</li>
+            <li>Changes take effect on the <em>next</em> provision or CMS reseed; existing tenants are not retro-edited.</li>
+            <li>If you rename a field in the template's collection, update its mapping here to match.</li>
+          </ul>
+          <div id="templateFieldsBox" class="tf-box hidden">
+            <h3>Template collection fields</h3>
+            <div id="templateFieldsList"></div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" style="display:none;position:fixed;right:1rem;bottom:1rem;z-index:9999;padding:.9rem 1.1rem;border-radius:var(--radius);box-shadow:var(--shadow-lg);font-size:.9rem;"></div>
+
+  <style>
+    .settings-header { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:1.5rem; }
+    .eyebrow { margin:0 0 .35rem; color:var(--muted); font-size:.75rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+    .settings-grid { display:grid; grid-template-columns:minmax(0, 1fr) minmax(260px, 360px); gap:1rem; align-items:start; }
+    .map-card { border-color:rgba(59,130,246,.28); background:linear-gradient(180deg, rgba(59,130,246,.08), rgba(15,23,42,.28)); }
+    .map-table { width:100%; border-collapse:collapse; margin-top:1rem; }
+    .map-table th { text-align:left; font-size:.72rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:.4rem .5rem; border-bottom:1px solid var(--border); }
+    .map-table td { padding:.45rem .5rem; border-bottom:1px solid rgba(148,163,184,.14); vertical-align:middle; }
+    .map-table input[type="text"], .map-table select { width:100%; min-height:2.3rem; border:1px solid var(--border); border-radius:10px; background:rgba(2,6,23,.45); color:var(--text); padding:.4rem .6rem; font:inherit; font-size:.85rem; }
+    .map-table input:focus, .map-table select:focus, .add-row input:focus, .add-row select:focus { outline:none; border-color:rgba(59,130,246,.7); box-shadow:0 0 0 3px rgba(59,130,246,.18); }
+    .row-actions { display:flex; gap:.4rem; justify-content:flex-end; }
+    .add-row { display:grid; grid-template-columns:minmax(0,.8fr) minmax(0,1fr) minmax(0,1.2fr) auto; gap:.6rem; margin-top:1rem; align-items:center; }
+    .add-row input, .add-row select { min-height:2.5rem; border:1px solid var(--border); border-radius:10px; background:rgba(2,6,23,.45); color:var(--text); padding:.45rem .65rem; font:inherit; font-size:.85rem; }
+    .help { margin:.75rem 0 0; color:var(--muted); font-size:.75rem; line-height:1.45; }
+    .info-card ul { margin:.75rem 0 0; padding-left:1.2rem; color:var(--muted); font-size:.86rem; line-height:1.6; }
+    .info-card li { margin:.45rem 0; }
+    .tf-box { margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border); }
+    .tf-box h3 { margin:0 0 .5rem; font-size:.9rem; }
+    .tf-coll { margin:.4rem 0; color:var(--muted); font-size:.8rem; line-height:1.6; }
+    .tf-coll .mono { color:var(--text); }
+    .hidden { display:none !important; }
+    @media (max-width: 880px) { .settings-grid { grid-template-columns:1fr; } .settings-header { flex-direction:column; } .add-row { grid-template-columns:1fr; } }
+  </style>
+
+  <script>
+    const SOURCE_FIELDS = ["business_name", "slug", "address", "phone", "email", "description", "domain"];
+    const rowsEl = document.getElementById("mappingRows");
+    const toastEl = document.getElementById("toast");
+    const sourceMeta = document.getElementById("sourceMeta");
+    const addForm = document.getElementById("addForm");
+    const addCollection = document.getElementById("addCollection") as HTMLInputElement | null;
+    const addSource = document.getElementById("addSource") as HTMLSelectElement | null;
+    const addTarget = document.getElementById("addTarget") as HTMLInputElement | null;
+    const suggestions = document.getElementById("fieldSuggestions");
+    const templateFieldsBox = document.getElementById("templateFieldsBox");
+    const templateFieldsList = document.getElementById("templateFieldsList");
+
+    function toast(message: string, ok: boolean) {
+      if (!toastEl) return;
+      toastEl.textContent = message;
+      toastEl.style.display = "block";
+      toastEl.style.background = ok ? "rgba(16,185,129,.92)" : "rgba(239,68,68,.94)";
+      toastEl.style.color = "#fff";
+      setTimeout(() => { toastEl.style.display = "none"; }, 3800);
+    }
+
+    function sourceSelect(value: string): string {
+      return `<select data-field="source_field">${SOURCE_FIELDS.map(
+        (f) => `<option value="${f}"${f === value ? " selected" : ""}>${f.replace("_", " ")}</option>`,
+      ).join("")}</select>`;
+    }
+
+    function escapeHtml(v: string): string {
+      return v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+    }
+
+    function renderRows(mappings: Record<string, unknown>[]) {
+      if (!rowsEl) return;
+      if (!mappings.length) {
+        rowsEl.innerHTML = `<tr><td colspan="5" class="text-muted" style="padding:.9rem;">No mappings — provisioning will not copy any form inputs into collections. Add one below.</td></tr>`;
+        return;
+      }
+      rowsEl.innerHTML = mappings.map((m) => `
+        <tr data-id="${escapeHtml(String(m.id))}">
+          <td><input type="text" data-field="collection_name" value="${escapeHtml(String(m.collection_name))}" /></td>
+          <td>${sourceSelect(String(m.source_field))}</td>
+          <td><input type="text" data-field="target_field" list="fieldSuggestions" value="${escapeHtml(String(m.target_field))}" /></td>
+          <td style="text-align:center;"><input type="checkbox" data-field="enabled"${m.enabled ? " checked" : ""} /></td>
+          <td><div class="row-actions">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="save">Save</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="remove">Remove</button>
+          </div></td>
+        </tr>`).join("");
+    }
+
+    function renderTemplateFields(templateFields: Record<string, { key: string | null; name: string | null }[]>) {
+      const labels = new Set<string>();
+      const sections: string[] = [];
+      for (const [coll, fields] of Object.entries(templateFields)) {
+        const names: string[] = [];
+        for (const f of fields) {
+          const label = f.key || f.name;
+          if (!label) continue;
+          labels.add(label);
+          names.push(label);
+        }
+        if (names.length) {
+          sections.push(`<p class="tf-coll"><span class="mono">${escapeHtml(coll)}</span>: ${names.map((n) => escapeHtml(n)).join(", ")}</p>`);
+        }
+      }
+      if (suggestions) {
+        suggestions.innerHTML = [...labels].map((l) => `<option value="${escapeHtml(l)}"></option>`).join("");
+      }
+      if (templateFieldsBox && templateFieldsList && sections.length) {
+        templateFieldsList.innerHTML = sections.join("");
+        templateFieldsBox.classList.remove("hidden");
+      }
+    }
+
+    async function load() {
+      try {
+        const res = await fetch("/api/settings/org-field-mappings");
+        if (res.status === 401) { window.location.href = "/"; return; }
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Failed to load mappings");
+        renderRows(data.mappings || []);
+        renderTemplateFields(data.templateFields || {});
+        if (sourceMeta) {
+          sourceMeta.textContent = data.source === "database"
+            ? `${(data.mappings || []).length} mapping(s). Applied on the next provision or CMS reseed.`
+            : "Mappings table not reachable — built-in defaults shown (read-only until the migration is applied).";
+        }
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err), false);
+      }
+    }
+
+    function rowPayload(tr: HTMLElement): Record<string, unknown> {
+      const get = (sel: string) => tr.querySelector(sel) as HTMLInputElement | HTMLSelectElement | null;
+      return {
+        collection_name: get('[data-field="collection_name"]')?.value?.trim(),
+        source_field: get('[data-field="source_field"]')?.value,
+        target_field: get('[data-field="target_field"]')?.value?.trim(),
+        enabled: (get('[data-field="enabled"]') as HTMLInputElement | null)?.checked ?? true,
+      };
+    }
+
+    rowsEl?.addEventListener("click", async (event) => {
+      const btn = (event.target as HTMLElement).closest("button[data-action]") as HTMLButtonElement | null;
+      if (!btn) return;
+      const tr = btn.closest("tr[data-id]") as HTMLElement | null;
+      if (!tr) return;
+      const id = tr.getAttribute("data-id");
+      btn.disabled = true;
+      try {
+        if (btn.dataset.action === "save") {
+          const res = await fetch("/api/settings/org-field-mappings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, ...rowPayload(tr) }),
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.error || "Save failed");
+          toast("Mapping saved.", true);
+        } else if (btn.dataset.action === "remove") {
+          if (!window.confirm("Remove this mapping? Future provisions will no longer copy this form field.")) return;
+          const res = await fetch(`/api/settings/org-field-mappings?id=${encodeURIComponent(id || "")}`, { method: "DELETE" });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.error || "Remove failed");
+          toast("Mapping removed.", true);
+          await load();
+        }
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err), false);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    addForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const res = await fetch("/api/settings/org-field-mappings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            collection_name: addCollection?.value?.trim() || "org",
+            source_field: addSource?.value,
+            target_field: addTarget?.value?.trim(),
+            enabled: true,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Add failed");
+        if (addTarget) addTarget.value = "";
+        toast("Mapping added.", true);
+        await load();
+      } catch (err) {
+        toast(err instanceof Error ? err.message : String(err), false);
+      }
+    });
+
+    if (addSource) {
+      addSource.innerHTML = SOURCE_FIELDS.map(
+        (f) => `<option value="${f}">${f.replace("_", " ")}</option>`,
+      ).join("");
+    }
+
+    document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+      await fetch("/api/auth/logout", { method: "POST" });
+      window.location.href = "/";
+    });
+
+    load();
+  </script>
+</Layout>

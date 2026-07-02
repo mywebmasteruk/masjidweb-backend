@@ -17,6 +17,7 @@
 
 import { getServiceSupabase } from "./supabase-server";
 import { getTemplateTenantId } from "./master-tenant-constants";
+import { listOrgFieldMappings } from "./org-field-mappings";
 import { resolveSourceTemplateIdForClientTenant } from "./provision-template-source";
 import {
   cloneTranslationsForTenant,
@@ -252,55 +253,93 @@ export async function seedTenantsCollection(
 
 // ── Seed the org collection ─────────────────────────────────────────────────
 
-const ORG_COLLECTION_NAME = "org";
-
-/**
- * Map provisioning org info onto the org collection's draft fields.
- * The template's custom fields have `key: null`, so those are matched by
- * (case-insensitive) field name; system fields (Name/Slug) match by key.
- * Tolerates the template's "addresss" typo. Empty inputs are skipped so the
- * cloned demo value survives as a placeholder.
- */
-export function resolveOrgFieldOverrides(
-  fields: { id: string; key: string | null; name: string | null }[],
+/** Provisioning value for a mapping's source_field. */
+function orgMappingSourceValue(
+  sourceField: string,
   tenantSlug: string,
   t: TenantCmsContent,
-): [fieldId: string, value: string][] {
-  const byKey = new Map<string, string>();
-  const byName = new Map<string, string>();
-  for (const f of fields) {
-    if (f.key) {
-      if (!byKey.has(f.key.toLowerCase())) byKey.set(f.key.toLowerCase(), f.id);
-    } else if (f.name) {
-      const n = f.name.trim().toLowerCase();
-      if (!byName.has(n)) byName.set(n, f.id);
-    }
+): string | undefined {
+  switch (sourceField) {
+    case "business_name": return t.business_name;
+    case "slug": return tenantSlug || t.slug;
+    case "address": return t.address;
+    case "phone": return t.phone;
+    case "email": return t.email;
+    case "description": return t.description;
+    case "domain": return t.domain;
+    default: return undefined;
   }
-  const out: [string, string][] = [];
-  const add = (fieldId: string | undefined, value: string | undefined) => {
-    if (fieldId && value?.trim()) out.push([fieldId, value]);
-  };
-  add(byKey.get("name"), t.business_name);
-  add(byKey.get("slug"), tenantSlug);
-  add(byName.get("name"), t.business_name);
-  add(byName.get("address") ?? byName.get("addresss"), t.address);
-  add(byName.get("tel") ?? byName.get("phone"), t.phone);
-  add(byName.get("email"), t.email);
-  add(byName.get("description"), t.description);
-  return out;
 }
 
 /**
- * Overwrite the tenant's cloned "org" collection item with the org info
+ * Apply admin-configured mappings to one collection's draft fields.
+ * A mapping's target_field matches a CMS field when it equals the field's
+ * `key` OR its display `name` (case-insensitive) — one mapping can hit both
+ * the system key and a custom field with the same name. Blank inputs are
+ * skipped so the cloned demo value survives as a placeholder.
+ */
+export function resolveOrgFieldOverrides(
+  fields: { id: string; key: string | null; name: string | null }[],
+  mappings: { source_field: string; target_field: string; enabled: boolean }[],
+  tenantSlug: string,
+  t: TenantCmsContent,
+): [fieldId: string, value: string][] {
+  const byFieldId = new Map<string, string>();
+  for (const m of mappings) {
+    if (!m.enabled) continue;
+    const value = orgMappingSourceValue(m.source_field, tenantSlug, t);
+    if (!value?.trim()) continue;
+    const target = m.target_field.trim().toLowerCase();
+    if (!target) continue;
+    for (const f of fields) {
+      const matches =
+        f.key?.toLowerCase() === target ||
+        f.name?.trim().toLowerCase() === target;
+      if (matches && !byFieldId.has(f.id)) byFieldId.set(f.id, value);
+    }
+  }
+  return [...byFieldId.entries()];
+}
+
+/**
+ * Overwrite the tenant's cloned org-collection item(s) with the org info
  * captured at provisioning, so each tenant site shows its own details
- * instead of the template organisation's. Runs after the CMS clone; no-op
- * when the tenant has no "org" collection. The `photo` field is left as
- * cloned (asset remap already points it at the tenant's own asset copy).
+ * instead of the template organisation's. Which form fields land on which
+ * collection fields is admin-configurable (provision_org_field_mappings via
+ * org-field-mappings.ts; Settings → Provisioning in the dashboard). Runs
+ * after the CMS clone; no-op for collections the tenant doesn't have.
+ * Unmapped fields (e.g. `photo`) keep their cloned values.
  */
 export async function seedOrgCollectionContent(
   tenantId: string,
   tenantSlug: string,
   t: TenantCmsContent,
+): Promise<void> {
+  const { mappings } = await listOrgFieldMappings();
+  const byCollection = new Map<string, typeof mappings>();
+  for (const m of mappings) {
+    if (!m.enabled) continue;
+    const list = byCollection.get(m.collection_name) ?? [];
+    list.push(m);
+    byCollection.set(m.collection_name, list);
+  }
+  for (const [collectionName, collectionMappings] of byCollection) {
+    await seedMappedCollectionContent(
+      tenantId,
+      tenantSlug,
+      t,
+      collectionName,
+      collectionMappings,
+    );
+  }
+}
+
+async function seedMappedCollectionContent(
+  tenantId: string,
+  tenantSlug: string,
+  t: TenantCmsContent,
+  collectionName: string,
+  mappings: { source_field: string; target_field: string; enabled: boolean }[],
 ): Promise<void> {
   const supabase = getServiceSupabase();
 
@@ -308,7 +347,7 @@ export async function seedOrgCollectionContent(
     .from("collections")
     .select("id")
     .eq("tenant_id", tenantId)
-    .eq("name", ORG_COLLECTION_NAME)
+    .eq("name", collectionName)
     .eq("is_published", false)
     .is("deleted_at", null)
     .maybeSingle();
@@ -331,6 +370,7 @@ export async function seedOrgCollectionContent(
       key: f.key == null ? null : String(f.key),
       name: f.name == null ? null : String(f.name),
     })),
+    mappings,
     tenantSlug,
     t,
   );
