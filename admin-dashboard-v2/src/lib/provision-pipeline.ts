@@ -2,7 +2,7 @@ import { getServiceSupabase } from "./supabase-server";
 import { addDomainAlias } from "./netlify-domains";
 import { isReservedTenantSlug, slugify } from "./slug";
 import { createTenantSchema, type CreateTenantInput } from "./tenant-schema";
-import { seedTenantsCollection } from "./ycode-cms-seed";
+import { seedOrgCollectionContent, seedTenantsCollection } from "./ycode-cms-seed";
 import {
   cloneTemplateForTenant,
   cloneTranslationsForTenant,
@@ -567,21 +567,20 @@ export async function completeProvision(
       // Seed the Tenants collection item with tenant business details.
       // The SQL RPC already cloned generic CMS items; this inserts the
       // per-tenant "Tenants" row with the business name / address / etc.
-      await seedTenantsCollection(
-        tenantId,
+      const tenantCmsContent = {
         slug,
-        {
-          slug,
-          business_name: tenant.business_name,
-          address: tenant.address,
-          phone: tenant.phone,
-          email: tenant.email,
-          domain: tenant.domain,
-          description: tenant.description,
-        },
-        idMap,
-        sourceTpl,
-      );
+        business_name: tenant.business_name,
+        address: tenant.address,
+        phone: tenant.phone,
+        email: tenant.email,
+        domain: tenant.domain,
+        description: tenant.description,
+      };
+      await seedTenantsCollection(tenantId, slug, tenantCmsContent, idMap, sourceTpl);
+
+      // Overwrite the cloned "org" collection item with this tenant's own
+      // organisation details (the RPC clone copies the template's demo values).
+      await seedOrgCollectionContent(tenantId, slug, tenantCmsContent);
 
       phase2TimingMs.cms_seed = Date.now() - cmsSeedStart;
       const { error: seedAuditErr } = await supabase.from("provisioning_audit_log").insert({

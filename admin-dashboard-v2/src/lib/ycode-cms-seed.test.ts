@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterCmsSourceItemsWithContent,
   filterTemplateFieldsToMappedCollections,
+  resolveOrgFieldOverrides,
 } from "./ycode-cms-seed";
 
 describe("filterCmsSourceItemsWithContent", () => {
@@ -59,5 +60,77 @@ describe("filterTemplateFieldsToMappedCollections", () => {
     const fields = [{ id: "tenant-id", collection_id: "legacy-collection" }];
 
     expect(filterTemplateFieldsToMappedCollections(fields)).toEqual(fields);
+  });
+});
+
+describe("resolveOrgFieldOverrides", () => {
+  // Mirrors the live template's org collection: system fields carry a key,
+  // custom fields have key null and are identified by display name (with
+  // the "addresss" typo).
+  const templateOrgFields = [
+    { id: "sys-name", key: "name", name: "Name" },
+    { id: "sys-slug", key: "slug", name: "Slug" },
+    { id: "sys-status", key: "status", name: "Status" },
+    { id: "custom-name", key: null, name: "name" },
+    { id: "custom-address", key: null, name: "addresss" },
+    { id: "custom-tel", key: null, name: "tel" },
+    { id: "custom-email", key: null, name: "email" },
+    { id: "custom-description", key: null, name: "description" },
+    { id: "custom-photo", key: null, name: "photo" },
+  ];
+
+  it("maps provisioning org info onto system and custom org fields", () => {
+    const overrides = resolveOrgFieldOverrides(templateOrgFields, "greenlane", {
+      slug: "greenlane",
+      business_name: "Green Lane Masjid",
+      address: "20 Green Lane, Birmingham",
+      phone: "+44 121 000 0000",
+      email: "admin@greenlane.example",
+      description: "Community masjid in Small Heath",
+    });
+
+    expect(Object.fromEntries(overrides)).toEqual({
+      "sys-name": "Green Lane Masjid",
+      "sys-slug": "greenlane",
+      "custom-name": "Green Lane Masjid",
+      "custom-address": "20 Green Lane, Birmingham",
+      "custom-tel": "+44 121 000 0000",
+      "custom-email": "admin@greenlane.example",
+      "custom-description": "Community masjid in Small Heath",
+    });
+  });
+
+  it("skips blank inputs so cloned demo values remain as placeholders", () => {
+    const overrides = resolveOrgFieldOverrides(templateOrgFields, "greenlane", {
+      slug: "greenlane",
+      business_name: "Green Lane Masjid",
+      address: "  ",
+      email: "admin@greenlane.example",
+    });
+
+    const fieldIds = overrides.map(([fieldId]) => fieldId);
+    expect(fieldIds).not.toContain("custom-address");
+    expect(fieldIds).not.toContain("custom-tel");
+    expect(fieldIds).not.toContain("custom-description");
+    expect(fieldIds).toContain("custom-email");
+  });
+
+  it("accepts corrected field names (address/phone) if the template typo is fixed", () => {
+    const fields = [
+      { id: "custom-address", key: null, name: "Address" },
+      { id: "custom-phone", key: null, name: "Phone" },
+    ];
+
+    const overrides = resolveOrgFieldOverrides(fields, "greenlane", {
+      slug: "greenlane",
+      business_name: "Green Lane Masjid",
+      address: "20 Green Lane",
+      phone: "0121",
+    });
+
+    expect(Object.fromEntries(overrides)).toEqual({
+      "custom-address": "20 Green Lane",
+      "custom-phone": "0121",
+    });
   });
 });

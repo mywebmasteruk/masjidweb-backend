@@ -158,6 +158,8 @@ export async function seedTenantCmsContent(
   const src = sourceTemplateId ?? getTemplateTenantId();
   await seedTenantsCollection(tenantId, tenantSlug, tenant, idMap, src);
   await copyTemplateContentToTenant(tenantId, tenantSlug, idMap, src);
+  // Must run after the content copy so the clone doesn't overwrite it.
+  await seedOrgCollectionContent(tenantId, tenantSlug, tenant);
 }
 
 /**
@@ -246,6 +248,158 @@ export async function seedTenantsCollection(
   if (t.description) pairs.push([TF.description, t.description]);
 
   await insertCollectionItem(tenantsCollectionId, pairs, tenantId);
+}
+
+// ── Seed the org collection ─────────────────────────────────────────────────
+
+const ORG_COLLECTION_NAME = "org";
+
+/**
+ * Map provisioning org info onto the org collection's draft fields.
+ * The template's custom fields have `key: null`, so those are matched by
+ * (case-insensitive) field name; system fields (Name/Slug) match by key.
+ * Tolerates the template's "addresss" typo. Empty inputs are skipped so the
+ * cloned demo value survives as a placeholder.
+ */
+export function resolveOrgFieldOverrides(
+  fields: { id: string; key: string | null; name: string | null }[],
+  tenantSlug: string,
+  t: TenantCmsContent,
+): [fieldId: string, value: string][] {
+  const byKey = new Map<string, string>();
+  const byName = new Map<string, string>();
+  for (const f of fields) {
+    if (f.key) {
+      if (!byKey.has(f.key.toLowerCase())) byKey.set(f.key.toLowerCase(), f.id);
+    } else if (f.name) {
+      const n = f.name.trim().toLowerCase();
+      if (!byName.has(n)) byName.set(n, f.id);
+    }
+  }
+  const out: [string, string][] = [];
+  const add = (fieldId: string | undefined, value: string | undefined) => {
+    if (fieldId && value?.trim()) out.push([fieldId, value]);
+  };
+  add(byKey.get("name"), t.business_name);
+  add(byKey.get("slug"), tenantSlug);
+  add(byName.get("name"), t.business_name);
+  add(byName.get("address") ?? byName.get("addresss"), t.address);
+  add(byName.get("tel") ?? byName.get("phone"), t.phone);
+  add(byName.get("email"), t.email);
+  add(byName.get("description"), t.description);
+  return out;
+}
+
+/**
+ * Overwrite the tenant's cloned "org" collection item with the org info
+ * captured at provisioning, so each tenant site shows its own details
+ * instead of the template organisation's. Runs after the CMS clone; no-op
+ * when the tenant has no "org" collection. The `photo` field is left as
+ * cloned (asset remap already points it at the tenant's own asset copy).
+ */
+export async function seedOrgCollectionContent(
+  tenantId: string,
+  tenantSlug: string,
+  t: TenantCmsContent,
+): Promise<void> {
+  const supabase = getServiceSupabase();
+
+  const { data: coll, error: collErr } = await supabase
+    .from("collections")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("name", ORG_COLLECTION_NAME)
+    .eq("is_published", false)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (collErr) throw new Error(collErr.message);
+  if (!coll?.id) return;
+  const collectionId = String(coll.id);
+
+  const { data: fields, error: fieldsErr } = await supabase
+    .from("collection_fields")
+    .select("id, key, name")
+    .eq("collection_id", collectionId)
+    .eq("tenant_id", tenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null);
+  if (fieldsErr) throw new Error(fieldsErr.message);
+
+  const overrides = resolveOrgFieldOverrides(
+    (fields ?? []).map((f) => ({
+      id: String(f.id),
+      key: f.key == null ? null : String(f.key),
+      name: f.name == null ? null : String(f.name),
+    })),
+    tenantSlug,
+    t,
+  );
+  if (!overrides.length) return;
+
+  const { data: items, error: itemsErr } = await supabase
+    .from("collection_items")
+    .select("id")
+    .eq("collection_id", collectionId)
+    .eq("tenant_id", tenantId)
+    .eq("is_published", false)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (itemsErr) throw new Error(itemsErr.message);
+
+  if (!items?.length) {
+    await insertCollectionItem(collectionId, overrides, tenantId);
+    return;
+  }
+  const itemId = String(items[0].id);
+
+  const { data: existingVals, error: valsErr } = await supabase
+    .from("collection_item_values")
+    .select("field_id")
+    .eq("item_id", itemId)
+    .eq("is_published", false)
+    .is("deleted_at", null)
+    .in("field_id", overrides.map(([fieldId]) => fieldId));
+  if (valsErr) throw new Error(valsErr.message);
+  const existingFieldIds = new Set(
+    (existingVals ?? []).map((v) => String(v.field_id)),
+  );
+
+  const now = new Date().toISOString();
+  for (const [fieldId, value] of overrides) {
+    if (!existingFieldIds.has(fieldId)) continue;
+    const { error } = await supabase
+      .from("collection_item_values")
+      .update({ value, updated_at: now })
+      .eq("item_id", itemId)
+      .eq("field_id", fieldId)
+      .eq("is_published", false)
+      .is("deleted_at", null);
+    if (error) {
+      throw new Error(`Failed to set org value (field ${fieldId}): ${error.message}`);
+    }
+  }
+
+  const missingRows = overrides
+    .filter(([fieldId]) => !existingFieldIds.has(fieldId))
+    .map(([fieldId, value]) => ({
+      id: crypto.randomUUID(),
+      item_id: itemId,
+      field_id: fieldId,
+      value,
+      is_published: false,
+      created_at: now,
+      updated_at: now,
+      tenant_id: tenantId,
+    }));
+  if (missingRows.length) {
+    const { error } = await supabase
+      .from("collection_item_values")
+      .upsert(missingRows, { ignoreDuplicates: true });
+    if (error) {
+      throw new Error(`Failed to insert org values: ${error.message}`);
+    }
+  }
 }
 
 // ── Clone template content ──────────────────────────────────────────────────
