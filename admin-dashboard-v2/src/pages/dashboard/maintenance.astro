@@ -133,6 +133,38 @@ const cleanupDeletesUnassigned =
 
         <div class="card">
           <div class="card-header">
+            <h2>Test-debris cleanup</h2>
+            <button type="button" id="debrisPreviewBtn" class="btn btn-ghost btn-sm">
+              Preview
+            </button>
+          </div>
+          <p class="text-sm text-muted" style="margin-top:-.35rem;line-height:1.6;">
+            Daily 08:30 UTC job: hard-purges soft-deleted rows and leftover canary content on the
+            designated test tenants, and removes rows soft-deleted longer than the retention window
+            on all tenants. While disabled, the daily run is a green no-op — this toggle is the kill
+            switch.
+          </p>
+          <label class="text-xs" style="display:flex;align-items:center;gap:.5rem;margin-top:.25rem;">
+            <input type="checkbox" id="debrisEnabled" />
+            Enabled (daily cron + Run now)
+          </label>
+          <label class="text-xs" style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;">
+            Retention (days)
+            <input type="number" id="debrisRetentionDays" min="1" max="3650" style="width:80px;" />
+          </label>
+          <label class="text-xs" style="display:block;margin-top:.5rem;">
+            Test tenant slugs (comma-separated)
+            <input type="text" id="debrisTenantSlugs" placeholder="high900, assasx7" style="width:100%;margin-top:.25rem;" />
+          </label>
+          <div style="display:flex;gap:.5rem;margin-top:.75rem;">
+            <button type="button" id="debrisSaveBtn" class="btn btn-ghost">Save settings</button>
+            <button type="button" id="debrisRunBtn" class="btn btn-primary">Run now</button>
+          </div>
+          <div id="debrisResult" class="text-xs text-muted" style="margin-top:.75rem;line-height:1.5;">Loading…</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
             <h2>Subdomain cleanup</h2>
           </div>
           <p class="text-sm text-muted" style="margin-top:-.35rem;line-height:1.6;">
@@ -2943,6 +2975,119 @@ const cleanupDeletesUnassigned =
         cleanupOrphansBtn.disabled = false;
       }
     });
+
+    const debrisEnabled = document.getElementById("debrisEnabled");
+    const debrisRetentionDays = document.getElementById("debrisRetentionDays");
+    const debrisTenantSlugs = document.getElementById("debrisTenantSlugs");
+    const debrisResult = document.getElementById("debrisResult");
+    const debrisPreviewBtn = document.getElementById("debrisPreviewBtn");
+    const debrisSaveBtn = document.getElementById("debrisSaveBtn");
+    const debrisRunBtn = document.getElementById("debrisRunBtn");
+
+    const formatDebrisCounts = (counts) => {
+      const entries = Object.entries(counts || {}).filter(([, v]) => typeof v === "number");
+      if (!entries.length) return "nothing";
+      return entries.map(([k, v]) => k + ": " + v).join(", ");
+    };
+
+    const renderDebris = (data) => {
+      if (!debrisResult) return;
+      const cfg = data.config;
+      if (cfg) {
+        if (debrisEnabled) debrisEnabled.checked = !!cfg.enabled;
+        if (debrisRetentionDays) debrisRetentionDays.value = cfg.retention_days;
+        if (debrisTenantSlugs) debrisTenantSlugs.value = (cfg.test_tenant_slugs || []).join(", ");
+      }
+      const preview = data.preview || {};
+      const lastRealRun = (data.log || []).find((r) => !r.dry_run);
+      const lastLine = lastRealRun
+        ? "Last run: " + new Date(lastRealRun.ran_at).toLocaleString() + " (" + lastRealRun.mode + ", " + lastRealRun.status + ")"
+        : "No real runs yet.";
+      debrisResult.textContent =
+        "Would delete now — test tenants: " + formatDebrisCounts(preview.passA) +
+        "; retention (all tenants): " + formatDebrisCounts(preview.passB) +
+        ". " + lastLine;
+    };
+
+    const loadDebris = async () => {
+      if (debrisResult) debrisResult.textContent = "Loading preview...";
+      try {
+        const res = await fetch("/api/test-debris-cleanup");
+        const data = await res.json();
+        if (data.ok) renderDebris(data);
+        else if (debrisResult) debrisResult.textContent = data.error || "Failed to load";
+      } catch (err) {
+        if (debrisResult) debrisResult.textContent = err.message || "Failed to load";
+      }
+    };
+
+    debrisPreviewBtn?.addEventListener("click", loadDebris);
+
+    debrisSaveBtn?.addEventListener("click", async () => {
+      debrisSaveBtn.disabled = true;
+      try {
+        const slugs = (debrisTenantSlugs?.value || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const res = await fetch("/api/test-debris-cleanup", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled: !!debrisEnabled?.checked,
+            retention_days: Number(debrisRetentionDays?.value || 30),
+            test_tenant_slugs: slugs,
+          }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          toast("Cleanup settings saved", true);
+          await loadDebris();
+        } else {
+          toast(data.error || "Save failed", false);
+        }
+      } catch (err) {
+        toast(err.message || "Save failed", false);
+      } finally {
+        debrisSaveBtn.disabled = false;
+      }
+    });
+
+    debrisRunBtn?.addEventListener("click", async () => {
+      const msg =
+        "Run the test-debris cleanup NOW? This PERMANENTLY deletes soft-deleted rows and leftover canary content on the listed test tenants, and rows past the retention window on all tenants. Use Preview first to see the counts.";
+      if (!confirm(msg)) return;
+      debrisRunBtn.disabled = true;
+      if (debrisResult) debrisResult.textContent = "Running cleanup...";
+      try {
+        const res = await fetch("/api/test-debris-cleanup", { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+          const r = data.result || {};
+          if (r.skipped) {
+            if (debrisResult) debrisResult.textContent = "Skipped: cleanup is disabled. Enable it and save first.";
+            toast("Cleanup skipped (disabled)", false);
+          } else {
+            const summary =
+              "Deleted — test tenants: " + formatDebrisCounts(r.passA) +
+              "; retention: " + formatDebrisCounts(r.passB);
+            if (debrisResult) debrisResult.textContent = summary;
+            toast(summary, true);
+          }
+        } else {
+          if (debrisResult) debrisResult.textContent = data.error || "Cleanup failed";
+          toast(data.error || "Cleanup failed", false);
+        }
+      } catch (err) {
+        const message = err.message || "Cleanup failed";
+        if (debrisResult) debrisResult.textContent = message;
+        toast(message, false);
+      } finally {
+        debrisRunBtn.disabled = false;
+      }
+    });
+
+    loadDebris();
 
     runUpdateCheck();
 
