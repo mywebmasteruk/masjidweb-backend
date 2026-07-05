@@ -112,6 +112,24 @@ const cleanupDeletesUnassigned =
         </div>
       </div>
 
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2>Platform feature flags</h2>
+            <p class="text-xs text-muted" style="margin:.35rem 0 0;">
+              Kill switches for the tenant-builder features (Netlify env on the builder site,
+              production context). Changing a flag triggers a <strong>production redeploy
+              (~3–5&nbsp;min)</strong> — the new value only applies once the deploy is ready.
+              Use these to isolate a suspected platform bug: flip one flag OFF, wait for the
+              deploy, retest, flip back ON.
+            </p>
+          </div>
+          <button type="button" id="flagsRefreshBtn" class="btn btn-ghost btn-sm">Refresh</button>
+        </div>
+        <div id="flagsArea" class="text-sm text-muted">Loading flags…</div>
+        <div id="flagsDeploy" class="text-xs text-muted" style="margin-top:.5rem;"></div>
+      </div>
+
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;align-items:start;">
         <div class="card">
           <div class="card-header">
@@ -3008,6 +3026,112 @@ const cleanupDeletesUnassigned =
         "; retention (all tenants): " + formatDebrisCounts(preview.passB) +
         ". " + lastLine;
     };
+
+    // ---- Platform feature flags card ----
+    const flagsArea = document.getElementById("flagsArea");
+    const flagsDeploy = document.getElementById("flagsDeploy");
+    const flagsRefreshBtn = document.getElementById("flagsRefreshBtn");
+
+    const renderFlagsDeploy = (deploy) => {
+      if (!flagsDeploy) return;
+      if (!deploy) {
+        flagsDeploy.textContent = "";
+        return;
+      }
+      const when = new Date(deploy.created_at).toLocaleString();
+      flagsDeploy.textContent =
+        "Latest builder deploy: " + deploy.state + " (" + when + ")" +
+        (deploy.state !== "ready" ? " — flag changes apply when it reaches ready." : "");
+    };
+
+    const loadFlags = async () => {
+      if (!flagsArea) return;
+      flagsArea.textContent = "Loading flags…";
+      try {
+        const res = await fetch("/api/platform-flags");
+        const data = await res.json();
+        if (!data.ok) {
+          flagsArea.textContent = data.error || "Failed to load flags";
+          return;
+        }
+        flagsArea.innerHTML = "";
+        for (const flag of data.flags) {
+          const row = document.createElement("div");
+          row.style.cssText =
+            "display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;padding:.6rem 0;border-top:1px solid var(--border,rgba(148,163,184,.18));";
+          const info = document.createElement("div");
+          info.style.cssText = "flex:1 1 320px;min-width:260px;";
+          const title = document.createElement("div");
+          title.className = "text-sm";
+          title.style.cssText = "font-weight:600;color:var(--text,inherit);";
+          title.textContent = flag.label;
+          const desc = document.createElement("div");
+          desc.className = "text-xs text-muted";
+          desc.style.cssText = "margin-top:.2rem;line-height:1.5;";
+          desc.textContent = flag.description + (flag.key === "MW_ROUTE_TENANT_RESOLUTION" && data.canaryHosts ? " Canary hosts: " + data.canaryHosts : "");
+          const keyLine = document.createElement("div");
+          keyLine.className = "text-xs text-muted";
+          keyLine.style.cssText = "margin-top:.15rem;opacity:.7;font-family:monospace;";
+          keyLine.textContent = flag.key + " = " + (flag.current ?? "(unset)");
+          info.append(title, desc, keyLine);
+
+          const select = document.createElement("select");
+          select.style.cssText = "min-width:110px;";
+          for (const v of flag.values) {
+            const opt = document.createElement("option");
+            opt.value = v;
+            opt.textContent = v;
+            if (v === flag.current) opt.selected = true;
+            select.append(opt);
+          }
+          if (flag.current === null) select.selectedIndex = -1;
+
+          const applyBtn = document.createElement("button");
+          applyBtn.type = "button";
+          applyBtn.className = "btn btn-ghost btn-sm";
+          applyBtn.textContent = "Apply + redeploy";
+          applyBtn.addEventListener("click", async () => {
+            const value = select.value;
+            if (!value || value === flag.current) {
+              toast("Value unchanged", false);
+              return;
+            }
+            let msg =
+              "Set " + flag.key + " = " + value + " on PRODUCTION and trigger a redeploy (~3–5 min)?";
+            if (flag.danger) msg += "\n\nNote: " + flag.danger;
+            if (!confirm(msg)) return;
+            applyBtn.disabled = true;
+            try {
+              const setRes = await fetch("/api/platform-flags", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ key: flag.key, value }),
+              });
+              const setData = await setRes.json();
+              if (setData.ok) {
+                toast(flag.key + " set to " + value + " — redeploy triggered", true);
+                await loadFlags();
+              } else {
+                toast(setData.error || "Failed to set flag", false);
+              }
+            } catch (err) {
+              toast(err.message || "Failed to set flag", false);
+            } finally {
+              applyBtn.disabled = false;
+            }
+          });
+
+          row.append(info, select, applyBtn);
+          flagsArea.append(row);
+        }
+        renderFlagsDeploy(data.deploy);
+      } catch (err) {
+        flagsArea.textContent = err.message || "Failed to load flags";
+      }
+    };
+
+    flagsRefreshBtn?.addEventListener("click", loadFlags);
+    loadFlags();
 
     const loadDebris = async () => {
       if (debrisResult) debrisResult.textContent = "Loading preview...";
