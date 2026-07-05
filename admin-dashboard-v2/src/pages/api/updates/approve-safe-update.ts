@@ -3,6 +3,7 @@ import { isAuthorized } from "../../../lib/auth-helpers";
 import { insertCoreUpdateAudit } from "../../../lib/core-update-audit";
 import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import {
+  commitsBranchAheadOf,
   fetchBranchHeadSha,
   fetchPackageJsonVersion,
   listSyncPRs,
@@ -49,6 +50,62 @@ export const POST: APIRoute = async (context) => {
         JSON.stringify({ ok: false, error: "No active safe update pull request found." }),
         { status: 404, headers: { "Content-Type": "application/json" } },
       );
+    }
+
+    // Identity binding: the client says WHICH PR (and which head commit) the
+    // admin actually reviewed. If the active PR moved underneath the page
+    // (regenerated, new commits pushed), refuse instead of silently merging
+    // something the admin never looked at.
+    const body = (await context.request.json().catch(() => ({}))) as {
+      prNumber?: number;
+      expectedHeadSha?: string;
+    };
+    if (typeof body.prNumber === "number" && body.prNumber !== safeUpdatePr.number) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          code: "pr-changed",
+          error: `The page showed PR #${body.prNumber}, but the active update is now PR #${safeUpdatePr.number}. Nothing was merged — review the current update and approve again.`,
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (
+      typeof body.expectedHeadSha === "string" &&
+      body.expectedHeadSha.length > 0 &&
+      safeUpdatePr.headSha &&
+      body.expectedHeadSha !== safeUpdatePr.headSha
+    ) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          code: "pr-moved",
+          error: `PR #${safeUpdatePr.number} changed since the page loaded (new commits were pushed). Nothing was merged — review the latest state and approve again.`,
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Click-time staleness check (server-authoritative): never merge a PR
+    // prepared before production advanced — its checks and deploy preview
+    // validated a snapshot that no longer matches what would go live.
+    if (safeUpdatePr.headSha) {
+      const behindMainBy = await commitsBranchAheadOf(
+        token,
+        repo,
+        safeUpdatePr.headSha,
+        productionBranch,
+      );
+      if (typeof behindMainBy === "number" && behindMainBy > 0) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            code: "stale",
+            error: `PR #${safeUpdatePr.number} was prepared before ${productionBranch} advanced (${behindMainBy} newer commit${behindMainBy === 1 ? "" : "s"}) — its checks and preview no longer reflect what would go live. Nothing was merged — regenerate the update PR instead.`,
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        );
+      }
     }
 
     const activeSafeUpdate = {

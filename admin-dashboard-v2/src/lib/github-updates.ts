@@ -664,6 +664,46 @@ export async function markPullRequestReady(
   }
 }
 
+/**
+ * How many commits `branch` has that the PR head does NOT (0 = PR built on the
+ * current branch tip). Detects stale safe-update PRs: one prepared before main
+ * advanced would silently drop main's newer commits when merged.
+ */
+export async function commitsBranchAheadOf(
+  token: string,
+  repo: string,
+  prHeadSha: string,
+  branch: string,
+): Promise<number | null> {
+  const res = await fetch(
+    `${GH}/repos/${repo}/compare/${encodeURIComponent(prHeadSha)}...${encodeURIComponent(branch)}`,
+    { headers: headers(token) },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { ahead_by?: number };
+  return typeof data.ahead_by === "number" ? data.ahead_by : null;
+}
+
+/** Close a pull request with an explanatory comment (used by Regenerate). */
+export async function closePullRequest(
+  token: string,
+  repo: string,
+  prNumber: number,
+  comment: string,
+): Promise<void> {
+  await fetch(`${GH}/repos/${repo}/issues/${prNumber}/comments`, {
+    method: "POST",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ body: comment }),
+  });
+  const res = await fetch(`${GH}/repos/${repo}/pulls/${prNumber}`, {
+    method: "PATCH",
+    headers: { ...headers(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ state: "closed" }),
+  });
+  if (!res.ok) throw new Error(`Failed to close PR #${prNumber}: ${res.status}`);
+}
+
 export async function mergePR(
   token: string,
   repo: string,

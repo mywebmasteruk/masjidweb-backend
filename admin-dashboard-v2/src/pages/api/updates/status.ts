@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { isAuthorized } from "../../../lib/auth-helpers";
 import {
+  commitsBranchAheadOf,
   compareVersions,
   fetchPackageJsonVersion,
   getReleaseSemverVsFork,
@@ -245,6 +246,49 @@ export const GET: APIRoute = async (context) => {
       "GitHub active safe-update PR status",
     );
 
+    // Staleness: a safe-update PR must be rebuilt when production advanced past
+    // its base (merging would drop main's newer commits) or upstream released a
+    // newer version than the PR carries. Fail-open (nulls) on lookup errors —
+    // approve-safe-update re-checks server-side at click time regardless.
+    let staleness: {
+      behindMainBy: number | null;
+      mainAdvanced: boolean;
+      prPackageVersion: string | null;
+      newerUpstreamRelease: boolean;
+    } | null = null;
+    if (safeUpdatePr?.headSha) {
+      const [behindMainBy, prPackageVersion] = await Promise.all([
+        fallbackOnError(
+          withTimeout(
+            commitsBranchAheadOf(token, repoUsed, safeUpdatePr.headSha, productionBranch),
+            6_000,
+            "GitHub PR staleness compare",
+          ),
+          null,
+          diagnostics,
+          "GitHub PR staleness compare",
+        ),
+        fallbackOnError(
+          withTimeout(
+            fetchPackageJsonVersion(token, repoUsed, safeUpdatePr.headSha),
+            4_000,
+            "GitHub PR package version",
+          ),
+          null,
+        ),
+      ]);
+      staleness = {
+        behindMainBy,
+        mainAdvanced: typeof behindMainBy === "number" && behindMainBy > 0,
+        prPackageVersion,
+        newerUpstreamRelease: Boolean(
+          semver.latestReleaseVersion &&
+            prPackageVersion &&
+            compareVersions(semver.latestReleaseVersion, prPackageVersion) > 0,
+        ),
+      };
+    }
+
     const activeSafeUpdate = safeUpdatePr
       ? {
           number: safeUpdatePr.number,
@@ -259,11 +303,15 @@ export const GET: APIRoute = async (context) => {
           autopilotRisk: safeUpdatePr.autopilotRisk,
           autopilotBlockedReason: safeUpdatePr.autopilotBlockedReason,
           deployPreviewUrl: safeUpdatePr.deployPreviewUrl,
+          headSha: safeUpdatePr.headSha ?? null,
+          createdAt: safeUpdatePr.createdAt ?? null,
+          staleness,
         }
       : null;
 
     const payload = {
       ok: true,
+      generatedAt: new Date().toISOString(),
       ...status,
       ...semver,
       releaseAheadOfForkPackage,

@@ -18,6 +18,7 @@ export type AdminUpdateStatus =
   | "ready_to_preview"
   | "ready_to_approve"
   | "checks_failed"
+  | "stale_regenerate"
   | "deploying"
   | "unknown_error";
 
@@ -35,6 +36,13 @@ export type AdminUpdatePhase = {
   status: AdminUpdatePhaseStatus;
 };
 
+export type SafeUpdateStaleness = {
+  behindMainBy: number | null;
+  mainAdvanced: boolean;
+  prPackageVersion: string | null;
+  newerUpstreamRelease: boolean;
+};
+
 export type AdminSafeUpdateSummary = {
   number: number;
   title: string;
@@ -48,6 +56,9 @@ export type AdminSafeUpdateSummary = {
   autopilotRisk?: string | null;
   autopilotBlockedReason?: string | null;
   deployPreviewUrl: string | null;
+  headSha?: string | null;
+  createdAt?: string | null;
+  staleness?: SafeUpdateStaleness | null;
 };
 
 export type AdminUpdateCopyInput = {
@@ -102,6 +113,9 @@ function trafficLightForStatus(status: AdminUpdateStatus): {
   }
   if (status === "blocked_needs_resolution" || status === "checks_failed") {
     return { trafficLight: "red", trafficLightLabel: "Update blocked" };
+  }
+  if (status === "stale_regenerate") {
+    return { trafficLight: "amber", trafficLightLabel: "Stale — regenerate" };
   }
   if (status === "setup_required" || status === "unknown_error") {
     return { trafficLight: "red", trafficLightLabel: "Do not approve" };
@@ -295,6 +309,15 @@ export function buildUpdatePhases(
     return phases;
   }
 
+  if (status === "stale_regenerate") {
+    // The PR must be rebuilt — the workflow is back at step 1.
+    markCurrent(1);
+    markSkipped(2);
+    markSkipped(3);
+    markSkipped(4);
+    return phases;
+  }
+
   markDone(1);
 
   if (opts.needsRepair) {
@@ -401,6 +424,43 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
       previewTenant?.slug ?? getCoreUpdatePreviewTenantSlug(),
       previewTenant?.businessName,
     );
+
+    // Staleness trumps every other PR state, including "ready": a stale PR's
+    // safety checks and deploy preview validated a snapshot that no longer
+    // matches what production would become after merging (and the differential
+    // isolation gate baselines against current main, so it can false-flag).
+    // Exactly the PR #33 near-miss of 2026-07-05. Only correct action:
+    // regenerate the PR from current code.
+    if (active.staleness?.mainAdvanced || active.staleness?.newerUpstreamRelease) {
+      const reasons: string[] = [];
+      if (active.staleness.mainAdvanced) {
+        const n = active.staleness.behindMainBy;
+        reasons.push(
+          `production code has advanced ${typeof n === "number" ? `${n} commit${n === 1 ? "" : "s"} ` : ""}since this PR was prepared — its checks and deploy preview no longer show what would actually go live`,
+        );
+      }
+      if (active.staleness.newerUpstreamRelease) {
+        reasons.push(
+          `a newer Ycode release (${input.latestReleaseVersion ?? "newer"}) exists than this PR carries (${active.staleness.prPackageVersion ?? "older"})`,
+        );
+      }
+      return withPr(active, {
+        status: "stale_regenerate",
+        title: "Update PR is stale",
+        description:
+          `PR #${active.number} is out of date: ${reasons.join("; ")}. ` +
+          "Production is unchanged. Do not approve it — regenerate the update so it is rebuilt from the current code.",
+        productionStatus: "Production unchanged",
+        actionLabel: "Regenerate update PR",
+        nextActionText:
+          "Click Regenerate: the stale PR is closed and a fresh one is prepared from current production code automatically.",
+        agentPrompt: null,
+        canPrepare: false,
+        canApprove: false,
+        canPreview: false,
+        canCopyPrompt: false,
+      }, previewTenant);
+    }
 
     if (isConflictState(active)) {
       const reason = blockedDescription(active);
