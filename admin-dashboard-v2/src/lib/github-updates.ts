@@ -339,6 +339,8 @@ export interface SyncPR {
   state: string;
   createdAt: string;
   headSha: string;
+  /** Branch name on the PR head (e.g. safe-ycode-update/1.29.1). */
+  headRef: string;
   isDraft: boolean;
   labels: string[];
   /** false = branch has merge conflicts with base */
@@ -481,7 +483,7 @@ export async function listSyncPRs(
       created_at: string;
       mergeable: boolean | null;
       mergeable_state?: string | null;
-      head: { sha: string };
+      head: { sha: string; ref?: string };
       html_url: string;
       body?: string | null;
     }[];
@@ -494,15 +496,17 @@ export async function listSyncPRs(
       let mergeable = pr.mergeable;
       let mergeableState: string | null = pr.mergeable_state ?? null;
       let headSha = pr.head.sha;
+      let headRef = pr.head.ref ?? "";
       if (detailRes.ok) {
         const d = (await detailRes.json()) as {
           mergeable: boolean | null;
           mergeable_state?: string | null;
-          head: { sha: string };
+          head: { sha: string; ref?: string };
         };
         mergeable = d.mergeable;
         mergeableState = d.mergeable_state ?? null;
         headSha = d.head.sha;
+        if (d.head.ref) headRef = d.head.ref;
       }
       const { ciStatus, deployPreviewUrl } = await getHeadCiAndPreview(
         token,
@@ -517,6 +521,7 @@ export async function listSyncPRs(
         state: pr.state,
         createdAt: pr.created_at,
         headSha,
+        headRef,
         isDraft: pr.draft === true,
         labels: (pr.labels ?? []).map((label) => label.name).filter((label): label is string => Boolean(label)),
         mergeable,
@@ -532,16 +537,40 @@ export async function listSyncPRs(
   return prs;
 }
 
-export function isSafeUpdatePullRequest(pr: SyncPR): boolean {
+export function isSafeUpdatePullRequest(pr: Pick<SyncPR, "title" | "labels" | "headRef">): boolean {
   const normalizedLabels = pr.labels.map((label) => label.toLowerCase());
   const title = pr.title.toLowerCase();
+  const headRef = (pr.headRef || "").toLowerCase();
   return (
+    headRef.startsWith("safe-ycode-update/") ||
     normalizedLabels.includes("safe-ycode-update") ||
     normalizedLabels.includes("tenant-sensitive-update") ||
     title.includes("ycode") ||
     title.includes("safe update") ||
     title.includes("safe-update")
   );
+}
+
+/**
+ * Close every open safe-update PR that would block sync-upstream.yml's
+ * check-existing job (it skips creating a fresh PR while any
+ * `safe-ycode-update/*` branch PR is still open).
+ */
+export async function closeOpenSafeUpdatePullRequests(
+  token: string,
+  repo: string,
+  productionBranch: string,
+  comment: string,
+): Promise<number[]> {
+  const normalizedRepo = normalizeBuilderRepo(repo);
+  const syncPRs = await listSyncPRs(token, normalizedRepo, [productionBranch]);
+  const blockers = syncPRs.filter(isSafeUpdatePullRequest);
+  const closed: number[] = [];
+  for (const pr of blockers) {
+    await closePullRequest(token, normalizedRepo, pr.number, comment);
+    closed.push(pr.number);
+  }
+  return closed;
 }
 
 /** True when main already has this PR branch's package version (or newer). */

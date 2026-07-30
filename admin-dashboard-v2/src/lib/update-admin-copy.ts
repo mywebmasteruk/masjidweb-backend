@@ -453,7 +453,7 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         productionStatus: "Production unchanged",
         actionLabel: "Regenerate update PR",
         nextActionText:
-          "Click Regenerate: the stale PR is closed and a fresh one is prepared from current production code automatically.",
+          "Click Regenerate: the stale PR is closed and a fresh one is prepared toward the latest Ycode. Live production stays on the current version until you Approve.",
         agentPrompt: null,
         canPrepare: false,
         canApprove: false,

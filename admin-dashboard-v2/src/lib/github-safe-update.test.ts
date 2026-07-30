@@ -9,6 +9,85 @@ import {
   githubActionsWorkflowUrl,
 } from "./github-safe-update";
 
+describe("startFreshSafeUpdate", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("closes every open safe-update PR then dispatches sync-upstream", async () => {
+    const { startFreshSafeUpdate } = await import("./github-safe-update");
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+      if (href.includes("/pulls?base=main")) {
+        return new Response(
+          JSON.stringify([
+            {
+              number: 37,
+              title: "chore: update Ycode core to 2929273",
+              base: { ref: "main" },
+              state: "open",
+              draft: false,
+              labels: [{ name: "safe-ycode-update" }],
+              created_at: "2026-07-07T00:00:00Z",
+              mergeable: true,
+              mergeable_state: "clean",
+              head: { sha: "pr-sha", ref: "safe-ycode-update/2929273" },
+              html_url: "https://github.com/o/r/pull/37",
+              body: "",
+            },
+          ]),
+        );
+      }
+      if (href.endsWith("/pulls/37") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            mergeable: true,
+            mergeable_state: "clean",
+            head: { sha: "pr-sha", ref: "safe-ycode-update/2929273" },
+          }),
+        );
+      }
+      if (href.includes("/commits/pr-sha/check-runs")) {
+        return new Response(JSON.stringify({ total_count: 0, check_runs: [] }));
+      }
+      if (href.includes("/commits/pr-sha/status")) {
+        return new Response(JSON.stringify({ state: "success", statuses: [] }));
+      }
+      if (href.endsWith("/issues/37/comments") && method === "POST") {
+        return new Response(JSON.stringify({ id: 1 }), { status: 201 });
+      }
+      if (href.endsWith("/pulls/37") && method === "PATCH") {
+        return new Response(JSON.stringify({ state: "closed" }), { status: 200 });
+      }
+      if (href.includes("/actions/workflows/sync-upstream.yml/dispatches") && method === "POST") {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(`unexpected ${method} ${href}`, { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await startFreshSafeUpdate({
+      token: "read-token",
+      workflowToken: "workflow-token",
+      repo: "mywebmasteruk/ycode-mw-tenant",
+      productionBranch: "main",
+      reason: "prepare",
+    });
+
+    expect(result.closedPrs).toEqual([37]);
+    expect(result.message).toContain("Closed blocking PR #37");
+    expect(result.message).toContain("Live production stays");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/actions/workflows/sync-upstream.yml/dispatches",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ ref: "main" }),
+      }),
+    );
+  });
+});
+
 describe("dispatchSafeUpdateWorkflow", () => {
   beforeEach(() => {
     vi.restoreAllMocks();

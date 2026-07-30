@@ -1,3 +1,8 @@
+import {
+  closeOpenSafeUpdatePullRequests,
+  normalizeBuilderRepo,
+} from "./github-updates";
+
 const GH = "https://api.github.com";
 const AI_REPAIR_WORKFLOW_FILE = "ai-repair-safe-update.yml";
 
@@ -44,6 +49,60 @@ export async function dispatchSafeUpdateWorkflow(token: string, repo: string): P
   if (!res.ok) {
     throw new GithubWorkflowDispatchError(`GitHub workflow dispatch failed: ${res.status}`, res.status);
   }
+}
+
+export type StartFreshSafeUpdateResult = {
+  closedPrs: number[];
+  message: string;
+};
+
+/**
+ * Unblock and start a fresh safe-update PR.
+ *
+ * sync-upstream.yml skips creating a new PR while ANY open
+ * `safe-ycode-update/*` PR remains. Prepare used to dispatch only, so a
+ * stale open PR (e.g. stuck at 1.26.5 while upstream is 1.29.1) made the
+ * dashboard look like "no changes". Always close blockers first, then
+ * dispatch — production stays on main until Approve.
+ */
+export async function startFreshSafeUpdate(opts: {
+  token: string;
+  workflowToken: string;
+  repo: string;
+  productionBranch: string;
+  reason: "prepare" | "regenerate";
+}): Promise<StartFreshSafeUpdateResult> {
+  const repoUsed = normalizeBuilderRepo(opts.repo);
+  const closedPrs = await closeOpenSafeUpdatePullRequests(
+    opts.token,
+    repoUsed,
+    opts.productionBranch,
+    opts.reason === "regenerate"
+      ? "Closed from the admin dashboard: this update PR became stale " +
+          "(production advanced past its base and/or a newer upstream release exists). " +
+          "A fresh safe-update PR is being prepared from current production code."
+      : "Closed from the admin dashboard: an open safe-update PR was blocking a new " +
+          "prepare (sync-upstream skips while any safe-ycode-update PR is open). " +
+          "A fresh safe-update PR is being prepared from current production code.",
+  );
+
+  await dispatchSafeUpdateWorkflow(opts.workflowToken, repoUsed);
+
+  const closedLabel =
+    closedPrs.length === 0
+      ? ""
+      : closedPrs.length === 1
+        ? `Closed blocking PR #${closedPrs[0]}. `
+        : `Closed blocking PRs #${closedPrs.join(", #")}. `;
+
+  return {
+    closedPrs,
+    message:
+      closedLabel +
+      "GitHub is preparing a fresh safe-update PR from current production code. " +
+      "Live production stays on the current version until you approve that new PR — " +
+      "this page will update when the PR appears.",
+  };
 }
 
 export function githubActionsWorkflowUrl(repo: string, workflowFile: string): string {

@@ -4,9 +4,10 @@ import { getGithubUpdatesConfig } from "../../../lib/github-env";
 import { formatCoreUpdateEmail, sendCoreUpdateEmail } from "../../../lib/core-update-email";
 import {
   GithubWorkflowDispatchError,
-  dispatchSafeUpdateWorkflow,
   githubActionsWorkflowUrl,
+  startFreshSafeUpdate,
 } from "../../../lib/github-safe-update";
+import { githubProductionBranch } from "../../../lib/updates-env";
 
 const json = { "Content-Type": "application/json" } as const;
 
@@ -24,15 +25,21 @@ export const POST: APIRoute = async (context) => {
       JSON.stringify({
         ok: false,
         error: "GITHUB_TOKEN or GITHUB_REPO not configured",
-        message: "Update setup is incomplete. Production has not changed.",
+        message: "Update setup is incomplete. Live production was not changed.",
       }),
       { status: 500, headers: json },
     );
   }
-  const { workflowToken, repo } = github;
+  const { token, workflowToken, repo } = github;
 
   try {
-    await dispatchSafeUpdateWorkflow(workflowToken, repo);
+    const result = await startFreshSafeUpdate({
+      token,
+      workflowToken,
+      repo,
+      productionBranch: githubProductionBranch(),
+      reason: "prepare",
+    });
     void sendCoreUpdateEmail(
       formatCoreUpdateEmail("update_started", {
         message:
@@ -42,8 +49,8 @@ export const POST: APIRoute = async (context) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        message:
-          "Safe update preparation has started. Production has not changed; the update will be reviewed before it can go live.",
+        closedPrs: result.closedPrs,
+        message: result.message,
       }),
       { status: 200, headers: json },
     );
@@ -64,12 +71,16 @@ export const POST: APIRoute = async (context) => {
       configIssue = "github_workflow_not_found_or_repo_access";
       hint =
         " Ensure sync-upstream.yml is merged to main on the builder repository and the GitHub token has access to the configured GITHUB_REPO.";
+    } else if (/Failed to close PR #\d+:/.test(message)) {
+      configIssue = "github_token_cannot_close_prs";
+      hint =
+        " GITHUB_TOKEN needs permission to close pull requests on the builder repo (Pull requests: Read and write). Or close the open safe-ycode-update PR on GitHub, then click Prepare again.";
     }
     return new Response(
       JSON.stringify({
         ok: false,
         error: message + hint,
-        message: "Unable to start safe update preparation. Production has not changed." + hint,
+        message: "Unable to start safe update preparation. Live production was not changed." + hint,
         workflowUrl,
         configIssue,
       }),

@@ -120,6 +120,7 @@ describe("isSafeUpdatePullRequest", () => {
         state: "open",
         createdAt: "2026-06-21T00:00:00Z",
         headSha: "sha",
+        headRef: "feature/other",
         isDraft: false,
         labels: ["tenant-sensitive-update"],
         mergeable: null,
@@ -130,6 +131,16 @@ describe("isSafeUpdatePullRequest", () => {
         autopilotRisk: null,
         autopilotBlockedReason: null,
         deployPreviewUrl: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("recognizes safe-ycode-update/ head branches even without labels", () => {
+    expect(
+      isSafeUpdatePullRequest({
+        title: "chore: update Ycode core",
+        labels: [],
+        headRef: "safe-ycode-update/1.29.1",
       }),
     ).toBe(true);
   });
@@ -159,7 +170,7 @@ describe("listSyncPRs and pickActiveSafeUpdatePr", () => {
             created_at: "2026-06-21T00:00:00Z",
             mergeable: null,
             mergeable_state: "unknown",
-            head: { sha: "pr-sha" },
+            head: { sha: "pr-sha", ref: "safe-ycode-update/test" },
             html_url: "https://github.com/mywebmasteruk/ycode-mw-tenant/pull/23",
             body: "Status: Needs review\nRisk: MEDIUM",
           },
@@ -169,7 +180,7 @@ describe("listSyncPRs and pickActiveSafeUpdatePr", () => {
         return new Response(JSON.stringify({
           mergeable: null,
           mergeable_state: "unknown",
-          head: { sha: "pr-sha" },
+          head: { sha: "pr-sha", ref: "safe-ycode-update/test" },
         }));
       }
       if (href === "https://api.github.com/repos/mywebmasteruk/ycode-mw-tenant/commits/pr-sha/check-runs") {

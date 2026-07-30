@@ -1223,7 +1223,7 @@ const cleanupDeletesUnassigned =
           primaryDisabled: false,
           showSpinner: false,
           reassurance:
-            "Regenerate closes the stale PR and prepares a fresh one from current production code. Production does not change.",
+            "Regenerate closes the stale PR and starts a fresh one toward the latest Ycode. Live production stays on the current version until you Approve.",
         };
       }
 
@@ -1233,11 +1233,12 @@ const cleanupDeletesUnassigned =
           headline: "Start the safe update",
           detail:
             adminState.nextActionText ||
-            "Click Prepare once to run the merge test. Production stays unchanged until you approve the merge.",
+            "Click Prepare once to run the merge test. Live production stays unchanged until you approve the merge.",
           primaryLabel: "Prepare safe update",
           primaryDisabled: false,
           showSpinner: false,
-          reassurance: "You only need to click Prepare once. The page will move forward automatically.",
+          reassurance:
+            "Prepare closes any stuck safe-update PR first (otherwise GitHub skips), then builds a fresh PR. Live production stays unchanged until Approve.",
         };
       }
 
@@ -2812,9 +2813,12 @@ const cleanupDeletesUnassigned =
       const prLabel = state.prNumber ? "stale PR #" + state.prNumber : "the stale update PR";
       if (
         !confirm(
-          "Regenerate the update? This closes " +
+          "Regenerate the update?\n\n" +
+            "• Closes " +
             prLabel +
-            " and prepares a fresh one from current production code. Production does not change.",
+            " (it is blocking newer upstream)\n" +
+            "• Starts a fresh safe-update PR toward the latest Ycode release\n" +
+            "• Live production stays on the current version until you Approve the new PR",
         )
       ) {
         return;
