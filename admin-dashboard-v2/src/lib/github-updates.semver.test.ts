@@ -114,23 +114,9 @@ describe("isSafeUpdatePullRequest", () => {
   it("recognizes hyphenated safe-update titles and tenant-sensitive labels", () => {
     expect(
       isSafeUpdatePullRequest({
-        number: 23,
         title: "safe-update upstream Ycode",
-        base: "main",
-        state: "open",
-        createdAt: "2026-06-21T00:00:00Z",
-        headSha: "sha",
-        headRef: "feature/other",
-        isDraft: false,
         labels: ["tenant-sensitive-update"],
-        mergeable: null,
-        mergeableState: null,
-        ciStatus: "unknown",
-        htmlUrl: "https://github.com/mywebmasteruk/ycode-mw-tenant/pull/23",
-        autopilotStatus: null,
-        autopilotRisk: null,
-        autopilotBlockedReason: null,
-        deployPreviewUrl: null,
+        headRef: "feature/other",
       }),
     ).toBe(true);
   });
