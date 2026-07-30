@@ -173,6 +173,7 @@ export function shouldAutoPollCoreUpdateStatus(
 export type CoreUpdateNowActionKind =
   | "idle"
   | "prepare"
+  | "regenerate"
   | "preparing"
   | "repair"
   | "preview"
@@ -258,6 +259,21 @@ export function buildCoreUpdateNowAction(
       primaryDisabled: false,
       showSpinner: true,
       reassurance: "No further approval is needed right now.",
+    };
+  }
+
+  if (adminState.status === "stale_regenerate") {
+    return {
+      kind: "regenerate",
+      headline: adminState.title || "Update PR is stale",
+      detail:
+        adminState.description ||
+        "This update PR is out of date. Regenerate it so a fresh PR is built from current production code.",
+      primaryLabel: adminState.actionLabel || "Regenerate update PR",
+      primaryDisabled: false,
+      showSpinner: false,
+      reassurance:
+        "Regenerate closes the stale PR and starts a fresh one. Live production stays on the current version until you Approve.",
     };
   }
 

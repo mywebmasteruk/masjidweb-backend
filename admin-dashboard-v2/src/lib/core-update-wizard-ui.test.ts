@@ -294,6 +294,37 @@ describe("core-update-wizard-ui", () => {
     expect(now.primaryLabel).toBe("Prepare safe update");
   });
 
+  it("shows regenerate action when the safe-update PR is stale", () => {
+    const admin = describeAdminUpdateState({
+      ok: true,
+      releaseAheadOfForkPackage: true,
+      latestReleaseVersion: "1.29.1",
+      forkPackageVersion: "1.26.3",
+      activeSafeUpdate: {
+        number: 37,
+        title: "chore: update Ycode core to 2929273",
+        url: "https://github.com/example/repo/pull/37",
+        deployPreviewUrl: "https://deploy-preview-37.example.netlify.app",
+        isDraft: false,
+        mergeable: true,
+        mergeableState: "clean",
+        ciStatus: "success",
+        labels: ["safe-ycode-update"],
+        staleness: {
+          behindMainBy: 0,
+          mainAdvanced: false,
+          prPackageVersion: "1.26.5",
+          newerUpstreamRelease: true,
+        },
+      },
+    });
+    expect(admin.status).toBe("stale_regenerate");
+    const now = buildCoreUpdateNowAction(admin);
+    expect(now.kind).toBe("regenerate");
+    expect(now.primaryLabel).toBe("Regenerate update PR");
+    expect(now.primaryDisabled).toBe(false);
+  });
+
   it("shows approve action when PR is ready", () => {
     const admin = describeAdminUpdateState({
       ok: true,

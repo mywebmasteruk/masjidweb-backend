@@ -2234,6 +2234,7 @@ const cleanupDeletesUnassigned =
       if (action.primaryLabel) {
         let btnId = "nowActionRefreshBtn";
         if (action.kind === "prepare") btnId = "prepareSafeUpdateBtn";
+        else if (action.kind === "regenerate") btnId = "regenerateSafeUpdateBtn";
         else if (action.kind === "approve") btnId = "approveSafeUpdateBtn";
         else if (action.kind === "repair") btnId = "runAiRepairNowBtn";
         html +=
@@ -2564,6 +2565,7 @@ const cleanupDeletesUnassigned =
         const primaryEnabled =
           adminState.canPrepare ||
           adminState.status === "preparing" ||
+          adminState.status === "stale_regenerate" ||
           adminState.canCopyPrompt ||
           adminState.canPreview ||
           adminState.canApprove;
@@ -2929,6 +2931,12 @@ const cleanupDeletesUnassigned =
         if (window.coreUpdatePrepareInFlight) return;
         if (!confirm("Prepare a safe Ycode update now? Production will not change immediately.")) return;
         postPrepareSafeUpdate();
+        return;
+      }
+
+      if (target.id === "regenerateSafeUpdateBtn" || target.closest("#regenerateSafeUpdateBtn")) {
+        if (window.coreUpdatePrepareInFlight) return;
+        postRegenerateSafeUpdate();
         return;
       }
 
