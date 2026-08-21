@@ -139,14 +139,22 @@ function canSafelyApprove(active: AdminSafeUpdateSummary): boolean {
   );
 }
 
+/**
+ * True only when GitHub still has merge conflicts.
+ *
+ * Do not treat Autopilot's PR-body `Status: blocked` as a live conflict —
+ * that line is written at Prepare and stays stale after files are resolved
+ * (PR #46). GitHub `mergeable_state: blocked` means required checks/reviews,
+ * not a dirty merge.
+ */
 function isConflictState(input: AdminSafeUpdateSummary): boolean {
-  return (
-    input.autopilotStatus === "blocked" ||
-    input.mergeable === false ||
-    input.mergeableState === "dirty" ||
-    input.mergeableState === "blocked" ||
-    input.labels.includes("auto-update-conflict")
-  );
+  if (input.mergeable === false || input.mergeableState === "dirty") {
+    return true;
+  }
+  if (input.labels.includes("auto-update-conflict") && input.mergeable !== true) {
+    return true;
+  }
+  return false;
 }
 
 function blockedDescription(input: AdminSafeUpdateSummary): string {
@@ -486,13 +494,13 @@ export function describeAdminUpdateState(input: AdminUpdateCopyInput): AdminUpda
         description:
           "The prepared update failed automated checks. Production is unchanged. Do not approve until checks pass.",
         productionStatus: "Production unchanged",
-        actionLabel: "Fix with Premium AI",
-        nextActionText: `Fix PR #${active.number} with Premium AI. Approval stays locked until checks are green.`,
+        actionLabel: "Refresh status",
+        nextActionText: `Checks failed on PR #${active.number}. Do not click Fix unless GitHub still shows merge conflicts. Refresh after CI, or ask a developer.`,
         agentPrompt: buildAgentPrompt(active, "Safety checks failed"),
         canPrepare: false,
         canApprove: false,
         canPreview: Boolean(active.deployPreviewUrl),
-        canCopyPrompt: true,
+        canCopyPrompt: false,
       }, previewTenant);
     }
 

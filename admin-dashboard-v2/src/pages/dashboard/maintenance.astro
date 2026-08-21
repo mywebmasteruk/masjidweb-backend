@@ -2975,7 +2975,7 @@ const cleanupDeletesUnassigned =
         return;
       }
 
-      if (state.status === "blocked_needs_resolution" || state.status === "checks_failed") {
+      if (state.status === "blocked_needs_resolution" && state.canCopyPrompt) {
         const viewed = window.coreUpdateViewedStep || 2;
         if (viewed !== 2) {
           refreshCoreUpdateView(2);
@@ -2983,6 +2983,11 @@ const cleanupDeletesUnassigned =
           return;
         }
         await runAiRepair({ repairMode: "premium_ai" });
+        return;
+      }
+
+      if (state.status === "checks_failed") {
+        await runUpdateCheck();
         return;
       }
 

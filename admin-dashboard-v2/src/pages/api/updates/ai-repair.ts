@@ -10,6 +10,7 @@ import {
   type CopilotEscalationMode,
   GithubWorkflowDispatchError,
   dispatchAiRepairWorkflow,
+  getActiveAiRepairRun,
   getLatestAiRepairRunAfter,
   githubActionsWorkflowUrl,
 } from "../../../lib/github-safe-update";
@@ -114,6 +115,25 @@ export const POST: APIRoute = async (context) => {
           settingsUrl: "/dashboard/settings/ai",
         }),
         { status: 400, headers: json },
+      );
+    }
+    const alreadyRunning = await getActiveAiRepairRun(workflowToken, repo);
+    if (
+      alreadyRunning &&
+      (alreadyRunning.status === "queued" ||
+        alreadyRunning.status === "in_progress" ||
+        alreadyRunning.status === "pending" ||
+        alreadyRunning.status === "requested")
+    ) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error:
+            "A Fix run is already in progress. Wait for it to finish — starting another one wastes credits and can lose the repair.",
+          workflowUrl: alreadyRunning.htmlUrl,
+          workflowRunId: alreadyRunning.id,
+        }),
+        { status: 409, headers: json },
       );
     }
     const dispatchStartedAt = new Date();
