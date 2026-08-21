@@ -127,8 +127,8 @@ describe("describeAdminUpdateState", () => {
         title: "chore: review Ycode core update to 68d57f5",
         url: "https://github.com/mywebmasteruk/ycode-mw-tenant/pull/23",
         isDraft: true,
-        mergeable: true,
-        mergeableState: "unstable",
+        mergeable: false,
+        mergeableState: "dirty",
         ciStatus: "failure",
         labels: ["safe-ycode-update", "needs-developer-review", "tenant-sensitive-update"],
         autopilotStatus: "blocked",
@@ -144,6 +144,31 @@ describe("describeAdminUpdateState", () => {
     expect(result.nextActionText).toContain("PR #23");
     expect(result.canApprove).toBe(false);
     expect(result.canCopyPrompt).toBe(true);
+  });
+
+  it("does not offer Fix when the PR body still says blocked but GitHub is mergeable", () => {
+    const result = describeAdminUpdateState({
+      ok: true,
+      latestReleaseVersion: "1.30.3",
+      forkPackageVersion: "1.29.1",
+      activeSafeUpdate: {
+        ...basePr,
+        number: 46,
+        isDraft: true,
+        mergeable: true,
+        mergeableState: "unstable",
+        ciStatus: "failure",
+        labels: ["safe-ycode-update", "needs-developer-review", "tenant-sensitive-update"],
+        autopilotStatus: "blocked",
+        autopilotRisk: "HIGH",
+        autopilotBlockedReason: "Autopilot blocked this update to protect tenant data: 2 conflict(s) are in tenant-sensitive files.",
+      },
+    });
+
+    expect(result.status).toBe("checks_failed");
+    expect(result.canCopyPrompt).toBe(false);
+    expect(result.actionLabel).toBe("Refresh status");
+    expect(result.nextActionText).not.toContain("Fix with Premium AI");
   });
 
   it("allows preview when draft PR is clean and checks pass", () => {
