@@ -7,7 +7,7 @@ import { getServiceSupabase } from "../../lib/supabase-server";
 const domainSuffix = import.meta.env.TENANT_DOMAIN_SUFFIX || "masjidweb.com";
 const supabase = getServiceSupabase();
 
-const { data: tenants } = await supabase
+const { data: tenants, error: tenantsError } = await supabase
   .from("tenant_registry")
   .select(
     "id, slug, business_name, email, domain, address, phone, description, status, netlify_site_url, created_at, tenant_kind, provisioned_from_template_id",
@@ -17,7 +17,7 @@ const { data: tenants } = await supabase
 const clientTenants = (tenants ?? []).filter((t) => t.tenant_kind !== "template");
 const demoTenants = (tenants ?? []).filter((t) => t.tenant_kind === "template");
 
-const { data: templateOptions } = await supabase
+const { data: templateOptions, error: templateOptionsError } = await supabase
   .from("tenant_registry")
   .select("id, slug, business_name")
   .eq("tenant_kind", "template")
@@ -29,6 +29,14 @@ const activeCount = clientTenants.filter((t) => t.status === "active").length;
 const provisioningCount = clientTenants.filter((t) => t.status === "provisioning").length;
 const failedCount = clientTenants.filter((t) => t.status === "failed").length;
 const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated").length;
+
+// A failed registry read used to be indistinguishable from "no tenants": the query
+// error was discarded and `tenants ?? []` rendered every count as 0. On 2026-08-27 a
+// stale PostgREST rejected the service-role key for ~9 hours and this page reported
+// "0 tenants / No client tenants yet" while all 5 tenants were intact — which read as
+// catastrophic data loss. Surface the failure instead of inventing an empty state.
+const registryError = tenantsError ?? templateOptionsError ?? null;
+const registryUnavailable = registryError !== null;
 ---
 
 <Layout title="Dashboard — MasjidWeb Admin">
@@ -64,6 +72,21 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
 
     <!-- Main content -->
     <main class="main">
+        {registryUnavailable && (
+          <div class="registry-error-banner" role="alert">
+            <strong>Cannot read the tenant registry — the figures below are not real.</strong>
+            <p>
+              This page could not query <span class="mono">tenant_registry</span>, so every count shows 0
+              and tenant lists appear empty. This does <strong>not</strong> mean tenants were deleted.
+            </p>
+            <p class="mono registry-error-detail">{registryError?.message}</p>
+            <p>
+              Do not delete a tenant or run any orphan/cleanup action until this resolves — those
+              actions treat an unreadable registry as an empty one. Check the Supabase service-role
+              key and project health first.
+            </p>
+          </div>
+        )}
         <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.5rem;">
         <div>
           <h1>Tenant management</h1>
@@ -255,8 +278,12 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
           </div>
         ) : (
           <div class="empty-state">
-            <p>No client tenants yet</p>
-            <p class="text-xs text-muted" style="margin-top:.25rem;">Click &quot;New tenant&quot; to provision a client site</p>
+            <p>{registryUnavailable ? "Tenant list unavailable — registry read failed" : "No client tenants yet"}</p>
+            <p class="text-xs text-muted" style="margin-top:.25rem;">
+              {registryUnavailable
+                ? "This is a read failure, not an empty registry. Existing tenants are unaffected."
+                : "Click \"New tenant\" to provision a client site"}
+            </p>
           </div>
         )}
         </div>
@@ -323,6 +350,22 @@ const deactivatedCount = clientTenants.filter((t) => t.status === "deactivated")
   </div>
 
 <style>
+  .registry-error-banner {
+    border: 1px solid #f0b429;
+    border-left: 4px solid #f0b429;
+    background: rgba(240, 180, 41, 0.08);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .registry-error-banner strong { color: #f0b429; }
+  .registry-error-banner p { margin: .5rem 0 0; font-size: .875rem; line-height: 1.5; }
+  .registry-error-detail {
+    font-size: .8125rem;
+    opacity: .85;
+    word-break: break-word;
+  }
+
   .provision-overlay {
     position: fixed; inset: 0; z-index: 300;
     background: rgba(0,0,0,.6); backdrop-filter: blur(6px);
